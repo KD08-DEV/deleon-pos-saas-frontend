@@ -1,0 +1,183 @@
+import React, { useEffect, useState, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import BottomNav from "../components/shared/BottomNav";
+import BackButton from "../components/shared/BackButton";
+import { MdRestaurantMenu } from "react-icons/md";
+import MenuContainer from "../components/menu/MenuContainer";
+import CustomerInfo from "../components/menu/CustomerInfo";
+import CartInfo from "../components/menu/CartInfo";
+import Bill from "../components/menu/Bill";
+import { useQuery } from "@tanstack/react-query";
+import { getOrderById } from "@https";
+import { setCart, removeAllItems } from "../redux/slices/cartSlice";
+import { useDispatch, useSelector } from "react-redux";
+import { deleteOrder } from "../https/index";
+
+const Menu = () => {
+    const [isOrderOpen, setIsOrderModalOpen] = useState(true);
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const orderId = searchParams.get("orderId");
+    const dispatch = useDispatch();
+
+    const { data: orderRes } = useQuery({
+        queryKey: ["order", orderId],
+        queryFn: () => getOrderById(orderId),
+        enabled: !!orderId,
+    });
+
+    const order = orderRes?.data?.data;
+
+    useEffect(() => {
+        document.title = "POS | Menu";
+    }, []);
+
+    useEffect(() => {
+        if (!isOrderOpen) navigate("/tables");
+    }, [isOrderOpen, navigate]);
+
+    // --- Hidratar carrito desde la orden ---
+    useEffect(() => {
+        dispatch(removeAllItems());
+
+        const items = order?.items || [];
+        if (items.length > 0) {
+            const expanded = [];
+            items.forEach((it) => {
+                const qty = it.quantity ?? it.qty ?? it.count ?? 1;
+                const unitPrice = Number(it.unitPrice ?? it.price ?? it.dish?.price ?? 0);
+                const id = it.dish?._id ?? it.item?._id ?? it.id ?? it._id;
+                const name =
+                    it.name ||
+                    it.dishName ||
+                    it.itemName ||
+                    it?.dishInfo?.name ||
+                    it?.dish?.name ||
+                    "Producto";
+                for (let i = 0; i < (qty || 1); i++) {
+                    expanded.push({ id, name, price: unitPrice });
+                }
+            });
+            dispatch(setCart(expanded));
+        }
+    }, [orderId, order, dispatch]);
+
+    // --- Lógica mejorada para borrar orden vacía ---
+    const cart = useSelector((state) => state.cart);
+    const cartLenRef = useRef(0);
+    useEffect(() => {
+        cartLenRef.current = Array.isArray(cart?.items)
+            ? cart.items.length
+            : Array.isArray(cart)
+                ? cart.length
+                : 0;
+    }, [cart]);
+
+    const orderItemsLenRef = useRef(0);
+    useEffect(() => {
+        orderItemsLenRef.current = Array.isArray(order?.items)
+            ? order.items.length
+            : 0;
+    }, [order]);
+
+    const strictGuardRef = useRef(false);
+    const orderFinalizedRef = useRef(false);
+    const handleOrderFinalized = () => {
+        orderFinalizedRef.current = true;
+    };
+
+    useEffect(() => {
+        return () => {
+            // 🧠 No ejecutar si la orden ya fue finalizada
+            if (orderFinalizedRef.current) return;
+
+            // 🚫 Ignorar el primer desmontaje fantasma (React Strict Mode)
+            if (!strictGuardRef.current) {
+                strictGuardRef.current = true;
+                return;
+            }
+
+            if (!orderId) return;
+
+            const hasCart = cartLenRef.current > 0;
+            const hasOrderItems = orderItemsLenRef.current > 0;
+
+            // 🚨 Si no hay items ni en carrito ni en la orden -> eliminar orden
+            if (!hasCart && !hasOrderItems) {
+                deleteOrder(orderId)
+                    .then(() =>
+                        console.log(`🗑️ Orden ${orderId} eliminada por estar vacía`)
+                    )
+                    .catch((err) => {
+                        if (err?.response?.status === 404) {
+                            console.warn("⚠️ Orden ya eliminada anteriormente.");
+                        } else {
+                            console.error("Error al eliminar orden vacía:", err);
+                        }
+                    });
+            }
+
+            dispatch(removeAllItems());
+        };
+    }, [orderId, dispatch]);
+
+    // --- Fin de cambios ---
+
+    if (!orderId) {
+        navigate("/tables");
+        return null;
+    }
+
+
+    return (
+        <section className="bg-[#1f1f1f] h-[calc(100vh-5rem)] overflow-hidden flex gap-3">
+            {/* Left */}
+            <div className="flex-[3]">
+                <div className="flex items-center justify-between px-10 py-4">
+                    <div className="flex items-center gap-4">
+                        <BackButton />
+                        <h1 className="text-[#f5f5f5] text-2xl font-bold tracking-wider">
+                            Menu
+                        </h1>
+                    </div>
+                    <div className="flex items-center justify-around gap-4">
+                        <div className="flex items-center gap-3 cursor-pointer">
+                            <MdRestaurantMenu className="text-[#f5f5f5] text-4xl" />
+                            <div className="flex flex-col items-start">
+                                <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide">
+                                    {order?.customerDetails?.name || "Customer Name"}
+                                </h1>
+                                <p className="text-xs text-[#ababab] font-medium">
+                                    Table : {order?.table?.tableNo || "N/A"}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <MenuContainer orderId={orderId} />
+            </div>
+
+            {/* Right */}
+            <div className="flex-[1] bg-[#1a1a1a] mt-4 mr-3 h-[780px] rounded-lg pt-2">
+                {isOrderOpen && (
+                    <>
+                        <CustomerInfo order={order} />
+                        <hr className="border-[#2a2a2a] border-t-2" />
+                        <CartInfo orderId={orderId} />
+                        <hr className="border-[#2a2a2a] border-t-2" />
+                        <Bill
+                            orderId={orderId}
+                            setIsOrderModalOpen={setIsOrderModalOpen}
+                            onOrderFinalized={handleOrderFinalized}
+                        />
+                    </>
+                )}
+            </div>
+
+            <BottomNav />
+        </section>
+    );
+};
+
+export default Menu;
