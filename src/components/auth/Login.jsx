@@ -71,11 +71,24 @@ const Login = () => {
                 return;
             }
 
-            const prevScope = JSON.parse(localStorage.getItem("scope") || "{}");
-            const clientId = prevScope?.clientId || "default";
+            // Guardar token
+            localStorage.setItem("token", token);
 
-            // Guardar scope en localStorage
-            setScope({ tenantId, clientId });
+            // Guardar scope completo para api.js
+            setScope({
+                tenantId,
+                clientId: "default"
+            });
+
+        // Guardar redundante si lo usas en otras partes
+            localStorage.setItem("tenantId", tenantId);
+            localStorage.setItem("clientId", "default");
+
+            console.log("🔥 Scope guardado:", {
+                token,
+                tenantId,
+                clientId: "default"
+            });
 
             const { _id, name, email, phone, role } = userData;
             dispatch(setUser({ _id, name, email, phone, role, tenantId }));
