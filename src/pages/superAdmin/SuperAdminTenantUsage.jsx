@@ -1,14 +1,13 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import axios from "@https";
-import { FiTrendingUp } from "react-icons/fi";
+import api from "@/lib/api";
 import { MdUpgrade } from "react-icons/md";
 
 const SuperAdminTenantUsage = () => {
     const { data, isLoading, isError } = useQuery({
         queryKey: ["superadmin-usage"],
         queryFn: async () => {
-            const res = await axios.get("/api/superadmin/tenant-usage");
+            const res = await api.get("/api/superadmin/tenant-usage");
             return res.data?.data;
         },
     });

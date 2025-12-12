@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import axios from "../../https/index";
+import api from "@/lib/api";
 
 const SuperAdminTenants = () => {
     const [tenants, setTenants] = useState([]);
@@ -7,7 +7,7 @@ const SuperAdminTenants = () => {
 
     const fetchTenants = async () => {
         try {
-            const res = await axios.get("/api/superadmin/tenants");
+            const res = await api.get("/api/superadmin/tenants");
             setTenants(res.data.data);
         } catch (err) {
             console.error(err);
@@ -23,7 +23,7 @@ const SuperAdminTenants = () => {
 
     const toggleStatus = async (tenantId, status) => {
         try {
-            await axios.patch(`/api/superadmin/tenants/${tenantId}/status`, {
+            await api.patch(`/api/superadmin/tenants/${tenantId}/status`, {
                 status,
             });
 
@@ -36,7 +36,7 @@ const SuperAdminTenants = () => {
 
     const changePlan = async (tenantId, plan) => {
         try {
-            await axios.patch(`/api/superadmin/tenants/${tenantId}/plan`, {
+            await api.patch(`/api/superadmin/tenants/${tenantId}/plan`, {
                 plan,
             });
 

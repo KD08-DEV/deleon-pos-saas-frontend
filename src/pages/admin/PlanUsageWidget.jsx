@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import axios from "@https";
+import api from "@/lib/api";
 import { FiTrendingUp } from "react-icons/fi";
 import { MdUpgrade } from "react-icons/md";
 
@@ -10,7 +10,7 @@ const PlanUsageWidget = () => {
     const { data, isLoading, isError } = useQuery({
         queryKey: ["admin-usage"],
         queryFn: async () => {
-            const res = await axios.get("/api/admin/usage");
+            const res = await api.get("/api/admin/usage");
             return res.data?.data;
         },
     });

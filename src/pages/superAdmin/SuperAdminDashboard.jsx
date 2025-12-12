@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "../../https/index";
+import api from "@/lib/api";
 
 const SuperAdminDashboard = () => {
     const navigate = useNavigate();
@@ -14,7 +14,7 @@ const SuperAdminDashboard = () => {
     useEffect(() => {
         const fetchMetrics = async () => {
             try {
-                const res = await axios.get("/api/superadmin/tenants");
+                const res = await api.get("/api/superadmin/tenants");
                 const tenants = res.data?.data || [];
 
                 const totalTenants = tenants.length;

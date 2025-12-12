@@ -1,6 +1,6 @@
 // --- IMPORTS ---
 import React, { useState } from "react";
-import axios from "../../https/index";
+import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 
 const SuperAdminCreateTenant = () => {
@@ -67,7 +67,7 @@ const SuperAdminCreateTenant = () => {
                 }
             };
 
-            const res = await axios.post("/api/user/register", payload);
+            const res = await api.post("/api/user/register", payload);
 
             if (res.data.success) {
                 alert("Tenant + Admin created successfully!");
