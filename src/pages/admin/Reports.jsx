@@ -63,49 +63,30 @@ const Reports = () => {
     };
 
 
-    const handleExportPDF = () => {
-        if (reports.length === 0) return alert("No hay datos para exportar");
-        const doc = new jsPDF();
-        doc.text("Reporte de Ventas", 14, 16);
-        doc.setFontSize(10);
+    const downloadExcel = async () => {
+        try {
+            // Usamos 'api' porque ya tiene el interceptor con el Token configurado
+            const response = await api.get("/api/admin/reports/export/excel", {
+                responseType: "blob", // IMPORTANTE: Indica que esperamos un archivo binario
+            });
 
-        const headers = [["Fecha", "Usuario", "Método", "Total", "Factura"]];
-        const rows = reports.map((r) => [
-            new Date(r.createdAt).toLocaleDateString(),
-            r.user?.name || "—",
-            r.paymentMethod || "Cash",
-            currency(r.bills?.totalWithTax),
-        ]);
+            // Crear un enlace temporal en el navegador para forzar la descarga
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", "reporte_ordenes.xlsx"); // Nombre del archivo
+            document.body.appendChild(link);
+            link.click();
 
-        doc.autoTable({
-            head: headers,
-            body: rows,
-            startY: 22,
-            theme: "grid",
-            styles: { fillColor: [26, 26, 26], textColor: [255, 255, 255] },
-            headStyles: { fillColor: [246, 177, 0], textColor: [18, 18, 18] },
-        });
+            // Limpieza
+            link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
 
-        const total = reports.reduce((s, r) => s + (r.bills?.totalWithTax || 0), 0);
-        doc.text(`Total General: ${currency(total)}`, 14, doc.lastAutoTable.finalY + 10);
-        doc.save("Reporte_Ventas.pdf");
+        } catch (error) {
+            console.error("Error descargando Excel:", error);
+            alert("Error al exportar el archivo. Verifica tu sesión.");
+        }
     };
-
-    const handleExportExcel = () => {
-        if (reports.length === 0) return alert("No hay datos para exportar");
-        const formatted = reports.map((r) => ({
-            Fecha: new Date(r.createdAt).toLocaleDateString(),
-            Usuario: r.user?.name || "—",
-            Método: r.paymentMethod || "Cash",
-            Total: Number(r.bills?.totalWithTax || 0),
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(formatted);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
-        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-        saveAs(new Blob([excelBuffer], { type: "application/octet-stream" }), "Reporte_Ventas.xlsx");
-    };
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
     return (
         <div>
@@ -131,14 +112,13 @@ const Reports = () => {
                        className="p-2 bg-[#1f1f1f] rounded text-white" />
             </div>
 
+            {/* ... resto del JSX ... */}
+
             {/* Botones exportar */}
             <div className="flex gap-3 mb-6">
-
                 <button
-                    onClick={() =>
-                        window.open(`${import.meta.env.VITE_API_URL}/api/admin/reports/export/excel`, "_blank")
-                    }
-                    className="bg-[#171717] px-4 py-2 rounded text-white"
+                    onClick={downloadExcel} // 👈 USAMOS LA NUEVA FUNCIÓN AQUÍ
+                    className="bg-[#171717] px-4 py-2 rounded text-white hover:bg-[#333] transition"
                 >
                     Exportar a Excel
                 </button>
