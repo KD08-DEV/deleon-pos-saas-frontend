@@ -46,7 +46,7 @@ const Reports = () => {
         try {
             console.log("Solicitando factura para ID:", orderId);
 
-            const res = await api.get(`/api/order/${orderId}/invoice`);
+            const res = await api.get(`/api/invoice/${orderId}`);
 
             console.log("Respuesta del servidor:", res.data);
 

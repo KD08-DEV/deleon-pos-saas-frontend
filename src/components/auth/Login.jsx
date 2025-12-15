@@ -29,7 +29,7 @@ const Login = () => {
         mutationFn: (reqData) => login(reqData),
         onSuccess: (res) => {
             const { data } = res;
-            const token = data?.token || data?.data?.token;
+            const token = res.data?.token;
             console.log("🔐 Login response:", data);
             if (token) {
                 localStorage.setItem("token", token);

@@ -27,9 +27,9 @@ const CartInfo = () => {
       <h1 className="text-lg text-[#e4e4e4] font-semibold tracking-wide">
         Order Details
       </h1>
-      <div className="mt-4 overflow-y-scroll scrollbar-hide h-[380px]" ref={scrolLRef} >
+      <div className="mt-4 overflow-y-auto scrollbar-hide" ref={scrolLRef}>
         {cartData.length === 0 ? (
-          <p className="text-[#ababab] text-sm flex justify-center items-center h-[380px]">Your cart is empty. Start adding items!</p>
+          <p className="text-[#ababab] text-sm flex justify-center items-center py-12">Your cart is empty. Start adding items!</p>
         ) : cartData.map((item, index) => {
             return (
                 <div

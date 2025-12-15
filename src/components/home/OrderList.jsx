@@ -4,49 +4,76 @@ import { FaCircle } from "react-icons/fa";
 import { getAvatarName } from "../../utils/index";
 
 const OrderList = ({ order }) => {
-    return (
-        <div className="flex items-start md:items-center gap-3 md:gap-5 mb-3">
-            <button className="bg-[#f6b100] p-3 text-lg md:text-xl font-bold rounded-lg shrink-0">
-                {getAvatarName(order.customerDetails.name)}
-            </button>
+    const customerName = order.customerDetails.name;
 
-            {/* min-w-0 permite que truncate funcione dentro de flex */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-2 md:gap-4 min-w-0">
-                <div className="flex flex-col items-start gap-0.5 min-w-0">
-                    <h1 className="text-[#f5f5f5] text-sm md:text-lg font-semibold tracking-wide truncate">
-                        {order.customerDetails.name}
-                    </h1>
-                    <p className="text-[#ababab] text-xs md:text-sm">{order.items.length} Items</p>
+    return (
+        <div className="flex items-center gap-4 p-3 rounded-xl bg-[#1c1c1c] hover:bg-[#222] transition-colors">
+            {/* Avatar */}
+            <div className="bg-[#f6b100] text-black font-bold text-sm md:text-base w-11 h-11 flex items-center justify-center rounded-lg shrink-0">
+                {getAvatarName(customerName)}
+            </div>
+
+            {/* Content */}
+            <div className="flex items-center justify-between w-full min-w-0 gap-3">
+                {/* Left info */}
+                <div className="flex flex-col min-w-0">
+                    <h3
+                        className="
+              text-[#f5f5f5] font-semibold
+              text-sm md:text-base
+              truncate
+              max-w-[140px] md:max-w-[180px] lg:max-w-[240px]
+            "
+                        title={customerName}
+                    >
+                        {customerName}
+                    </h3>
+
+                    <span className="text-xs text-[#9a9a9a]">
+            {order.items.length} items
+          </span>
                 </div>
 
-                {/* En pantallas pequeñas, quepa sin romper layout */}
-                <h1 className="text-[#f6b100] font-semibold border border-[#f6b100] rounded-lg px-2 py-1 flex items-center whitespace-nowrap text-xs md:text-sm self-start md:self-auto">
-                    Table <FaLongArrowAltRight className="text-[#ababab] mx-2 inline" />
-                    {order.table && order.table.tableNo ? (
-                        order.table.tableNo
-                    ) : (
-                        <span className="text-[#888] italic">No Table</span>
+                {/* Table */}
+                <div className="hidden sm:flex items-center gap-2 text-xs md:text-sm px-2 py-1 rounded-lg border border-[#f6b100] text-[#f6b100] whitespace-nowrap">
+                    Table
+                    <FaLongArrowAltRight className="opacity-60" />
+                    {order.table?.tableNo ?? (
+                        <span className="italic text-[#888]">No Table</span>
                     )}
-                </h1>
+                </div>
 
-                <div className="flex md:flex-col items-center md:items-end gap-2 md:gap-2 self-stretch md:self-auto">
-                    {order.orderStatus === "Ready" ? (
-                        <p className="text-green-600 bg-[#2e4a40] px-2 py-1 rounded-lg text-xs md:text-sm">
-                            <FaCheckDouble className="inline mr-2" /> {order.orderStatus}
-                        </p>
-                    ) : order.orderStatus === "Completed" ? (
-                        <p className="text-blue-600 bg-[#2e3e4a] px-2 py-1 rounded-lg text-xs md:text-sm">
-                            <FaCheckDouble className="inline mr-2" /> {order.orderStatus}
-                        </p>
-                    ) : order.orderStatus === "Cancelled" ? (
-                        <p className="text-red-600 bg-[#4a2e2e] px-2 py-1 rounded-lg text-xs md:text-sm">
-                            <FaCircle className="inline mr-2 text-red-600" /> {order.orderStatus}
-                        </p>
-                    ) : (
-                        <p className="text-yellow-600 bg-[#4a452e] px-2 py-1 rounded-lg text-xs md:text-sm">
-                            <FaCircle className="inline mr-2 text-yellow-600" /> {order.orderStatus}
-                        </p>
+                {/* Status */}
+                <div className="shrink-0">
+                    {order.orderStatus === "Ready" && (
+                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#1f3f35] text-green-500">
+              <FaCheckDouble />
+              Ready
+            </span>
                     )}
+
+                    {order.orderStatus === "Completed" && (
+                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#1f2f3f] text-blue-500">
+              <FaCheckDouble />
+              Completed
+            </span>
+                    )}
+
+                    {order.orderStatus === "Cancelled" && (
+                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#3f1f1f] text-red-500">
+              <FaCircle />
+              Cancelled
+            </span>
+                    )}
+
+                    {order.orderStatus !== "Ready" &&
+                        order.orderStatus !== "Completed" &&
+                        order.orderStatus !== "Cancelled" && (
+                            <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#3f3a1f] text-yellow-500">
+                <FaCircle />
+                                {order.orderStatus}
+              </span>
+                        )}
                 </div>
             </div>
         </div>

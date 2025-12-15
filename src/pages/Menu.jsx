@@ -130,54 +130,61 @@ const Menu = () => {
 
 
     return (
-        <section className="bg-[#1f1f1f] h-[calc(100vh-5rem)] overflow-hidden flex gap-3">
-            {/* Left */}
-            <div className="flex-[3]">
-                <div className="flex items-center justify-between px-10 py-4">
-                    <div className="flex items-center gap-4">
-                        <BackButton />
-                        <h1 className="text-[#f5f5f5] text-2xl font-bold tracking-wider">
-                            Menu
-                        </h1>
-                    </div>
-                    <div className="flex items-center justify-around gap-4">
-                        <div className="flex items-center gap-3 cursor-pointer">
-                            <MdRestaurantMenu className="text-[#f5f5f5] text-4xl" />
-                            <div className="flex flex-col items-start">
-                                <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide">
-                                    {order?.customerDetails?.name || "Customer Name"}
-                                </h1>
-                                <p className="text-xs text-[#ababab] font-medium">
-                                    Table : {order?.table?.tableNo || "N/A"}
-                                </p>
+        <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col">
+            {/* CONTENT */}
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row gap-3">
+                {/* LEFT */}
+                <div className="flex-1 lg:flex-[3] min-w-0 flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between px-10 py-4 shrink-0">
+                        <div className="flex items-center gap-4">
+                            <BackButton />
+                            <h1 className="text-[#f5f5f5] text-2xl font-bold tracking-wider">Menu</h1>
+                        </div>
+
+                        <div className="flex items-center justify-around gap-4">
+                            <div className="flex items-center gap-3 cursor-pointer">
+                                <MdRestaurantMenu className="text-[#f5f5f5] text-4xl" />
+                                <div className="flex flex-col items-start">
+                                    <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide">
+                                        {order?.customerDetails?.name || "Customer Name"}
+                                    </h1>
+                                    <p className="text-xs text-[#ababab] font-medium">
+                                        Table : {order?.table?.tableNo || "N/A"}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* Menu scroll area */}
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <MenuContainer orderId={orderId} />
+                    </div>
                 </div>
 
-                <MenuContainer orderId={orderId} />
+                {/* RIGHT */}
+                <aside className="w-full lg:w-[420px] lg:shrink-0 bg-[#1a1a1a] mt-0 lg:mt-4 lg:mr-3 rounded-lg flex flex-col min-h-0 overflow-hidden">
+                    {isOrderOpen && (
+                        <>
+                            <CustomerInfo order={order} />
+                            <hr className="border-[#2a2a2a] border-t-2" />
+
+                            {/* Right panel scroll */}
+                            <div className="flex-1 min-h-0 overflow-y-auto pb-24">
+                                <CartInfo orderId={orderId} />
+                                <hr className="border-[#2a2a2a] border-t-2" />
+                                <Bill orderId={orderId} setIsOrderModalOpen={setIsOrderModalOpen} />
+                            </div>
+                        </>
+                    )}
+                </aside>
             </div>
 
-            {/* Right */}
-            <div className="flex-[1] bg-[#1a1a1a] mt-4 mr-3 h-[780px] rounded-lg pt-2">
-                {isOrderOpen && (
-                    <>
-                        <CustomerInfo order={order} />
-                        <hr className="border-[#2a2a2a] border-t-2" />
-                        <CartInfo orderId={orderId} />
-                        <hr className="border-[#2a2a2a] border-t-2" />
-                        <Bill
-                            orderId={orderId}
-                            setIsOrderModalOpen={setIsOrderModalOpen}
-                            onOrderFinalized={handleOrderFinalized}
-                        />
-                    </>
-                )}
-            </div>
-
+            {/* BottomNav (NO fixed) */}
             <BottomNav />
-        </section>
+        </div>
     );
+
 };
 
 export default Menu;

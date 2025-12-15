@@ -30,6 +30,9 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
     });
 
     const dishes = Array.isArray(data) ? data : [];
+    const [search, setSearch] = useState("");
+    const searchTrim = search.trim().toLowerCase();
+
 
     // Agrupar por categoría (ordenadas alfabéticamente)
     const categories = useMemo(() => {
@@ -41,6 +44,19 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
         }, {});
         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
     }, [dishes]);
+    const filteredCategories = useMemo(() => {
+        if (!searchTrim) return categories;
+
+        return categories
+            .map(([categoryName, items]) => {
+                const filtered = items.filter((d) =>
+                    (d.name || "").toLowerCase().includes(searchTrim)
+                );
+                return [categoryName, filtered];
+            })
+            .filter(([, items]) => items.length > 0);
+    }, [categories, searchTrim]);
+
 
     // Acordeón: recordar última categoría abierta
     const [openCategory, setOpenCategory] = useState(() => {
@@ -131,8 +147,18 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
     };
 
     return (
-        <div className="overflow-y-scroll h-[calc(100vh-9rem)] scrollbar-hide px-10 pb-6">
+        <div className="h-full overflow-y-auto scrollbar-hide px-10 pb-6">
             <h2 className="text-[#f5f5f5] text-xl font-semibold mb-6">Available Dishes</h2>
+            <div className="mb-4">
+                <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search dishes..."
+                    className="w-full px-4 py-3 rounded-xl bg-[#1a1a1a] border border-[#2a2a2a]
+               text-[#f5f5f5] outline-none
+               focus:ring-1 focus:ring-[#f6b100] focus:border-[#f6b100]"
+                />
+            </div>
 
             {isLoading && (
                 <p className="text-[#ababab] text-center py-10">Loading menu...</p>
@@ -146,7 +172,12 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
             {!isLoading && !isError && categories.length > 0 && (
                 <div className="flex flex-col gap-5">
-                    {categories.map(([categoryName, items]) => {
+                    {!isLoading && !isError && filteredCategories.length === 0 && (
+                        <p className="text-[#ababab] text-center py-10">
+                            No dishes found for “{search}”.
+                        </p>
+                    )}
+                    {filteredCategories.map(([categoryName, items])=> {
                         const isOpen = openCategory === categoryName;
                         return (
                             <div
