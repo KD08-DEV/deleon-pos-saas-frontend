@@ -78,7 +78,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
 
     // Payload que mandamos y también usamos como fallback
     const buildOrderPayload = () => {
-        console.log("🛒 ITEMS REALES DEL CARRITO:", itemsArray);
+
         const items = itemsArray.map((item) => {
             const quantity = num(item.quantity ?? 1);
             const unitPrice = num(

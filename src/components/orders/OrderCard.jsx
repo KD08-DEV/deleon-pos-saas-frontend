@@ -110,7 +110,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
                 },
             };
 
-            console.log("📤 ENVIANDO AL BACKEND:", payload);
+
 
             const res = await updateOrder(order._id, payload);
             const autoDeleted = res?.data?.autoDeleted;

@@ -47,15 +47,14 @@ const Reports = () => {
             console.log("Solicitando factura para ID:", orderId);
 
             const res = await api.get(`/api/invoice/${orderId}`);
+            const url = res.data?.url || res.data?.invoiceUrl;
 
-            console.log("Respuesta del servidor:", res.data);
-
-            if (!res.data?.success || !res.data?.url) {
+            if (!res.data?.success || !url) {
                 alert("No se pudo obtener la factura");
                 return;
             }
 
-            window.open(res.data.url, "_blank");
+            window.open(url, "_blank", "noopener,noreferrer");
         } catch (error) {
             console.error("Error cargando factura:", error);
             alert("Error al cargar la factura");

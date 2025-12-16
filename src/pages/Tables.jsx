@@ -14,24 +14,28 @@ export default function Tables() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
-    const user = useSelector((state) => state.user);
-    const role = user?.role || user?.user?.role || "User";
+    const userState = useSelector((state) => state.user);
+
+// soporta varios shapes: {userData}, {user}, o el usuario directo
+    const currentUser = userState?.userData || userState?.user || userState;
+
+
 
     const orderId = new URLSearchParams(location.search).get("orderId");
     const dispatch = useDispatch();
 
     useEffect(() => {
-        if (!user) return;
+        if (!currentUser) return;
 
-        const isTestAdmin = user?.email === "test@gmail.com";
-        const hasWrongRole = user?.role?.toLowerCase?.() !== "admin";
+        const isTestAdmin = currentUser?.email === "test@gmail.com";
+        const hasWrongRole = currentUser?.role?.toLowerCase?.() !== "admin";
 
         if (isTestAdmin && hasWrongRole) {
-            const fixedUser = { ...user, role: "Admin" };
+            const fixedUser = { ...currentUser, role: "Admin" };
             dispatch(setUser(fixedUser));
             console.log("✅ Rol corregido a Admin para:", fixedUser.email);
         }
-    }, [user, dispatch]);
+    }, [currentUser, dispatch]);
 
 
     const { data, isLoading } = useQuery({
@@ -54,83 +58,82 @@ export default function Tables() {
     const mUpdateOrder = useMutation({
         mutationFn: ({ id, body }) => updateOrder(id, body),
     });
+    const normalizedRole =
+        (currentUser?.role || currentUser?.user?.role || "").toString().toLowerCase();
+
 
     const handlePickTable = async (table) => {
-        const tableIdOf = (t) => t?._id ?? t?.id ?? t?.tableId ?? null;
+        const tableId = table?._id;
+        const status = table?.status || "Available";
 
-        // 1) Tarjeta "Quick" (virtual/sin mesa): solo continúa si venimos con orderId
+        // QUICK (sin mesa física)
         if (table?.isVirtual) {
             if (!orderId) {
-                enqueueSnackbar("Primero crea una orden para continuar sin mesa.", { variant: "warning" });
+                enqueueSnackbar("Primero crea una orden para continuar.", {
+                    variant: "warning",
+                });
                 return;
             }
             navigate(`/menu?orderId=${orderId}`);
             return;
         }
 
-        const status  = table?.status || "Available";
-        const tableId = tableIdOf(table);
-        if (!tableId) {
-            console.error("Mesa sin id =>", table);
-            enqueueSnackbar("No se pudo leer el ID de la mesa. Refresca o revisa el backend.", { variant: "error" });
-            return; // ⛔️ no llames updateTable sin id
-        }
-
-        // 2) Si NO vienes con orderId y la mesa está libre, no dejes pasar
-        if (!orderId && status === "Available") {
-            enqueueSnackbar("Crea una orden antes de asignar una mesa.", { variant: "warning" });
+        // Mesa AVAILABLE + sin orderId => bloquear
+        if (status === "Available" && !orderId) {
+            enqueueSnackbar("Debes crear una orden antes de usar esta mesa.", {
+                variant: "warning",
+            });
             return;
         }
 
-        // 3) Mesa ocupada: si eres Admin, abre la orden asociada; si no, avisa
-        if (status !== "Available") {
-            // soporta distintos formatos: _id dentro de currentOrder, id plano, etc.
-            const orderIdToEdit =
-                table?.currentOrder?._id ??
-                table?.currentOrder ??
-                table?.orderId ??
-                table?.order?._id ??
+        // Mesa BOOKED => abrir orden existente (si tienes permiso)
+        if (status === "Booked") {
+            const existingOrderId =
+                table?.currentOrder?._id ||
+                table?.currentOrder?.id ||
+                table?.currentOrder ||
                 null;
 
-            const isAdmin =
-                user?.role?.toLowerCase?.() === "admin" ||
-                role?.toLowerCase?.() === "admin";
+            const canEditBooked =
+                normalizedRole === "admin" || normalizedRole === "owner" || normalizedRole === "manager";
 
-            if (isAdmin && orderIdToEdit) {
-                navigate(`/menu?orderId=${orderIdToEdit}`);
+            // Debug rápido (puedes borrarlo luego)
+            console.log("ROLE:", normalizedRole, "existingOrderId:", existingOrderId);
+
+            if (canEditBooked && existingOrderId) {
+                navigate(`/menu?orderId=${existingOrderId}`);
                 return;
             }
-            console.log("🧩 DEBUG handlePickTable");
-            console.log("User role:", role);
-            console.log("Table clicked:", table);
-            console.log("Current Order:", table?.currentOrder);
-            console.log("Current Order ID:", table?.currentOrder?._id);
 
-            enqueueSnackbar("Mesa ocupada. No puedes editar esta orden.", { variant: "warning" });
+            if (canEditBooked && !existingOrderId) {
+                enqueueSnackbar(
+                    "Esta mesa está marcada como ocupada pero no tiene una orden asociada.",
+                    { variant: "warning" }
+                );
+                return;
+            }
+
+            enqueueSnackbar("Mesa ocupada. No tienes permisos para editar esta orden.", {
+                variant: "warning",
+            });
             return;
         }
 
-        // 4) Mesa libre + orderId → asigna mesa a la orden y marca la mesa como Booked
+        // Mesa AVAILABLE + orderId => asignar mesa a la orden
         try {
             await mUpdateOrder.mutateAsync({
                 id: orderId,
-                body: {
-                    // 👉 aquí mandamos el _id real de la mesa
-                    table: tableId,
-                },
-            });
-
-            await mUpdateTable.mutateAsync({
-                id: tableId,
-                body: { status: "Booked" },
+                body: { table: tableId },
             });
 
             navigate(`/menu?orderId=${orderId}`);
-        } catch (e) {
-            console.error(e);
-            enqueueSnackbar("No se pudo asignar la mesa. Inténtalo de nuevo.", { variant: "error" });
+        } catch (error) {
+            enqueueSnackbar("No se pudo asignar la mesa.", { variant: "error" });
         }
     };
+
+
+
 
     // Tarjeta virtual (no se guarda en BD)
     const quickCard = { _id: "no-table", isVirtual: true, tableNo: 0, status: "Quick", seats: 0 };

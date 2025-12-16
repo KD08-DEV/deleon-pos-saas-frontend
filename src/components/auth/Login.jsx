@@ -30,7 +30,7 @@ const Login = () => {
         onSuccess: (res) => {
             const { data } = res;
             const token = res.data?.token;
-            console.log("🔐 Login response:", data);
+
             if (token) {
                 localStorage.setItem("token", token);
             }

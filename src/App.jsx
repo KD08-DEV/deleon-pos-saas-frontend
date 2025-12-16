@@ -141,16 +141,16 @@ function Layout() {
 function ProtectedRoutes({ children, allowedRoles }) {
     const { userData, isAuth } = useSelector((state) => state.user);
 
-    console.log("🔍 ProtectedRoutes - Estado actual:");
+
     console.log("userData:", userData);
 
     if (!isAuth) {
-        console.log("⛔ Usuario no autenticado → /auth");
+
         return <Navigate to="/auth" />;
     }
 
     if (!userData?.role) {
-        console.log("⌛ Usuario sin rol… cargando");
+
         return (
             <div className="flex items-center justify-center h-screen text-white">
                 Cargando usuario...
@@ -163,11 +163,11 @@ function ProtectedRoutes({ children, allowedRoles }) {
         Array.isArray(allowedRoles) &&
         !allowedRoles.includes(userData.role)
     ) {
-        console.log(`🚫 Acceso denegado: rol ${userData.role} no permitido`);
+
         return <Navigate to="/" replace />;
     }
 
-    console.log("✅ Acceso permitido");
+
     return <>{children}</>;
 }
 

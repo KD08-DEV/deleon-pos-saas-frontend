@@ -13,8 +13,7 @@ const RecentOrders = () => {
     const queryClient = useQueryClient();
 
     const handleStatusChange = ({ orderId, orderStatus }) => {
-        console.log("🧾 Order ID:", orderId);
-        console.log("📦 New Status:", orderStatus);
+
         orderStatusUpdateMutation.mutate({ orderId, orderStatus });
 
     };

@@ -27,15 +27,6 @@ const TIME_RANGES = [
         },
     },
     {
-        key: "last30",
-        label: "Last 30 days",
-        build: () => {
-            const end = endOfDay(new Date());
-            const start = startOfDay(addDays(end, -29));
-            return { start, end };
-        },
-    },
-    {
         key: "thisMonth",
         label: "This month",
         build: () => {
@@ -94,9 +85,20 @@ const Metrics = () => {
     const { data: dishesData } = useQuery({ queryKey: ["dishes"], queryFn: getDishes });
     const { data: tablesData } = useQuery({ queryKey: ["tables"], queryFn: getTables });
 
-    const orders = ordersData?.data?.data ?? [];
-    const dishes = dishesData?.data ?? [];
-    const tables = tablesData?.data ?? [];
+    const orders =
+        ordersData?.data?.data ??
+        ordersData?.data ??
+        [];
+
+    const dishes =
+        dishesData?.data?.data ??
+        dishesData?.data ??
+        [];
+
+    const tables =
+        tablesData?.data?.data ??
+        tablesData?.data ??
+        [];
 
     // Filtrar solo órdenes completadas o listas
     const validOrders = orders.filter(
@@ -110,7 +112,7 @@ const Metrics = () => {
     );
 
     // 2) Rango seleccionado
-    const [rangeKey, setRangeKey] = useState("last30");
+    const [rangeKey, setRangeKey] = useState("all");
     const selectedRange = useMemo(
         () => TIME_RANGES.find((r) => r.key === rangeKey) ?? TIME_RANGES[0],
         [rangeKey]

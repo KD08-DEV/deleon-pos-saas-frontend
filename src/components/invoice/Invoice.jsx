@@ -9,9 +9,7 @@ import useTenant from "../../hooks/useTenant.js";
 const Invoice = ({ order, onClose }) => {
     const { business, fiscal, name } = useTenant();
     const receiptRef = useRef(null);
-    console.log("💼 BUSINESS DESDE useTenant:", business);
-    console.log("📑 FISCAL DESDE useTenant:", fiscal);
-    console.log("🏢 TENANT NAME:", name);
+
 
     // =========================
     //   DATOS DEL NEGOCIO
