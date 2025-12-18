@@ -1,6 +1,6 @@
 import React from "react";
 import { FaUserCircle, FaBell } from "react-icons/fa";
-import logo from "../../assets/images/logo.png";
+import logoApp from "../../assets/images/logo-mark.png";
 import { useDispatch, useSelector } from "react-redux";
 import { IoLogOut } from "react-icons/io5";
 import { useMutation } from "@tanstack/react-query";
@@ -25,15 +25,20 @@ const Header = () => {
     const handleLogout = () => logoutMutation.mutate();
 
     return (
-        <header className="flex justify-between items-center py-4 px-8 bg-[#1a1a1a]">
+        <header className="flex justify-between items-center h-20 px-8 bg-[#1a1a1a]">
             <div
                 onClick={() => navigate("/")}
                 className="flex items-center gap-2 cursor-pointer"
             >
-                <img src={logo} className="h-8 w-8" alt="restro logo" />
-                <h1 className="text-lg font-semibold text-[#f5f5f5] tracking-wide">
-                    Restro
+                <img
+                    src={logoApp}
+                    className="h-12 object-contain"
+                />
+                <h1 className="text-xl tracking-wide">
+                    <span className="font-semibold text-[#f5f5f5]">DeLeon </span>
+                    <span className="font-bold text-blue-500">Soft</span>
                 </h1>
+
             </div>
 
             <div className="flex items-center gap-4">

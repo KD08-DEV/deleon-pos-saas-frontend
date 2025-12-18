@@ -104,7 +104,7 @@ const Reports = () => {
                         className="p-2 bg-[#1f1f1f] rounded text-white">
                     <option value="">Todos los métodos</option>
                     <option value="Cash">Cash</option>
-                    <option value="Online">Online</option>
+                    <option value="Tarjeta">Tarjeta</option>
                 </select>
                 <input placeholder="Usuario" value={filters.user}
                        onChange={(e) => setFilters((f) => ({ ...f, user: e.target.value }))}

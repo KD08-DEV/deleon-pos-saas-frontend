@@ -148,12 +148,12 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
     return (
         <div className="h-full overflow-y-auto scrollbar-hide px-10 pb-6">
-            <h2 className="text-[#f5f5f5] text-xl font-semibold mb-6">Available Dishes</h2>
+            <h2 className="text-[#f5f5f5] text-xl font-semibold mb-6">Platos Disponibles</h2>
             <div className="mb-4">
                 <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search dishes..."
+                    placeholder="Buscar platos..."
                     className="w-full px-4 py-3 rounded-xl bg-[#1a1a1a] border border-[#2a2a2a]
                text-[#f5f5f5] outline-none
                focus:ring-1 focus:ring-[#f6b100] focus:border-[#f6b100]"
@@ -167,7 +167,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                 <p className="text-red-500 text-center py-10">Error loading menu.</p>
             )}
             {!isLoading && !isError && categories.length === 0 && (
-                <p className="text-[#ababab] text-center py-10">No dishes available.</p>
+                <p className="text-[#ababab] text-center py-10">Platos no disponibles</p>
             )}
 
             {!isLoading && !isError && categories.length > 0 && (

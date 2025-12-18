@@ -29,7 +29,7 @@ const PopularDishes = ({ fill = false }) => {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 sm:px-6 py-3 gap-2 sm:gap-0">
                     <h1 className="text-[#f5f5f5] text-base sm:text-lg font-semibold tracking-wide">
-                        Popular Dishes
+                        Platos Populares
                     </h1>
                 </div>
 
@@ -53,7 +53,7 @@ const PopularDishes = ({ fill = false }) => {
               div::-webkit-scrollbar-track {
                 background: #151515;
               }
-              div::-webkit-scrollbar-thumb {
+          div::-webkit-scrollbar-thumb {
                 background-color: #3a3a3a;
                 border-radius: 10px;
                 border: 2px solid #1a1a1a;
@@ -66,15 +66,15 @@ const PopularDishes = ({ fill = false }) => {
 
                     {isLoading ? (
                         <p className="text-[#ababab] text-center py-8 text-sm sm:text-base">
-                            Loading dishes...
+                            Cargando platos...
                         </p>
                     ) : isError ? (
                         <p className="text-red-500 text-center py-8 text-sm sm:text-base">
-                            Error loading dishes
+                            Error cargando platos.
                         </p>
                     ) : dishes.length === 0 ? (
                         <p className="text-[#ababab] text-center py-8 text-sm sm:text-base">
-                            No dishes available yet.
+                            Platos no disponibles todavia.
                         </p>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
@@ -96,11 +96,11 @@ const PopularDishes = ({ fill = false }) => {
                                             {dish.name}
                                         </h1>
                                         <p className="text-[#f5f5f5] text-xs sm:text-sm font-semibold mt-1">
-                                            <span className="text-[#ababab]">Category: </span>
+                                            <span className="text-[#ababab]">Categoria: </span>
                                             {dish.category || "N/A"}
                                         </p>
                                         <p className="text-[#f5f5f5] text-xs sm:text-sm font-semibold mt-1">
-                                            <span className="text-[#ababab]">Price: </span>$
+                                            <span className="text-[#ababab]">Precio: </span>$
                                             {dish.price}
                                         </p>
                                     </div>

@@ -10,7 +10,7 @@ const MiniCard = ({ title, icon, number, footerNum }) => {
 
     // Identify card types
     const isEarnings = title === "Total Earnings" || title === "Revenue";
-    const isActiveOrders = title === "Active Orders";
+    const isActiveOrders = title === "Ordenes Activas";
 
     // Format number
     const displayedNumber = isEarnings

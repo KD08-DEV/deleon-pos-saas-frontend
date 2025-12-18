@@ -127,7 +127,7 @@ const BottomNav = () => {
                     } w-[300px]`}
                     onClick={() => navigate("/tables")}
                 >
-                    <MdTableBar className="inline mr-2" size={20} /> Tables
+                    <MdTableBar className="inline mr-2" size={20} />Mesas
                 </button>
 
                 {/* 🔒 Mostrar botón Admin SOLO si el rol es "Admin" */}

@@ -28,10 +28,10 @@ const Greetings = () => {
             {/* Saludo y mensaje */}
             <div className="text-left w-full sm:w-auto">
                 <h1 className="text-[#f5f5f5] text-xl sm:text-2xl font-semibold tracking-wide">
-                    Good Morning, {userData?.name || "TEST USER"}
+                    Saludos, {userData?.name || "TEST USER"}
                 </h1>
                 <p className="text-[#ababab] text-sm sm:text-base">
-                    Give your best services for customers 😀
+                    Ofrezca sus mejores servicios a los clientes. 😀
                 </p>
             </div>
 

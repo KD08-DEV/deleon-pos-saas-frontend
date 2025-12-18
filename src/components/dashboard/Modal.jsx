@@ -53,7 +53,7 @@ const Modal = ({ setIsTableModalOpen }) => {
         {/* Modal Header */}
 
         <div className="flex justify-between item-center mb-4">
-          <h2 className="text-[#f5f5f5] text-xl font-semibold">Add Table</h2>
+          <h2 className="text-[#f5f5f5] text-xl font-semibold">Agregar Mesa</h2>
           <button
             onClick={handleCloseModal}
             className="text-[#f5f5f5] hover:text-red-500"
@@ -67,7 +67,7 @@ const Modal = ({ setIsTableModalOpen }) => {
         <form onSubmit={handleSubmit} className="space-y-4 mt-10">
           <div>
             <label className="block text-[#ababab] mb-2 mt-3 text-sm font-medium">
-              Table Number
+              Numero de la mesa
             </label>
             <div className="flex item-center rounded-lg p-5 px-4 bg-[#1f1f1f]">
               <input
@@ -82,7 +82,7 @@ const Modal = ({ setIsTableModalOpen }) => {
           </div>
           <div>
             <label className="block text-[#ababab] mb-2 mt-3 text-sm font-medium">
-              Number of Seats
+            Numeros de sillas
             </label>
             <div className="flex item-center rounded-lg p-5 px-4 bg-[#1f1f1f]">
               <input
@@ -100,7 +100,7 @@ const Modal = ({ setIsTableModalOpen }) => {
             type="submit"
             className="w-full rounded-lg mt-10 mb-6 py-3 text-lg bg-yellow-400 text-gray-900 font-bold"
           >
-            Add Table
+            Agregar mesa
           </button>
         </form>
       </motion.div>

@@ -52,7 +52,7 @@ const RecentOrders = () => {
     return (
         <div className="container mx-auto bg-[#262626] rounded-lg p-4 sm:p-6 min-h-[calc(100vh-5rem)] flex flex-col overflow-hidden">
             <h2 className="text-[#f5f5f5] text-lg sm:text-xl font-semibold mb-4">
-                Recent Orders
+                Ordenes Recientes
             </h2>
 
             {/* 🌐 Vista tabla (solo visible en pantallas grandes) */}
@@ -87,14 +87,14 @@ const RecentOrders = () => {
                     <thead className="bg-[#333] text-[#ababab] text-sm sm:text-base">
                     <tr>
                         <th className="p-3 whitespace-nowrap">Order ID</th>
-                        <th className="p-3 whitespace-nowrap">Customer</th>
+                        <th className="p-3 whitespace-nowrap">Cliente</th>
                         <th className="p-3 whitespace-nowrap">Status</th>
-                        <th className="p-3 whitespace-nowrap">Date & Time</th>
-                        <th className="p-3 whitespace-nowrap">Items</th>
-                        <th className="p-3 whitespace-nowrap">Table No</th>
+                        <th className="p-3 whitespace-nowrap">Hora & Fecha</th>
+                        <th className="p-3 whitespace-nowrap">Articulos</th>
+                        <th className="p-3 whitespace-nowrap">No Mesa</th>
                         <th className="p-3 whitespace-nowrap">Total</th>
                         <th className="p-3 text-center whitespace-nowrap">
-                            Payment Method
+                            Metodo de pago
                         </th>
                     </tr>
                     </thead>

@@ -137,7 +137,7 @@ const Orders = () => {
                     ))
                 ) : (
                     <p className="text-center text-gray-400 col-span-full py-10">
-                        No orders available
+                        No hay pedidos disponibles
                     </p>
                 )}
             </div>

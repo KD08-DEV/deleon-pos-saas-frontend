@@ -59,7 +59,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                 className="bg-[#262626] p-6 rounded-lg shadow-lg w-96"
             >
                 <div className="flex justify-between item-center mb-4">
-                    <h2 className="text-[#f5f5f5] text-xl font-semibold">Add Dish</h2>
+                    <h2 className="text-[#f5f5f5] text-xl font-semibold">Agregar plato</h2>
                     <button
                         onClick={handleCloseModal}
                         className="text-[#f5f5f5] hover:text-red-500"
@@ -71,7 +71,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                 <form onSubmit={handleSubmit} className="space-y-4 mt-10">
                     <div>
                         <label className="block text-[#ababab] mb-2 mt-3 text-sm font-medium">
-                            Dish Name
+                            Nombre del plato
                         </label>
                         <div className="flex item-center rounded-lg p-5 px-4 bg-[#1f1f1f]">
                             <input
@@ -135,7 +135,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                         type="submit"
                         className="w-full rounded-lg mt-10 mb-6 py-3 text-lg bg-yellow-400 text-gray-900 font-bold"
                     >
-                        Add Dish
+                        Agregar plato
                     </button>
                 </form>
             </motion.div>

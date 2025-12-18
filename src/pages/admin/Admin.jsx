@@ -44,7 +44,7 @@ const Admin = () => {
         staleTime: 30_000,
     });
 
-    const plan = usageData?.plan?.toUpperCase() || "BASIC";
+    const plan = usageData?.plan?.toUpperCase() || "Emprendedor";
     const limits = usageData?.limits || {};
     const usage = usageData?.usage || {};
 
@@ -112,8 +112,8 @@ const Admin = () => {
                             Equipo
                         </p>
                         <p className="text-lg font-semibold">
-                            {usage.admins || 0} Admins · {usage.cashiers || 0} Cashiers ·{" "}
-                            {usage.waiters || 0} Waiters
+                            {usage.admins || 0} Admins · {usage.cashiers || 0} Cajeras ·{" "}
+                            {usage.waiters || 0} Meseros
                         </p>
                         <p className="mt-3 text-xs text-gray-400">
                             Total empleados activos:{" "}

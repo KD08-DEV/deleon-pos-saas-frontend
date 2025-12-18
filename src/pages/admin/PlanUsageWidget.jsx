@@ -18,7 +18,7 @@ const PlanUsageWidget = () => {
     if (isLoading) {
         return (
             <div className="p-4 bg-gray-900 rounded-xl">
-                <p className="text-sm text-gray-400">Loading plan usage…</p>
+                <p className="text-sm text-gray-400">Cargando el plan usado…</p>
             </div>
         );
     }
@@ -27,7 +27,7 @@ const PlanUsageWidget = () => {
         return (
             <div className="p-4 bg-red-900/40 border border-red-500/40 rounded-xl">
                 <p className="text-sm text-red-200">
-                    Error loading plan usage. Please try again later.
+                    Error cargando el plan usado. Porfavor intentelo mas tarde.
                 </p>
             </div>
         );
@@ -35,7 +35,7 @@ const PlanUsageWidget = () => {
 
     const { plan, limits, usage, remaining } = data;
 
-    const planLabel = plan?.toUpperCase() || "BASIC";
+    const planLabel = plan?.toUpperCase() ;
 
     const progress = (used, max) => {
         if (max === null || max === undefined) return 0;
@@ -50,37 +50,37 @@ const PlanUsageWidget = () => {
 
     const rows = [
         {
-            label: "Total users",
+            label: "Usuarios totales",
             used: usage.users,
             max: limits.maxUsers,
             remaining: remaining.users,
         },
         {
-            label: "Admins (Owner + Admin)",
+            label: "Admins ",
             used: usage.admins,
             max: limits.maxAdmins,
             remaining: remaining.admins,
         },
         {
-            label: "Cashiers",
+            label: "Cajeras",
             used: usage.cashiers,
             max: limits.maxCashiers,
             remaining: remaining.cashiers,
         },
         {
-            label: "Waiters",
+            label: "Meseros",
             used: usage.waiters,
             max: limits.maxWaiters,
             remaining: remaining.waiters,
         },
         {
-            label: "Dishes",
+            label: "Platos",
             used: usage.dishes,
             max: limits.maxDishes,
             remaining: remaining.dishes,
         },
         {
-            label: "Tables",
+            label: "Mesas",
             used: usage.tables,
             max: limits.maxTables,
             remaining: remaining.tables,
@@ -93,17 +93,17 @@ const PlanUsageWidget = () => {
                 <div className="flex items-center justify-between mb-4">
                     <div>
                         <p className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                            Subscription
+                            Suscripción
                         </p>
                         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            Current plan:{" "}
+                            Plan Actual:{" "}
                             <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 text-xs border border-yellow-500/40">
                 {planLabel}
               </span>
                         </h2>
                         <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                             <FiTrendingUp className="text-yellow-400" />
-                            Usage based on your tenant resources.
+                            Uso basado en los recursos de su inquilino.
                         </p>
                     </div>
 
@@ -113,7 +113,7 @@ const PlanUsageWidget = () => {
                         className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500 text-black text-xs font-semibold hover:bg-yellow-400 transition"
                     >
                         <MdUpgrade size={16} />
-                        Upgrade plan
+                        Mejorar plan
                     </button>
                 </div>
 
@@ -153,10 +153,9 @@ const PlanUsageWidget = () => {
                     })}
                 </div>
 
-                {plan !== "enterprise" && (
+                {plan !== "vip" && (
                     <p className="mt-3 text-[11px] text-gray-500">
-                        Reached the limits? Upgrade to PRO or ENTERPRISE for more users,
-                        tables and dishes.
+                        ¿Has llegado al límite? Pásate a PRO o VIP para obtener más usuarios, mesas y platos.
                     </p>
                 )}
             </div>
@@ -169,7 +168,7 @@ const PlanUsageWidget = () => {
 };
 
 const UpgradePlanModal = ({ onClose, plan }) => {
-    const currentPlan = plan?.toUpperCase() || "BASIC";
+    const currentPlan = plan?.toUpperCase() || "EMPRENDEDOR";
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -179,16 +178,15 @@ const UpgradePlanModal = ({ onClose, plan }) => {
                     Upgrade your plan
                 </h3>
                 <p className="text-sm text-gray-300 mb-4">
-                    Your current plan is{" "}
+                    Tu plan actual es{" "}
                     <span className="font-semibold text-yellow-400">{currentPlan}</span>.
-                    To unlock higher limits (more users, dishes and tables), please contact
-                    support or your account manager.
+                    Para desbloquear límites más altos (más usuarios, platos y mesas), contacta con el equipo de soporte o con tu gestor de cuenta.
                 </p>
 
                 <ul className="text-xs text-gray-400 mb-4 list-disc pl-4 space-y-1">
-                    <li>More employees (admins, cashiers, waiters).</li>
-                    <li>More tables and dishes for your restaurant.</li>
-                    <li>Multi-branch support on higher tiers.</li>
+                    <li>Más empleados (administradores, cajeros, camareros).</li>
+                    <li>Más mesas y platos para tu restaurante.</li>
+                    <li>Soporte multisucursal en niveles superiores.</li>
                 </ul>
 
                 <div className="flex justify-end gap-2">

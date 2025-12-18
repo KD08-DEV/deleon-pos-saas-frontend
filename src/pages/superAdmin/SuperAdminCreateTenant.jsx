@@ -11,7 +11,7 @@ const SuperAdminCreateTenant = () => {
 
         // Tenant info
         tenantName: "",
-        plan: "basic",
+        plan: "emprendedor",
 
         // Admin info
         adminName: "",
@@ -106,9 +106,9 @@ const SuperAdminCreateTenant = () => {
                         onChange={handleChange}
                         className="w-full p-2 border rounded bg-white text-black"
                     >
-                        <option value="basic">Basic</option>
+                        <option value="emprendedor">emprendedor</option>
                         <option value="pro">Pro</option>
-                        <option value="enterprise">Enterprise</option>
+                        <option value="vip">VIP</option>
                     </select>
                 </div>
 

@@ -35,7 +35,7 @@ export default function DishForm({ onClose }) {
                 </button>
 
                 <h2 className="text-2xl font-semibold text-[#f5f5f5] mb-6 text-center">
-                    Add New Dish
+                    Agregar Plato
                 </h2>
 
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -43,7 +43,7 @@ export default function DishForm({ onClose }) {
                         name="name"
                         value={form.name}
                         onChange={handleChange}
-                        placeholder="Dish name"
+                        placeholder="Nombre del plato"
                         className="border w-full p-2 rounded bg-[#2a2a2a] text-[#f5f5f5]"
                         required
                     />
@@ -51,7 +51,7 @@ export default function DishForm({ onClose }) {
                         name="price"
                         value={form.price}
                         onChange={handleChange}
-                        placeholder="Price"
+                        placeholder="Precio"
                         type="number"
                         className="border w-full p-2 rounded bg-[#2a2a2a] text-[#f5f5f5]"
                         required
@@ -60,7 +60,7 @@ export default function DishForm({ onClose }) {
                         name="category"
                         value={form.category}
                         onChange={handleChange}
-                        placeholder="Category"
+                        placeholder="Categoria"
                         className="border w-full p-2 rounded bg-[#2a2a2a] text-[#f5f5f5]"
                         required
                     />

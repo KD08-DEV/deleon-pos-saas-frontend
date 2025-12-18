@@ -37,7 +37,7 @@ const RecentOrders = ({ fill = false }) => {
                     <FaSearch className="text-[#f5f5f5] text-sm sm:text-base" />
                     <input
                         type="text"
-                        placeholder="Search recent orders"
+                        placeholder="Busca tus ordenes recientes"
                         className="bg-[#1f1f1f] outline-none text-[#f5f5f5] w-full text-sm sm:text-base placeholder:text-gray-500"
                     />
                 </div>
@@ -52,7 +52,7 @@ const RecentOrders = ({ fill = false }) => {
                         orders.map((order) => <OrderList key={order._id} order={order} />)
                     ) : (
                         <p className="text-gray-500 text-sm sm:text-base py-6 text-center">
-                            No orders available
+                            No hay pedidos disponibles
                         </p>
                     )}
                 </div>

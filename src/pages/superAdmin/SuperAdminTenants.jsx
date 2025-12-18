@@ -94,9 +94,9 @@ const SuperAdminTenants = () => {
                                 defaultValue={t.plan}
                                 className="bg-gray-800 px-2 py-1 rounded"
                             >
-                                <option value="basic">Basic</option>
+                                <option value="emprendedor">emprendedor</option>
                                 <option value="pro">Pro</option>
-                                <option value="enterprise">Enterprise</option>
+                                <option value="vip">vip</option>
                             </select>
                         </td>
                     </tr>

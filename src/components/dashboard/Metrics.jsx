@@ -168,28 +168,28 @@ const Metrics = () => {
     // 5) Datos para tarjetas
     const metricsData = [
         {
-            title: "Revenue",
+            title: "Ganancia",
             value: `$${revenueNow.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
             color: "#3B82F6",
             isIncrease: revenueDelta.up,
             percentage: revenueDelta.text,
         },
         {
-            title: "Total Orders",
+            title: "Total Ordenes",
             value: ordersNow,
             color: "#22C55E",
             isIncrease: ordersDelta.up,
             percentage: ordersDelta.text,
         },
         {
-            title: "Total Customers",
+            title: "Total Clientes",
             value: customersNow,
             color: "#FACC15",
             isIncrease: customersDelta.up,
             percentage: customersDelta.text,
         },
         {
-            title: "Completed Orders",
+            title: "Ordenes Completadas",
             value: completedNow,
             color: "#EF4444",
             isIncrease: completedDelta.up,
@@ -198,10 +198,10 @@ const Metrics = () => {
     ];
 
     const itemsData = [
-        { title: "Total Categories", value: 8, color: "#8B5CF6", percentage: "+12%" },
-        { title: "Total Dishes", value: dishes.length, color: "#16A34A", percentage: "+5%" },
-        { title: "Active Orders", value: totalActiveOrders, color: "#CA8A04", percentage: "+9%" },
-        { title: "Total Tables", value: tables.length, color: "#9333EA", percentage: "+3%" },
+        { title: "Categorias Totales", value: 8, color: "#8B5CF6", percentage: "+12%" },
+        { title: "Platos Totales", value: dishes.length, color: "#16A34A", percentage: "+5%" },
+        { title: "Ordenes Activas", value: totalActiveOrders, color: "#CA8A04", percentage: "+9%" },
+        { title: "Mesas Totales", value: tables.length, color: "#9333EA", percentage: "+3%" },
     ];
 
     // 6) UI del selector
@@ -211,8 +211,8 @@ const Metrics = () => {
         <div className="container mx-auto py-2 px-6 md:px-4">
             <div className="flex justify-between items-center relative">
                 <div>
-                    <h2 className="font-semibold text-[#f5f5f5] text-xl">Overall Performance</h2>
-                    <p className="text-sm text-[#ababab]">Overview of your restaurant’s performance metrics.</p>
+                    <h2 className="font-semibold text-[#f5f5f5] text-xl">Rendimiento general</h2>
+                    <p className="text-sm text-[#ababab]">Descripción general de las métricas de rendimiento de su restaurante.</p>
                 </div>
 
                 <div className="relative">
@@ -283,8 +283,8 @@ const Metrics = () => {
             {/* Item Details */}
             <div className="flex flex-col justify-between mt-12">
                 <div>
-                    <h2 className="font-semibold text-[#f5f5f5] text-xl">Item Details</h2>
-                    <p className="text-sm text-[#ababab]">Live overview of menu, tables, and ongoing orders.</p>
+                    <h2 className="font-semibold text-[#f5f5f5] text-xl">Detalles del artículo</h2>
+                    <p className="text-sm text-[#ababab]">Descripción general en vivo del menú, las mesas y los pedidos en curso.</p>
                 </div>
 
                 <div className="mt-6 grid grid-cols-4 gap-4">

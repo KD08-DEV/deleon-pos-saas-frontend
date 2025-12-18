@@ -9,10 +9,10 @@ import RemoveTableModal from "../components/tables/removeTableModal";
 import RemoveDishModal from "../components/dish/removeDishModal.jsx";
 
 const buttons = [
-  { label: "Add Table", icon: <MdTableBar />, action: "table" },
-  { label: "Remove Table", icon: <BiErrorAlt />, action: "removeTable" },
-  { label: "Add Dishes", icon: <BiSolidDish />, action: "dishes" },
-  { label: "Remove Dishes", icon: <BiErrorAlt/>, action: "removeDish" },
+  { label: "Agregar Mesa", icon: <MdTableBar />, action: "table" },
+  { label: "Remover Mesa", icon: <BiErrorAlt />, action: "removeTable" },
+  { label: "Agregar Platos", icon: <BiSolidDish />, action: "dishes" },
+  { label: "Remover Platos", icon: <BiErrorAlt/>, action: "removeDish" },
 
 ];
 

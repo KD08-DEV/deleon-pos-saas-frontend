@@ -257,7 +257,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                     {/* Tipo de descuento */}
                     <div className="flex items-center gap-2">
             <span className="text-xs text-[#ababab] font-medium">
-              Discount
+              Descuento
             </span>
                         <div className="flex gap-1">
                             <button
@@ -300,7 +300,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 {/* Propina */}
                 <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-[#ababab]">Tip</span>
+                        <span className="text-xs text-[#ababab]">Propina</span>
                         <label className="flex items-center gap-1 text-xs text-[#ababab]">
                             <input
                                 type="checkbox"
@@ -325,7 +325,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             {/* ITBIS (opcional) */}
             <div className="flex items-center justify-between px-5 mt-3">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#ababab]">Tax (ITBIS)</span>
+                    <span className="text-xs text-[#ababab]">ITBIS</span>
                     <label className="flex items-center gap-1 text-xs text-[#ababab]">
                         <input
                             type="checkbox"
@@ -343,7 +343,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
 
             {/* Total con ITBIS y propina */}
             <div className="flex items-center justify-between px-5 mt-2">
-                <p className="text-xs text-[#ababab]">Total With Tax</p>
+                <p className="text-xs text-[#ababab]">Total con impuestos</p>
                 <h1 className="text-[#f5f5f5] text-md font-bold">
                     ${num(previewTotal).toFixed(2)}
                 </h1>
@@ -360,12 +360,12 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                     Cash
                 </button>
                 <button
-                    onClick={() => setPaymentMethod("Online")}
+                    onClick={() => setPaymentMethod("Tarjeta")}
                     className={`bg-[#1f1f1f] px-4 py-3 w-full rounded-lg text-[#ababab] font-semibold ${
-                        paymentMethod === "Online" ? "bg-[#383737]" : ""
+                        paymentMethod === "Tarjeta" ? "bg-[#383737]" : ""
                     }`}
                 >
-                    Online
+                    Tarjeta
                 </button>
             </div>
 
@@ -375,7 +375,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                     onClick={handlePlaceOrder}
                     className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
                 >
-                    Update Order
+                    Actualizar Orden
                 </button>
             </div>
 

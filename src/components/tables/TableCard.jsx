@@ -19,13 +19,13 @@ export default function TableCard({ table, onPick }) {
         >
             <div className="flex items-center justify-between">
                 <p className="text-white font-semibold">
-                    Table <span className="mx-1">→</span>{" "}
+                    Mesa <span className="mx-1">→</span>{" "}
                     {isVirtual ? "—" : table?.tableNo ?? "—"}
                 </p>
 
                 {/* 🔹 Aquí añadimos la condición especial para Quick */}
                 {isVirtual ? (
-                    <span className="bg-yellow-600 text-xs px-2 py-1 rounded">Quick</span>
+                    <span className="bg-yellow-600 text-xs px-2 py-1 rounded">Rapido</span>
                 ) : (
                     <span
                         className={`px-2 py-1 rounded text-xs ${
@@ -52,7 +52,7 @@ export default function TableCard({ table, onPick }) {
             </div>
 
             <p className="mt-4 text-xs text-gray-400">
-                Seats: {isVirtual ? 0 : table?.seats ?? "—"}
+                Sillas: {isVirtual ? 0 : table?.seats ?? "—"}
             </p>
         </div>
     );

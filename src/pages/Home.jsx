@@ -75,7 +75,7 @@ const Home = () => {
                 {/* Columna izquierda: Total Earnings + Recent Orders */}
                 <div className="flex flex-col gap-6">
                     <MiniCard
-                        title="Active Orders"
+                        title="Ordenes Activas"
                         number={activeOrdersCount}
                         footerNum={0}
                         icon={<BsActivity />}
@@ -87,7 +87,7 @@ const Home = () => {
                 {/* Columna derecha: Completed + Popular Dishes */}
                 <div className="flex flex-col gap-6">
                     <MiniCard
-                        title="Completed"
+                        title="Completado"
                         icon={<GrCheckmark />}
                         number={totalCompleted}
                         footerNum={0}

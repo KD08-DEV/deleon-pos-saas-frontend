@@ -29,7 +29,7 @@ const CartInfo = () => {
       </h1>
       <div className="mt-4 overflow-y-auto scrollbar-hide" ref={scrolLRef}>
         {cartData.length === 0 ? (
-          <p className="text-[#ababab] text-sm flex justify-center items-center py-12">Your cart is empty. Start adding items!</p>
+          <p className="text-[#ababab] text-sm flex justify-center items-center py-12">Tu carrito esta vacio. Empieza a añadir !</p>
         ) : cartData.map((item, index) => {
             return (
                 <div

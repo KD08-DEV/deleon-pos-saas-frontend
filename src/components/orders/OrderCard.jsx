@@ -210,7 +210,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
 
                             {/* Table */}
                             <span className="text-gray-600">/</span>
-                            <span>Table → {order.table ? `#${order.table.tableNo}` : "—"}</span>
+                            <span>Mesa → {order.table ? `#${order.table.tableNo}` : "—"}</span>
                         </div>
                     </div>
                 </div>
