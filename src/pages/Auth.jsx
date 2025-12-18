@@ -43,7 +43,7 @@ const Auth = () => {
                 <span className="font-bold text-blue-500">Soft</span>
             </h1>
             <p className="text-sm text-gray-400">
-                Restaurant Management System
+                Restaurant  Management System
             </p>
         </div>
 
