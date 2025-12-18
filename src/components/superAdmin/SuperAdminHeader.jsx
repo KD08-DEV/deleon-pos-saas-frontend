@@ -1,6 +1,6 @@
 import React from "react";
 import { FaBell, FaUserCircle } from "react-icons/fa";
-import logo from "../../assets/images/logo-ui.png";
+import logo from "../../assets/images/logo-mark.png";
 
 const SuperAdminHeader = ({ user }) => {
     return (
