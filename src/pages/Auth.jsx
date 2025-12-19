@@ -48,7 +48,7 @@ const Auth = () => {
         </div>
 
         <h2 className="text-4xl text-center mt-10 font-semibold text-yellow-400 mb-10">
-          {isRegister ? "Employee Registration" : "Employee Login"}
+          {isRegister ? "Employee Registration" : " Login"}
         </h2>
 
         {/* Components */}  
