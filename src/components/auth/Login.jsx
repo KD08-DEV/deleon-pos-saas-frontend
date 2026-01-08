@@ -6,6 +6,7 @@ import { useDispatch } from "react-redux";
 import { setUser } from "../../redux/slices/userSlice";
 import { useNavigate } from "react-router-dom";
 import api, { setScope } from "@/lib/api";
+import { clearAppCache } from "@/utils/clearAppCache";
  
 const Login = () => {
     const navigate = useNavigate();
@@ -27,13 +28,25 @@ const Login = () => {
 
     const loginMutation = useMutation({
         mutationFn: (reqData) => login(reqData),
-        onSuccess: (res) => {
-            const { data } = res;
-            const token = res.data?.token;
+        onSuccess: async  (res) => {
+                try {
+                    await clearAppCache();
 
-            if (token) {
-                localStorage.setItem("token", token);
-            }
+
+                    localStorage.removeItem("scope");
+                    localStorage.removeItem("tenantId");
+                    localStorage.removeItem("clientId");
+
+                } catch (e) {
+                    console.warn("No se pudo limpiar cache/SW:", e);
+                }
+
+                const { data } = res;
+                const token = res.data?.token;
+
+                if (token) {
+                    localStorage.setItem("token", token);
+                }
 
             const userData = data?.data?.user || data?.user || data?.data;
             if (!userData) {

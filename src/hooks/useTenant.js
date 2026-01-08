@@ -1,17 +1,23 @@
-// src/hooks/useTenant.js
 import { useSelector } from "react-redux";
 
 export default function useTenant() {
-    // 1️⃣ El usuario logueado SIEMPRE trae tenantId
-    const user = useSelector((state) => state.user?.data);
-
-    // 2️⃣ La información REAL del tenant vive en state.store.tenant
-    const tenant = useSelector((state) => state.store?.tenant);
+    // Soporta varias estructuras de store por si cambiaste reducers
+    const tenant =
+        useSelector((state) => state?.store?.tenant) ??
+        useSelector((state) => state?.tenant) ??
+        useSelector((state) => state?.auth?.tenant) ??
+        null;
 
     return {
-        tenantId: user?.tenantId || null,
+        // Backwards compatible (muchos componentes esperan tenantInfo)
+        tenantInfo: tenant,
+
+        // Campos directos útiles
+        tenantId: tenant?.tenantId || null,
         business: tenant?.business || null,
         fiscal: tenant?.fiscal || null,
         name: tenant?.name || null,
+        plan: tenant?.plan || null,
+        status: tenant?.status || null,
     };
 }

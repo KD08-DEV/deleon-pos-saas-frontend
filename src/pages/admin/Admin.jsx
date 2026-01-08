@@ -7,6 +7,7 @@ import Reports from "./Reports";
 import Employees from "./Employees";
 import PlanUsageWidget from "./PlanUsageWidget";
 import api from "../../lib/api";
+import Inventory from "./Inventory";
 
 const Admin = () => {
     const [tab, setTab] = useState("reports");
@@ -47,6 +48,8 @@ const Admin = () => {
     const plan = usageData?.plan?.toUpperCase() || "Emprendedor";
     const limits = usageData?.limits || {};
     const usage = usageData?.usage || {};
+    const rawPlan = (usageData?.plan || "emprendedor").toLowerCase();
+    const canInventory = ["pro", "vip"].includes(rawPlan);
 
     const totalUsersLimit =
         limits.maxUsers === null || limits.maxUsers === undefined
@@ -170,10 +173,23 @@ const Admin = () => {
                         >
                             Empleados
                         </button>
+                        {canInventory && (
+                            <button
+                                onClick={() => setTab("inventory")}
+                                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition ${
+                                    tab === "inventory"
+                                        ? "bg-[#f6b100] text-black shadow shadow-yellow-500/30"
+                                        : "bg-[#1f1f1f] text-[#ababab] hover:bg-[#262626]"
+                                }`}
+                            >
+                                Inventario
+                            </button>
+                        )}
                     </div>
 
                     {/* CONTENIDO DINÁMICO */}
                     <div className="mt-2">
+                        {tab === "inventory" && <Inventory plan={rawPlan} />}
                         {tab === "reports" && <Reports />}
                         {tab === "employees" && <Employees />}
                     </div>

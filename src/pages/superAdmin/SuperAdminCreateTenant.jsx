@@ -1,14 +1,11 @@
-// --- IMPORTS ---
 import React, { useState } from "react";
 import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 
 const SuperAdminCreateTenant = () => {
-
     const navigate = useNavigate();
 
     const [formData, setFormData] = useState({
-
         // Tenant info
         tenantName: "",
         plan: "emprendedor",
@@ -25,14 +22,29 @@ const SuperAdminCreateTenant = () => {
         businessAddress: "",
         businessPhone: "",
 
-        // Fiscal info
-        ncfType: "B02",
-        ncfNumber: "",
-        issueDate: "",
+        // Fiscal info (nuevo)
+        fiscalEnabled: false,
+
+        b01Active: false,
+        b01Start: 1,
+        b01Max: 0,
+
+        b02Active: false,
+        b02Start: 1,
+        b02Max: 0,
     });
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, type, value, checked } = e.target;
+        setFormData((prev) => ({
+            ...prev,
+            [name]: type === "checkbox" ? checked : value,
+        }));
+    };
+
+    const toNumber = (v, fallback = 0) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : fallback;
     };
 
     const handleSubmit = async (e) => {
@@ -51,21 +63,40 @@ const SuperAdminCreateTenant = () => {
                 tenantName: formData.tenantName,
                 plan: formData.plan,
 
-                // Business Info (corrected)
+                // Business Info
                 business: {
-                    name: formData.commercialName,   // <-- FIX: ESTA ES LA CLAVE
-                    rnc: formData.rnc,
-                    address: formData.businessAddress,
-                    phone: formData.businessPhone,
+                    name: formData.commercialName || null,
+                    rnc: formData.rnc || null,
+                    address: formData.businessAddress || null,
+                    phone: formData.businessPhone || null,
                 },
 
-                // Fiscal Info
+                // Fiscal Info (nuevo)
                 fiscal: {
-                    ncfType: formData.ncfType,
-                    ncfNumber: formData.ncfNumber,
-                    issueDate: formData.issueDate,
-                }
+                    enabled: Boolean(formData.fiscalEnabled),
+                    nextInvoiceNumber: 1,
+                    ncfConfig: {
+                        B01: {
+                            start: toNumber(formData.b01Start, 1),
+                            current: toNumber(formData.b01Start, 1),
+                            max: toNumber(formData.b01Max, 0),
+                            active: Boolean(formData.b01Active),
+                        },
+                        B02: {
+                            start: toNumber(formData.b02Start, 1),
+                            current: toNumber(formData.b02Start, 1),
+                            max: toNumber(formData.b02Max, 0),
+                            active: Boolean(formData.b02Active),
+                        },
+                    },
+                },
             };
+
+            // si fiscal está apagado, forzamos active false (doble seguridad)
+            if (!payload.fiscal.enabled) {
+                payload.fiscal.ncfConfig.B01.active = false;
+                payload.fiscal.ncfConfig.B02.active = false;
+            }
 
             const res = await api.post("/api/user/register", payload);
 
@@ -84,7 +115,6 @@ const SuperAdminCreateTenant = () => {
             <h1 className="text-3xl font-bold mb-4">Create New Tenant</h1>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-
                 {/* Tenant Info */}
                 <div>
                     <label className="block font-semibold">Tenant Name</label>
@@ -107,8 +137,8 @@ const SuperAdminCreateTenant = () => {
                         className="w-full p-2 border rounded bg-white text-black"
                     >
                         <option value="emprendedor">emprendedor</option>
-                        <option value="pro">Pro</option>
-                        <option value="vip">VIP</option>
+                        <option value="pro">pro</option>
+                        <option value="vip">vip</option>
                     </select>
                 </div>
 
@@ -166,38 +196,99 @@ const SuperAdminCreateTenant = () => {
                 {/* Fiscal Info */}
                 <h2 className="text-xl font-bold mt-4">Fiscal Information</h2>
 
-                <div>
-                    <label className="block font-semibold">NCF Type</label>
+                <label className="flex items-center gap-2">
                     <input
-                        type="text"
-                        name="ncfType"
-                        value={formData.ncfType}
+                        type="checkbox"
+                        name="fiscalEnabled"
+                        checked={formData.fiscalEnabled}
                         onChange={handleChange}
-                        className="w-full p-2 border rounded bg-white text-black"
                     />
-                </div>
+                    <span className="font-semibold">Habilitar comprobante fiscal (NCF)</span>
+                </label>
 
-                <div>
-                    <label className="block font-semibold">NCF Number</label>
-                    <input
-                        type="text"
-                        name="ncfNumber"
-                        value={formData.ncfNumber}
-                        onChange={handleChange}
-                        className="w-full p-2 border rounded bg-white text-black"
-                    />
-                </div>
+                {formData.fiscalEnabled && (
+                    <div className="space-y-6 mt-3">
+                        {/* B01 */}
+                        <div className="p-3 border rounded">
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    name="b01Active"
+                                    checked={formData.b01Active}
+                                    onChange={handleChange}
+                                />
+                                <span className="font-semibold">Activar B01</span>
+                            </label>
 
-                <div>
-                    <label className="block font-semibold">Issue Date</label>
-                    <input
-                        type="date"
-                        name="issueDate"
-                        value={formData.issueDate}
-                        onChange={handleChange}
-                        className="w-full p-2 border rounded bg-white text-black"
-                    />
-                </div>
+                            <div className="grid grid-cols-2 gap-3 mt-3">
+                                <div>
+                                    <label className="block text-sm">B01 Start</label>
+                                    <input
+                                        type="number"
+                                        name="b01Start"
+                                        value={formData.b01Start}
+                                        onChange={handleChange}
+                                        className="w-full p-2 border rounded bg-white text-black"
+                                        min={1}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm">B01 Max (0 = no configurado)</label>
+                                    <input
+                                        type="number"
+                                        name="b01Max"
+                                        value={formData.b01Max}
+                                        onChange={handleChange}
+                                        className="w-full p-2 border rounded bg-white text-black"
+                                        min={0}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* B02 */}
+                        <div className="p-3 border rounded">
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    name="b02Active"
+                                    checked={formData.b02Active}
+                                    onChange={handleChange}
+                                />
+                                <span className="font-semibold">Activar B02</span>
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3 mt-3">
+                                <div>
+                                    <label className="block text-sm">B02 Start</label>
+                                    <input
+                                        type="number"
+                                        name="b02Start"
+                                        value={formData.b02Start}
+                                        onChange={handleChange}
+                                        className="w-full p-2 border rounded bg-white text-black"
+                                        min={1}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm">B02 Max (0 = no configurado)</label>
+                                    <input
+                                        type="number"
+                                        name="b02Max"
+                                        value={formData.b02Max}
+                                        onChange={handleChange}
+                                        className="w-full p-2 border rounded bg-white text-black"
+                                        min={0}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <p className="text-sm opacity-80">
+                            Nota: Issue Date y el NCF específico se definen por factura, no por tenant.
+                        </p>
+                    </div>
+                )}
 
                 <hr className="my-5 border-gray-600" />
 
