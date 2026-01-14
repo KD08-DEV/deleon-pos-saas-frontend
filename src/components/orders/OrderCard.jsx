@@ -1,4 +1,4 @@
-// pos-frontend/src/components/orders/OrderCard.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useSnackbar } from "notistack";
 import { formatDateAndTime } from "../../utils";
@@ -11,18 +11,18 @@ import SplitInvoicesModal from "./SplitInvoicesModal";
 
 
 
-const STATUS_FLOW = ["In Progress", "Ready", "Completed"];
+const STATUS_FLOW = ["En Progreso", "Listo", "Completado"];
 
 
 const getStatusColorClasses = (status) => {
     switch (status) {
-        case "Ready":
+        case "Listo":
             return "bg-emerald-500/15 text-emerald-300 border-emerald-500/40";
-        case "Completed":
+        case "Completado":
             return "bg-blue-500/15 text-blue-300 border-blue-500/40";
-        case "Cancelled":
+        case "Cancelado":
             return "bg-red-500/15 text-red-300 border-red-500/40";
-        case "In Progress":
+        case "En Progreso":
         default:
             return "bg-amber-500/15 text-amber-300 border-amber-500/40";
     }
@@ -31,6 +31,16 @@ const getStatusColorClasses = (status) => {
 const getAvatarInitial = (name) => {
     if (!name) return "W";
     return name.trim()[0].toUpperCase();
+};
+const fetchFreshOrder = async (orderId) => {
+    if (!orderId) return null;
+    const res = await api.get(`/api/order/${orderId}`);
+    return (
+        res?.data?.data?.order ??
+        res?.data?.order ??
+        res?.data?.data ??
+        res?.data
+    );
 };
 
 const getShortOrderId = (order) => {
@@ -50,6 +60,8 @@ const isLikelyRnc = (val) => {
     const cleaned = String(val || "").replace(/\D/g, "");
     return /^\d{9}$/.test(cleaned) || /^\d{11}$/.test(cleaned);
 };
+const unwrapOrder = (res) => res?.data?.data ?? res?.data?.order ?? res?.data;
+
 
 const OrderCard = ({ order, onStatusChanged }) => {
     const { enqueueSnackbar } = useSnackbar();
@@ -62,9 +74,13 @@ const OrderCard = ({ order, onStatusChanged }) => {
     const [showSplitModal, setShowSplitModal] = useState(false);
     const [lastSplitBills, setLastSplitBills] = useState([]);
     const [invoiceOrderOverride, setInvoiceOrderOverride] = useState(null);
+    const [isUpdating, setIsUpdating] = useState(false);
+    const [invoiceOrderSnapshot, setInvoiceOrderSnapshot] = useState(null);
+
+
 
     const openSplit = () => {
-        if (currentStatus === "Cancelled") return;
+        if (currentStatus === "Cancelado") return;
         setShowSplitModal(true);
     };
     const [savingSplit, setSavingSplit] = useState(false);
@@ -155,6 +171,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
         setSelectedBillForInvoice(bill);
 
 
+
           setShowInvoice(true);
         };
 
@@ -175,7 +192,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
         ].filter(Boolean);
     }, [tenantInfo]);
 
-    const currentStatus = localOrder?.orderStatus || "In Progress";
+    const currentStatus = localOrder?.orderStatus || "En Progreso";
 
     const createdAtLabel = useMemo(
         () => (localOrder?.createdAt ? formatDateAndTime(localOrder.createdAt) : "N/A"),
@@ -198,7 +215,11 @@ const OrderCard = ({ order, onStatusChanged }) => {
     }, [localOrder?.items]);
 
     // --- Fiscal state (modal) ---
-    const existingFiscal = Boolean(localOrder?.fiscal?.requested || localOrder?.ncfNumber);
+    const existingFiscal = Boolean(
+        localOrder?.fiscal?.requested ||
+        localOrder?.ncfNumber ||
+        localOrder?.fiscal?.ncfNumber
+    );
 
     const [showFiscalModal, setShowFiscalModal] = useState(false);
     const [showInvoice, setShowInvoice] = useState(false);
@@ -215,7 +236,10 @@ const OrderCard = ({ order, onStatusChanged }) => {
     useEffect(() => {
         if (!showFiscalModal) return;
 
-        const preRnc = localOrder?.customerDetails?.rnc || "";
+        const preRnc =
+            localOrder?.customerDetails?.rncCedula ||
+            localOrder?.customerDetails?.rnc ||
+            "";
         const preName = localOrder?.customerDetails?.name || "";
         const preType = localOrder?.fiscal?.ncfType || (allowedNcfTypes.includes("B02") ? "B02" : allowedNcfTypes[0] || "B02");
 
@@ -262,49 +286,29 @@ const OrderCard = ({ order, onStatusChanged }) => {
         return () => clearTimeout(t);
     }, [fiscalRnc, fiscalName, showFiscalModal]);
 
-    const handleStatusUpdate = async (targetStatus) => {
-        if (!localOrder?._id) return;
-
+    const handleStatusUpdate = async (nextStatus) => {
         try {
-            const bills = localOrder.bills || {};
+            setIsUpdating(true);
 
-            const payload = {
-                orderStatus: targetStatus,
-                items: localOrder?.items || [],
-                customerDetails: localOrder?.customerDetails || {},
-                bills: {
-                    total: bills.total ?? 0,
-                    discount: bills.discount ?? 0,
-                    taxEnabled:
-                        typeof bills.taxEnabled === "boolean"
-                            ? bills.taxEnabled
-                            : (bills.tax ?? 0) > 0,
-                    tax: bills.tax ?? 0,
-                    tipAmount: bills.tipAmount ?? bills.tip ?? 0,
-                    totalWithTax: bills.totalWithTax ?? bills.total ?? 0,
-                },
-            };
+            const res = await updateOrder(localOrder._id, {
+                orderStatus: nextStatus,
+                bills: localOrder.bills || [],
+                items: localOrder.items || [],
+            });
 
-            const res = await updateOrder(localOrder._id, payload);
-            const autoDeleted = res?.data?.autoDeleted;
+            const updated = unwrapOrder(res);
 
-            if (autoDeleted) {
-                enqueueSnackbar("Order removed because it had no items.", { variant: "info" });
-                if (onStatusChanged) onStatusChanged(localOrder._id, "__DELETE__");
-                return;
-            }
+            // ✅ IMPORTANTÍSIMO: guarda la orden COMPLETA (con fiscal, invoiceUrl, etc.)
+            setLocalOrder(updated);
+            onStatusChanged?.(updated);
 
-            enqueueSnackbar(`Order status updated to "${targetStatus}"`, { variant: "success" });
-
-            // update local
-            setLocalOrder((prev) => ({ ...(prev || {}), orderStatus: targetStatus }));
-
-            if (onStatusChanged) onStatusChanged(localOrder._id, targetStatus);
-        } catch (error) {
-            console.error("Error updating order status", error);
-            enqueueSnackbar("Error updating order status", { variant: "error" });
+        } catch (err) {
+            console.error("Error updating status:", err);
+        } finally {
+            setIsUpdating(false);
         }
     };
+
 
     const handleNext = () => {
         const idx = STATUS_FLOW.indexOf(currentStatus);
@@ -319,8 +323,8 @@ const OrderCard = ({ order, onStatusChanged }) => {
     };
 
     const handleCancel = () => {
-        if (currentStatus === "Cancelled") return;
-        handleStatusUpdate("Cancelled");
+        if (currentStatus === "Cancelado") return;
+        handleStatusUpdate("Cancelado");
     };
 
     const canGoBack =
@@ -331,26 +335,39 @@ const OrderCard = ({ order, onStatusChanged }) => {
         STATUS_FLOW.indexOf(currentStatus) < STATUS_FLOW.length - 1;
 
     const primaryButtonLabel =
-        currentStatus === "In Progress"
-            ? "Marcar as Ready"
-            : currentStatus === "Ready"
-                ? "Marcar as Completed"
-                : "Advance";
+        currentStatus === "En Progreso"
+            ? "Marcar como Listo"
+            : currentStatus === "Listo"
+                ? "Marcar como Completo"
+                : "Siguiente";
 
-    const openFiscal = () => {
-        if (currentStatus === "Cancelled") {
+    const openFiscal = async () => {
+        if (currentStatus === "Cancelado") {
             enqueueSnackbar("No puedes emitir NCF en una orden cancelada.", { variant: "warning" });
             return;
         }
 
-        // si ya existe NCF, simplemente mostramos invoice
         if (existingFiscal) {
+            try {
+                const fresh = await fetchFreshOrder(localOrder?._id);
+                if (fresh?._id) {
+                    setLocalOrder(fresh);
+                    setInvoiceOrderSnapshot(fresh); // <- CLAVE
+                }
+            } catch (e) {
+                console.log("[OrderCard] No pude refrescar order:", e?.message);
+            }
+            setInvoiceOrderOverride(null);
+            setInvoiceItemsOverride(null);
+            setSelectedBillForInvoice(null);
+            setInvoiceTitle(null);
             setShowInvoice(true);
             return;
         }
 
         setShowFiscalModal(true);
     };
+
 
     const saveFiscal = async () => {
         if (!localOrder?._id) return;
@@ -396,6 +413,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
                     ...(localOrder?.customerDetails || {}),
                     name: nameTrim,
                     rnc: rncTrim,
+                    rncCedula: rncTrim,
                 },
 
                 fiscal: {
@@ -406,7 +424,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
 
             const res = await updateOrder(localOrder._id, payload);
 
-            const updated = res?.data?.data || res?.data || null;
+            const updated = unwrapOrder(res);
             if (!updated) {
                 enqueueSnackbar("No se recibió la orden actualizada.", { variant: "warning" });
                 setShowFiscalModal(false);
@@ -437,13 +455,13 @@ const OrderCard = ({ order, onStatusChanged }) => {
                     <div className="flex items-center gap-3">
                         {/* AVATAR */}
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-400 text-black font-semibold text-lg">
-                            {getAvatarInitial(localOrder?.customerDetails?.name || "Walk-in Customer")}
+                            {getAvatarInitial(localOrder?.customerDetails?.name || "Cliente")}
                         </div>
 
                         <div className="flex flex-col">
                             {/* NAME */}
                             <span className="text-[13px] font-semibold text-white">
-                {localOrder?.customerDetails?.name || "Walk-in Customer"}
+                {localOrder?.customerDetails?.name || "Cliente"}
               </span>
 
                             {/* GUESTS + TABLE + ORDER TYPE */}
@@ -457,7 +475,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
                       localOrder?.orderType?.label ||
                       localOrder?.orderType?.name ||
                       localOrder?.orderType ||
-                      "Dine in"
+                      "Restaruante"
                   )}
                 </span>
 
@@ -518,7 +536,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
 
                     <div className="mt-3 flex flex-col text-[12px] text-gray-300">
             <span className="uppercase tracking-wide text-[12px] text-gray-400">
-              Created at
+              Creado en
             </span>
                         <span className="mt-0.5 text-[13px] text-gray-100">{createdAtLabel}</span>
                     </div>
@@ -537,7 +555,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
                                 : "border-gray-700/50 text-gray-600 cursor-not-allowed"
                         }`}
                     >
-                        Back
+                        Atras
                     </button>
 
                     {/* Next */}
@@ -559,9 +577,9 @@ const OrderCard = ({ order, onStatusChanged }) => {
                         <button
                             type="button"
                             onClick={openFiscal}
-                            disabled={currentStatus === "Cancelled"}
+                            disabled={currentStatus === "Cancelado"}
                             className={`flex-1 min-w-[140px] rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                                currentStatus === "Cancelled"
+                                currentStatus === "Cancelado"
                                     ? "bg-amber-900/40 text-amber-300 cursor-not-allowed"
                                     : "bg-amber-400 text-black hover:bg-amber-300"
                             }`}
@@ -578,9 +596,9 @@ const OrderCard = ({ order, onStatusChanged }) => {
                     <button
                         type="button"
                         onClick={openSplit}
-                        disabled={currentStatus === "Cancelled"}
+                        disabled={currentStatus === "Cancelado"}
                         className={`flex-1 min-w-[130px] rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                            currentStatus === "Cancelled"
+                            currentStatus === "Cancelado"
                                 ? "bg-slate-900/40 text-slate-300 cursor-not-allowed"
                                 : "bg-slate-200 text-black hover:bg-slate-100"
                         }`}
@@ -594,9 +612,9 @@ const OrderCard = ({ order, onStatusChanged }) => {
                     <button
                         type="button"
                         onClick={handleCancel}
-                        disabled={currentStatus === "Cancelled"}
+                        disabled={currentStatus === "Cancelado"}
                         className={`flex-1 min-w-[110px] rounded-md px-3 py-1.5 text-[11px] font-semibold transition ${
-                            currentStatus === "Cancelled"
+                            currentStatus === "Cancelado"
                                 ? "bg-red-900/40 text-red-400 cursor-not-allowed"
                                 : "bg-red-500 text-white hover:bg-red-400"
                         }`}
@@ -696,11 +714,11 @@ const OrderCard = ({ order, onStatusChanged }) => {
 
              {showInvoice && (
                  <Invoice
-                     order={invoiceOrderOverride || localOrder}
+                     order={invoiceOrderOverride || invoiceOrderSnapshot || localOrder}
                      itemsOverride={invoiceItemsOverride}
-                     invoiceTitle={invoiceTitle || "Factura"}
                      onClose={() => {
                          setShowInvoice(false);
+                         setInvoiceOrderSnapshot(null);
                          setInvoiceOrderOverride(null);
                          setInvoiceItemsOverride(null);
                          setInvoiceTitle("Factura");

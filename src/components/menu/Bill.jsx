@@ -10,6 +10,8 @@ import Invoice from "../invoice/Invoice";
 
 import useTenant from "../../hooks/useTenant";
 import api from "../../lib/api";
+import { QK } from "../../queryKeys";
+import { getSocket } from "../../realtime/socket";
 
 const num = (v) => {
     if (v === null || v === undefined) return 0;
@@ -53,12 +55,30 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
     const discountEnabledByTenant = tenantFeatures?.discount?.enabled !== false;
     const taxEnabledByTenant = tenantFeatures?.tax?.enabled !== false;
     const fiscalEnabledByTenant = !!tenantInfo?.fiscal?.enabled;
+    const tipEnabledByTenant = tenantFeatures?.tip?.enabled !== false;
+
+
+    useEffect(() => {
+        console.log("[BILL] tenant features:", tenantInfo?.features);
+        console.log("[BILL] tipEnabledByTenant:", tipEnabledByTenant);
+        console.log("[BILL] discountEnabledByTenant:", discountEnabledByTenant);
+        console.log("[BILL] taxEnabledByTenant:", taxEnabledByTenant);
+    }, [tenantInfo, tipEnabledByTenant, discountEnabledByTenant, taxEnabledByTenant]);
 
     useEffect(() => {
         console.log("TENANT INFO EN BILL:", tenantInfo);
         console.log("FISCAL EN BILL:", tenantInfo?.fiscal);
     }, [tenantInfo]);
     // Fiscal capability (nuevo modelo)
+    useEffect(() => {
+        console.log("[BILL] tipEnabledByTenant changed:", tipEnabledByTenant);
+
+        if (!tipEnabledByTenant) {
+            setTipEnabled(false);
+            setTipPercent(0);
+        }
+    }, [tipEnabledByTenant]);
+
     const fiscalEnabled = !!tenantInfo?.fiscal?.enabled;
 
     const fiscalCapable = useMemo(() => {
@@ -80,7 +100,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
     }, [tenantInfo]);
 
     // UI states
-    const [paymentMethod, setPaymentMethod] = useState("Cash");
+    const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     const [discountType, setDiscountType] = useState("flat"); // flat | percent
     const [discountValue, setDiscountValue] = useState(0);
 
@@ -218,10 +238,20 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
 
         const items = itemsArray.map((item) => {
             const quantity = num(item.quantity ?? 1);
+
+            const dishId = item.dishId ?? item.id ?? item.dish ?? item._id;
+
+            const qtyType = item.qtyType || "unit";
+            const weightUnit = qtyType === "weight" ? (item.weightUnit || "lb") : undefined;
+
             const unitPrice = num(item.price ?? item.unitPrice ?? item.pricePerQuantity);
+
             return {
-                dish: item.id ?? item.dish ?? item._id,
-                name: item.name ?? item.dishName ?? item.title ?? item.label ?? "Producto",
+                dishId,
+                dish: dishId, // compatibilidad por si tu schema viejo usa "dish"
+                name: item.name ?? "Producto",
+                qtyType,
+                weightUnit,
                 quantity,
                 unitPrice,
                 price: unitPrice * quantity,
@@ -240,7 +270,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
         };
 
         const basePayload = {
-            orderStatus: "In Progress",
+            orderStatus: "En Progreso",
             items,
             paymentMethod,
             discount: { type: discountType, value: num(discountValue) || 0 },
@@ -275,23 +305,46 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
 
     const orderMutation = useMutation({
         mutationFn: (payload) => updateOrder(orderId, payload),
-        onSuccess: (res) => {
-            const server =
+        onSuccess: async (res) => {
+            // 1) Intenta sacar el order desde la respuesta
+            let server =
                 res?.data?.data?.order ??
                 res?.data?.order ??
                 res?.data?.data ??
                 res?.data ??
                 {};
+
+            // 2) Si la respuesta no trae el order completo, lo buscamos por GET
+            // (asumiendo que existe GET /api/order/:id, porque ya usas PUT /api/order/:id)
+            try {
+                const fresh = await api.get(`/api/order/${orderId}`);
+                const freshOrder =
+                    fresh?.data?.data?.order ??
+                    fresh?.data?.order ??
+                    fresh?.data?.data ??
+                    fresh?.data ??
+                    null;
+
+                if (freshOrder && freshOrder._id) {
+                    server = freshOrder;
+                }
+            } catch (e) {
+                console.log("[BILL] No pude refrescar el order por GET:", e?.message);
+            }
+
+            console.log("[BILL] server order used for invoice:", server);
+
             const fallback = buildOrderPayload();
 
             try {
                 queryClient.invalidateQueries(["order", orderId]);
             } catch (_) {}
 
-            // 1) Items para Invoice (si server no trae items, usamos fallback)
-            const srcItems = Array.isArray(server.items) && server.items.length
-                ? server.items
-                : (fallback.items || []);
+            // Items
+            const srcItems =
+                Array.isArray(server.items) && server.items.length
+                    ? server.items
+                    : (fallback.items || []);
 
             const normalizedItems = (srcItems ?? []).map((it) => {
                 const q = num(it.quantity ?? it.qty ?? 1);
@@ -303,7 +356,8 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 const line = num(it.price ?? unit * q);
 
                 return {
-                    name: it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
+                    name:
+                        it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
                     quantity: q,
                     unitPrice: unit,
                     price: line,
@@ -311,23 +365,22 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 };
             });
 
-            // 2) Bills (server si viene; si no, fallback)
+            // Bills
             const bills = {
                 subtotal: server.bills?.subtotal ?? server.bills?.total ?? fallback.bills?.subtotal ?? 0,
                 discount: server.bills?.discount ?? fallback.bills?.discount ?? 0,
                 tax: server.bills?.tax ?? fallback.bills?.tax ?? 0,
                 tip: server.bills?.tip ?? server.bills?.tipAmount ?? fallback.bills?.tip ?? 0,
                 totalWithTax: server.bills?.totalWithTax ?? fallback.bills?.totalWithTax ?? 0,
-
                 taxEnabled: server.bills?.taxEnabled ?? fallback.bills?.taxEnabled ?? true,
                 tipEnabled: server.bills?.tipEnabled ?? fallback.bills?.tipEnabled ?? true,
             };
 
-            // 3) Fiscal (si el backend NO lo devuelve todavía, al menos mostramos lo seleccionado)
-            const fiscal = server.fiscal ?? fallback.fiscal;
-            const ncfNumber = server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
+            // Fiscal (prioriza siempre lo del server)
+            const fiscal = server.fiscal ?? null;
+            const ncfNumber =
+                server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
 
-            // 4) Construimos el objeto que Invoice.jsx espera
             const invoice = {
                 _id: server._id ?? orderId,
                 createdAt: server.createdAt ?? new Date().toISOString(),
@@ -335,10 +388,10 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
 
-                items: normalizedItems,         // <- lo que Invoice.jsx espera
+                items: normalizedItems,
                 orderedItems: normalizedItems,
 
-                paymentMethod: server.paymentMethod ?? fallback.paymentMethod ?? "Cash",
+                paymentMethod: server.paymentMethod ?? fallback.paymentMethod ?? "Efectivo",
 
                 subTotal: bills.subtotal,
                 discountAmount: bills.discount,
@@ -354,7 +407,6 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             setOrderInfo(invoice);
             enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
 
-            // OJO: ahora sí puedes limpiar el carrito sin romper la factura
             dispatch(removeAllItems());
             setShowInvoice(true);
         },
@@ -454,6 +506,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 )}
 
                 {/* ✅ PROPINA (siempre visible) */}
+                {tipEnabledByTenant && (
                 <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-[#ababab]">Propina</span>
@@ -473,6 +526,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                         className="w-20 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none disabled:opacity-40"
                     />
                 </div>
+                )}
 
                 {/* ✅ ITBIS (solo si el tenant lo permite) */}
                 {taxEnabledByTenant && (
@@ -525,25 +579,35 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             {/* Método de pago */}
             <div className="flex items-center justify-between gap-4 px-5 mt-4">
                 <button
-                    onClick={() => setPaymentMethod("Cash")}
+                    onClick={() => setPaymentMethod("Efectivo")}
                     className={`px-4 py-3 w-full rounded-lg font-semibold ${
-                        paymentMethod === "Cash"
+                        paymentMethod === "Efectivo"
                             ? "bg-[#2b2b2b] text-white"
                             : "bg-[#1f1f1f] text-[#ababab]"
                     }`}
                 >
-                    Cash
+                    Efectivo
                 </button>
 
                 <button
-                    onClick={() => setPaymentMethod("Online")}
+                    onClick={() => setPaymentMethod("Tarjeta")}
                     className={`px-4 py-3 w-full rounded-lg font-semibold ${
-                        paymentMethod === "Online"
+                        paymentMethod === "Tarjeta"
                             ? "bg-[#2b2b2b] text-white"
                             : "bg-[#1f1f1f] text-[#ababab]"
                     }`}
                 >
-                    Online
+                    Tarjeta
+                </button>
+                <button
+                    onClick={() => setPaymentMethod("Transferencia")}
+                    className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                        paymentMethod === "Transferencia"
+                            ? "bg-[#2b2b2b] text-white"
+                            : "bg-[#1f1f1f] text-[#ababab]"
+                    }`}
+                >
+                    Transferencia
                 </button>
             </div>
 

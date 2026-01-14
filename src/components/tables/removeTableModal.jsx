@@ -51,13 +51,13 @@ const RemoveTableModal = ({ setIsRemoveTableModalOpen }) => {
                 </button>
 
                 <h2 className="text-2xl font-semibold text-[#f5f5f5] mb-6 text-center">
-                    Remove Table
+                    Remover Mesa
                 </h2>
 
                 {isLoading ? (
-                    <p className="text-[#ababab] text-center">Loading tables...</p>
+                    <p className="text-[#ababab] text-center">Cargando mesas..</p>
                 ) : isError ? (
-                    <p className="text-red-500 text-center">Error loading tables 😢</p>
+                    <p className="text-red-500 text-center">Error cargando mesas 😢</p>
                 ) : (
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <select
@@ -66,7 +66,7 @@ const RemoveTableModal = ({ setIsRemoveTableModalOpen }) => {
                             className="w-full bg-[#2a2a2a] border border-gray-600 rounded-lg p-3 text-[#f5f5f5] focus:outline-none focus:ring-2 focus:ring-red-600"
                             required
                         >
-                            <option value="">Select a table</option>
+                            <option value="">Seleccionar la mesa</option>
                             {tables.map((table) => (
                                 <option key={table._id} value={table._id}>
                                     Table {table.tableNo}
@@ -80,7 +80,7 @@ const RemoveTableModal = ({ setIsRemoveTableModalOpen }) => {
                                 onClick={() => setIsRemoveTableModalOpen(false)}
                                 className="w-1/2 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-all"
                             >
-                                Cancel
+                                Cancelar
                             </button>
                             <button
                                 type="submit"

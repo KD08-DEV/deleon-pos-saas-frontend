@@ -73,25 +73,25 @@ const Orders = () => {
     }
 
     // Callback que recibe OrderCard cuando cambia el status
-    const handleStatusChanged = (orderId, newStatus) => {
-        setOrders((prev) => {
-            // Si el backend indicó que la orden se borró, la quitamos del array
-            if (newStatus === "__DELETE__") {
-                return prev.filter((order) => order._id !== orderId);
-            }
-
-            // Si no, solo actualizamos el estado
-            return prev.map((order) =>
-                order._id === orderId ? { ...order, orderStatus: newStatus } : order
-            );
-        });
+    const handleStatusChanged = (updatedOrder) => {
+        if (!updatedOrder?._id) return;
+        setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
     };
 
-    const filteredOrders =
-        orders.filter((order) => {
-            if (status === "all") return true;
-            return order.orderStatus?.toLowerCase() === status;
-        }) ?? [];
+    const filteredOrders = (orders || []).filter((order) => {
+        if (status === "all") return true;
+        return order.orderStatus === status;
+    });
+
+    const STATUS_TABS = [
+        { key: "all", label: "Todo" },
+        { key: "En Progreso", label: "En Progreso" },
+        { key: "Listo", label: "Listo" },
+        { key: "Completado", label: "Completado" },
+        { key: "Cancelado", label: "Cancelado" },
+    ];
+
+
 
     return (
         <section className="bg-[#1f1f1f] min-h-screen flex flex-col">
@@ -103,25 +103,19 @@ const Orders = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-2 mt-4 md:mt-0">
-                    {["all", "in progress", "ready", "completed", "cancelled"].map(
-                        (key) => (
-                            <button
-                                key={key}
-                                onClick={() => setStatus(key)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                                    status === key
-                                        ? "bg-[#383838] text-white"
-                                        : "text-gray-400 hover:bg-[#2b2b2b]"
-                                }`}
-                            >
-                                {key === "all"
-                                    ? "All"
-                                    : key === "in progress"
-                                        ? "In Progress"
-                                        : key.charAt(0).toUpperCase() + key.slice(1)}
-                            </button>
-                        )
-                    )}
+                    {STATUS_TABS.map((t) => (
+                        <button
+                            key={t.key}
+                            onClick={() => setStatus(t.key)}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+                                status === t.key
+                                    ? "bg-[#383838] text-white"
+                                    : "text-gray-400 hover:bg-[#2b2b2b]"
+                            }`}
+                        >
+                            {t.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 

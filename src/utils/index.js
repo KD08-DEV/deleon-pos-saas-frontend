@@ -32,7 +32,7 @@ export const formatDate = (date) => {
 };
 
 export const formatDateAndTime = (date) => {
-  const dateAndTime = new Date(date).toLocaleString("en-US", {
+  const dateAndTime = new Date(date).toLocaleString("es-ES", {
     month: "long",
     day: "2-digit",
     year: "numeric",

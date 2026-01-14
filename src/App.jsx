@@ -12,11 +12,10 @@ import Header from "./components/shared/Header";
 import { useSelector } from "react-redux";
 import useLoadData from "./hooks/useLoadData";
 import FullScreenLoader from "./components/shared/FullScreenLoader";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SnackbarProvider } from "notistack";
 import BottomNav from "./components/shared/BottomNav";
 import AdminRegister from "@components/auth/AdminRegister.jsx";
-import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 
 import Admin from "./pages/admin/Admin";
 import SuperAdminDashboard from "./pages/superAdmin/SuperAdminDashboard";
@@ -24,8 +23,78 @@ import SuperAdminTenants from "./pages/superAdmin/SuperAdminTenants";
 import SuperAdminCreateTenant from "./pages/superAdmin/SuperAdminCreateTenant";
 import SuperAdminLayout from "./components/superAdmin/SuperAdminLayout";
 import SuperAdminTenantUsage from "@pages/superAdmin/SuperAdminTenantUsage.jsx";
+import { connectSocket, disconnectSocket } from "./realtime/socket.js";
+import { useDispatch } from "react-redux";
+import { setTenant } from "./redux/slices/storeSlice";
+import { getTenant } from "./https";
+import { QK } from "./queryKeys";
 
-const queryClient = new QueryClient();
+const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+
+
+function RealtimeTenantConfig() {
+    const dispatch = useDispatch();
+    const queryClient = useQueryClient();
+    const userState = useSelector((s) => s.user);
+    const socketRef = useRef(null);
+
+    // soporta varios shapes: {userData}, {user}, o user directo
+    const isAuth = !!userState?.isAuth;
+    const currentUser = userState?.userData || userState?.user || userState;
+    const tenantId = currentUser?.tenantId;
+
+    useEffect(() => {
+        if (!isAuth || !tenantId) return;
+
+        if (!socketRef.current) {
+            socketRef.current = connectSocket({
+                baseUrl: SOCKET_URL,
+                tenantId,
+            });
+        }
+
+        const s = socketRef.current;
+        if (!s) return;
+
+        const onConfigUpdated = async (payload) => {
+            if (payload?.tenantId && payload.tenantId !== tenantId) return;
+
+            const res = await getTenant(tenantId);
+            dispatch(setTenant(res.data.data));
+
+            queryClient.invalidateQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true });
+            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+        };
+
+        const onTablesUpdated = (payload) => {
+            if (payload?.tenantId && payload.tenantId !== tenantId) return;
+
+            // 1) marcar stale
+            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
+            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+
+            // 2) forzar fetch inmediato si la vista está abierta
+            queryClient.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
+            queryClient.refetchQueries({ queryKey: QK.ORDERS, exact: true, type: "active" });
+        };
+
+
+        s.off("tenant:configUpdated", onConfigUpdated);
+        s.on("tenant:configUpdated", onConfigUpdated);
+
+        s.off("tenant:tablesUpdated", onTablesUpdated);
+        s.on("tenant:tablesUpdated", onTablesUpdated);
+
+        return () => {
+            s.off("tenant:configUpdated", onConfigUpdated);
+            s.off("tenant:tablesUpdated", onTablesUpdated);
+        };
+    }, [isAuth, tenantId, queryClient, dispatch]);
+
+    return null;
+}
+
 
 function Layout() {
     const isLoading = useLoadData();
@@ -51,6 +120,7 @@ function Layout() {
 
     return (
         <>
+            <RealtimeTenantConfig />
             {shouldShowPosChrome && <Header />}
 
             <Routes>
@@ -173,13 +243,10 @@ function ProtectedRoutes({ children, allowedRoles }) {
 
 function App() {
     return (
-        <QueryClientProvider client={queryClient}>
-            <SnackbarProvider maxSnack={3} autoHideDuration={3000}>
+
                 <Router>
                     <Layout />
                 </Router>
-            </SnackbarProvider>
-        </QueryClientProvider>
     );
 }
 

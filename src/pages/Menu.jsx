@@ -42,11 +42,10 @@ const Menu = () => {
 
         const items = order?.items || [];
         if (items.length > 0) {
-            const expanded = [];
-            items.forEach((it) => {
-                const qty = it.quantity ?? it.qty ?? it.count ?? 1;
-                const unitPrice = Number(it.unitPrice ?? it.price ?? it.dish?.price ?? 0);
-                const id = it.dish?._id ?? it.item?._id ?? it.id ?? it._id;
+            const mapped = items.map((it) => {
+                const quantity = Number(it.quantity ?? it.qty ?? it.count ?? 1);
+                const dishId = it.dishId ?? it.dish?._id ?? it.dish ?? it.id ?? it._id;
+
                 const name =
                     it.name ||
                     it.dishName ||
@@ -54,13 +53,40 @@ const Menu = () => {
                     it?.dishInfo?.name ||
                     it?.dish?.name ||
                     "Producto";
-                for (let i = 0; i < (qty || 1); i++) {
-                    expanded.push({ id, name, price: unitPrice });
-                }
+
+                const qtyType =
+                    it.qtyType ||
+                    (it?.dish?.sellMode === "weight" ? "weight" : "unit") ||
+                    "unit";
+
+                const weightUnit = it.weightUnit || it?.dish?.weightUnit || "lb";
+
+                // unitPrice o pricePerLb según aplique
+                const unitPrice = Number(
+                    it.unitPrice ??
+                    it.pricePerQuantity ??
+                    it.pricePerLb ??
+                    it?.dish?.pricePerLb ??
+                    it?.dish?.price ??
+                    it.price ??
+                    0
+                );
+
+                return {
+                    id: dishId,
+                    dishId,
+                    name,
+                    qtyType,
+                    weightUnit,
+                    quantity,
+                    price: unitPrice,
+                };
             });
-            dispatch(setCart(expanded));
+
+            dispatch(setCart(mapped));
         }
     }, [orderId, order, dispatch]);
+
 
     // --- Lógica mejorada para borrar orden vacía ---
     const cart = useSelector((state) => state.cart);

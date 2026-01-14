@@ -108,7 +108,7 @@ const BottomNav = () => {
                     } w-[300px]`}
                     onClick={() => navigate("/orders")}
                 >
-                    <MdOutlineReorder className="inline mr-2" size={20} /> Orders
+                    <MdOutlineReorder className="inline mr-2" size={20} /> Ordenes
                 </button>
 
                 {/* 🔸 Botón central: abrir modal para crear orden */}

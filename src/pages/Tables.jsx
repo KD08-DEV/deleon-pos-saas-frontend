@@ -7,17 +7,23 @@ import { getTables, updateTable, updateOrder } from "@https";
 import TableCard from "@components/tables/TableCard";
 import { enqueueSnackbar } from "notistack";
 import { useDispatch } from "react-redux";
-import { setUser  } from "../redux/slices/userSlice";
+import { setUser } from "../redux/slices/userSlice";
+import { QK } from "../queryKeys";
+import { getSocket } from "../realtime/socket";
+import { useTablesRealtime } from "../realtime/useTablesRealtime";
+
 
 export default function Tables() {
     const location = useLocation();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
 
+
     const userState = useSelector((state) => state.user);
 
 // soporta varios shapes: {userData}, {user}, o el usuario directo
     const currentUser = userState?.userData || userState?.user || userState;
+    useTablesRealtime({ tenantId: currentUser?.tenantId });
 
 
 
@@ -39,8 +45,11 @@ export default function Tables() {
 
 
     const { data, isLoading } = useQuery({
-        queryKey: ["tables"],
+        queryKey: QK.TABLES,
         queryFn: getTables,
+        refetchInterval: 0,
+        refetchOnWindowFocus: true,
+        refetchOnMount: true,
         select: (res) => {
             if (Array.isArray(res?.data?.data)) return res.data.data;
             if (Array.isArray(res?.data)) return res.data;
@@ -48,16 +57,32 @@ export default function Tables() {
         },
     });
 
-    const tables = data || [];
 
-    const mUpdateTable = useMutation({
-        mutationFn: ({ id, body }) => updateTable(id, body),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tables"] }),
-    });
+
+    const tables = data || [];
 
     const mUpdateOrder = useMutation({
         mutationFn: ({ id, body }) => updateOrder(id, body),
+        onSuccess: (_res, vars) => {
+            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
+            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+
+            // instantáneo en ESTA pantalla
+            queryClient.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
+
+            // realtime: avisa a otras sesiones (manda ids para cache/update futuro)
+            const tenantId = currentUser?.tenantId || localStorage.getItem("tenantId");
+            const socket = getSocket();
+            socket?.emit("tenant:tablesUpdated", {
+                tenantId,
+                orderId: vars?.id,
+                tableId: vars?.body?.table,
+            });
+        },
     });
+
+
+
     const normalizedRole =
         (currentUser?.role || currentUser?.user?.role || "").toString().toLowerCase();
 

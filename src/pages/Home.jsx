@@ -28,9 +28,9 @@ const Home = () => {
     const orders = resData?.data?.data || [];
     const activeOrdersCount = orders.filter(
         (o) =>
-            o.orderStatus === "In Progress" ||
-            o.orderStatus === "Ready" ||
-            o.orderStatus === "Pending"
+            o.orderStatus === "En Progreso" ||
+            o.orderStatus === "Listo" ||
+            o.orderStatus === "Pendiente"
     ).length;
 
     const today = new Date();
@@ -42,7 +42,7 @@ const Home = () => {
         d1.getMonth() === d2.getMonth() &&
         d1.getFullYear() === d2.getFullYear();
 
-    const validOrders = orders.filter((o) => o.orderStatus !== "Cancelled");
+    const validOrders = orders.filter((o) => o.orderStatus !== "Cancelado");
     const totalEarnings = validOrders.reduce(
         (acc, o) => acc + (o.bills?.totalWithTax || 0),
         0
@@ -56,7 +56,8 @@ const Home = () => {
         .filter((o) => isSameDay(new Date(o?.orderDate || o?.createdAt), yesterday))
         .reduce((s, o) => s + (o?.bills?.totalWithTax || 0), 0);
 
-    const totalCompleted = orders.filter((o) => o.orderStatus === "Completed").length;
+    const totalCompleted = orders.filter((o) => o.orderStatus === "Completado").length;
+
 
     const calculatePercentage = (today, yesterday) => {
         if (yesterday > 0) return ((today - yesterday) / yesterday) * 100;

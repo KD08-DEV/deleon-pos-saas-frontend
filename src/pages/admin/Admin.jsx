@@ -8,6 +8,8 @@ import Employees from "./Employees";
 import PlanUsageWidget from "./PlanUsageWidget";
 import api from "../../lib/api";
 import Inventory from "./Inventory";
+import FiscalConfig from "./FiscalConfig";
+
 
 const Admin = () => {
     const [tab, setTab] = useState("reports");
@@ -42,7 +44,9 @@ const Admin = () => {
             const res = await api.get("/api/admin/usage");
             return res.data?.data; // { plan, limits, usage, remaining }
         },
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnReconnect: true,
     });
 
     const plan = usageData?.plan?.toUpperCase() || "Emprendedor";
@@ -171,8 +175,20 @@ const Admin = () => {
                                     : "bg-[#1f1f1f] text-[#ababab] hover:bg-[#262626]"
                             }`}
                         >
+
                             Empleados
                         </button>
+                        <button
+                            onClick={() => setTab("fiscal")}
+                            className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition ${
+                                tab === "fiscal"
+                                    ? "bg-[#f6b100] text-black shadow shadow-yellow-500/30"
+                                    : "bg-[#1f1f1f] text-[#ababab] hover:bg-[#262626]"
+                            }`}
+                        >
+                            NCF / Fiscal
+                        </button>
+
                         {canInventory && (
                             <button
                                 onClick={() => setTab("inventory")}
@@ -186,12 +202,13 @@ const Admin = () => {
                             </button>
                         )}
                     </div>
-
                     {/* CONTENIDO DINÁMICO */}
                     <div className="mt-2">
                         {tab === "inventory" && <Inventory plan={rawPlan} />}
                         {tab === "reports" && <Reports />}
                         {tab === "employees" && <Employees />}
+                        {tab === "fiscal" && <FiscalConfig />}
+
                     </div>
                 </div>
             </div>

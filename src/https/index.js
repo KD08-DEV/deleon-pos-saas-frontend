@@ -27,14 +27,29 @@ export const updateOrder  = (id, data) => api.put(`/api/order/${encodeURICompone
 export const deleteOrder  = (id) => api.delete(`/api/order/${encodeURIComponent(id)}`);
 
 // DISHES
-export const addDish = (formData, tenantId) =>
-    api.post(`/api/dishes?tenantId=${tenantId}`, formData, {
+const getTenantId = () => localStorage.getItem("tenantId");
+
+export const addDish = (formData, tenantIdParam) => {
+    const tenantId = tenantIdParam || getTenantId();
+    return api.post(`/api/dishes?tenantId=${encodeURIComponent(tenantId)}`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
     });
+};
 
-export const getDishes = (tenantId) =>
-    api.get(`/api/dishes?tenantId=${encodeURIComponent(tenantId)}`);
+export const getDishes = (tenantIdParam) => {
+    const tenantId = tenantIdParam || getTenantId();
+    return api.get(`/api/dishes?tenantId=${encodeURIComponent(tenantId)}`);
+};
+
 export const deleteDish = (id) => api.delete(`/api/dishes/${encodeURIComponent(id)}`);
+export const updateDish = (id, formData) =>
+    api.put(`/api/dishes/${encodeURIComponent(id)}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+    });
+// RECIPE (NEW)
+export const getDishRecipe = (id) => api.get(`/api/dishes/${encodeURIComponent(id)}/recipe`);
+export const updateDishRecipe = (id, body) => api.put(`/api/dishes/${encodeURIComponent(id)}/recipe`, body);
+
 
 export const getTenant = (tenantId) =>
     api.get(`/api/tenant/${encodeURIComponent(tenantId)}`);

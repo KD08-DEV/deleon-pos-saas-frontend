@@ -52,6 +52,21 @@ const ignoreViteRequest = (url) =>
     url.includes("hmr") ||
     url.includes("react-refresh");
 
+const canCacheResponse = (response) => {
+    // Cache API NO soporta 206 (partial content)
+    if (!response) return false;
+    if (response.status === 206) return false;
+
+    // Solo cachear respuestas OK
+    if (!response.ok) return false;
+
+    // Opaque suele ser cross-origin sin CORS (mejor no cachearlo aquí)
+    if (response.type === "opaque") return false;
+
+    return true;
+};
+
+
 // ===============================
 // FETCH – Caching avanzado
 // ===============================
@@ -62,6 +77,9 @@ self.addEventListener("fetch", (event) => {
     if (request.method !== "GET") return;
 
     const url = new URL(request.url);
+    if (url.pathname.endsWith(".pdf") || url.pathname.includes("invoice")) {
+        return; // que vaya directo a la red
+    }
 
     // 🛑 Ignorar peticiones de Vite Dev Server
     if (ignoreViteRequest(url.pathname) || ignoreViteRequest(url.href)) {
@@ -76,10 +94,10 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(
             fetch(request)
                 .then((response) => {
-                    const clone = response.clone();
-                    caches.open(STATIC_CACHE).then((cache) =>
-                        cache.put(request, clone)
-                    );
+                    if (canCacheResponse(response)) {
+                        const clone = response.clone();
+                        caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone));
+                    }
                     return response;
                 })
                 .catch(() => caches.match("/index.html"))
@@ -94,10 +112,10 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(
             fetch(request)
                 .then((response) => {
-                    const clone = response.clone();
-                    caches.open(API_CACHE).then((cache) =>
-                        cache.put(request, clone)
-                    );
+                    if (canCacheResponse(response)) {
+                        const clone = response.clone();
+                        caches.open(API_CACHE).then((cache) => cache.put(request, clone));
+                    }
                     return response;
                 })
                 .catch(() =>
@@ -109,6 +127,8 @@ self.addEventListener("fetch", (event) => {
         return;
     }
 
+
+
     // ===============================
     // 3) STATIC – Cache-first
     // ===============================
@@ -117,11 +137,12 @@ self.addEventListener("fetch", (event) => {
             if (cached) return cached;
 
             return fetch(request).then((response) => {
-                const clone = response.clone();
-                caches.open(STATIC_CACHE).then((cache) =>
-                    cache.put(request, clone)
-                );
+                if (canCacheResponse(response)) {
+                    const clone = response.clone();
+                    caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone));
+                }
                 return response;
+
             });
         })
     );

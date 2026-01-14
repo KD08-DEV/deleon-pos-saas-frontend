@@ -17,6 +17,17 @@ const RecentOrders = () => {
         orderStatusUpdateMutation.mutate({ orderId, orderStatus });
 
     };
+    const normalizeStatusUI = (s) => {
+        const v = String(s || "").trim();
+        const map = {
+            "In Progress": "En Progreso",
+            "Ready": "Listo",
+            "Completed": "Completado",
+            "Cancelled": "Cancelado",
+            "Canceled": "Cancelado",
+        };
+        return map[v] || v || "En Progreso";
+    };
 
 
     const orderStatusUpdateMutation = useMutation({
@@ -109,7 +120,8 @@ const RecentOrders = () => {
                             ? order.items.reduce((sum, it) => sum + (it.quantity || 1), 0)
                             : 0;
 
-                        const status = order?.orderStatus || "In Progress";
+                        const status = normalizeStatusUI(order?.orderStatus);
+
                         const dateText = order?.orderDate
                             ? formatDateAndTime(order?.orderDate)
                             : "N/A";
@@ -133,11 +145,11 @@ const RecentOrders = () => {
                                 <td className="p-3">
                                     <select
                                         className={`bg-[#1a1a1a] text-[#f5f5f5] border border-gray-500 p-1 sm:p-2 rounded-lg focus:outline-none text-sm sm:text-base ${
-                                            status === "Ready"
+                                            status === "Listo"
                                                 ? "text-green-500"
-                                                : status === "Completed"
+                                                : status === "Completado"
                                                     ? "text-blue-600"
-                                                    : status === "Cancelled"
+                                                    : status === "Cancelado"
                                                         ? "text-red-500"
                                                         : "text-yellow-500"
                                         }`}
@@ -149,10 +161,10 @@ const RecentOrders = () => {
                                             })
                                         }
                                     >
-                                        <option value="In Progress">In Progress</option>
-                                        <option value="Ready">Ready</option>
-                                        <option value="Completed">Completed</option>
-                                        <option value="Cancelled">Cancelled</option>
+                                        <option value="En Progreso">En Progreso</option>
+                                        <option value="Listo">Listo</option>
+                                        <option value="Completado">Completado</option>
+                                        <option value="Cancelado">Cancelado</option>
                                     </select>
                                 </td>
                                 <td className="p-3 text-sm sm:text-base">{dateText}</td>
@@ -184,7 +196,7 @@ const RecentOrders = () => {
                         ? order.items.reduce((sum, it) => sum + (it.quantity || 1), 0)
                         : 0;
 
-                    const status = order?.orderStatus || "In Progress";
+                    const status = normalizeStatusUI(order?.orderStatus);
                     const dateText = order?.orderDate
                         ? formatDateAndTime(order?.orderDate)
                         : "N/A";
@@ -201,11 +213,11 @@ const RecentOrders = () => {
                                 </h3>
                                 <select
                                     className={`bg-[#1a1a1a] border border-gray-500 p-1 rounded-lg focus:outline-none text-xs ${
-                                        status === "Ready"
+                                        status === "Listo"
                                             ? "text-green-500"
-                                            : status === "Completed"
+                                            : status === "Completado"
                                                 ? "text-blue-600"
-                                                : status === "Cancelled"
+                                                : status === "Cancelado"
                                                     ? "text-red-500"
                                                     : "text-yellow-500"
                                     }`}
@@ -217,10 +229,10 @@ const RecentOrders = () => {
                                         })
                                     }
                                 >
-                                    <option value="In Progress">In Progress</option>
-                                    <option value="Ready">Ready</option>
-                                    <option value="Completed">Completed</option>
-                                    <option value="Cancelled">Cancelled</option>
+                                    <option value="En Progreso">En Progreso</option>
+                                    <option value="Listo">Listo</option>
+                                    <option value="Completado">Completado</option>
+                                    <option value="Cancelado">Cancelado</option>
                                 </select>
                             </div>
                             <p className="text-[#f5f5f5] text-sm font-medium">

@@ -12,7 +12,7 @@ const buttons = [
   { label: "Agregar Mesa", icon: <MdTableBar />, action: "table" },
   { label: "Remover Mesa", icon: <BiErrorAlt />, action: "removeTable" },
   { label: "Agregar Platos", icon: <BiSolidDish />, action: "dishes" },
-  { label: "Remover Platos", icon: <BiErrorAlt/>, action: "removeDish" },
+  { label: "Remover/Editar Platos", icon: <BiErrorAlt/>, action: "removeDish" },
 
 ];
 

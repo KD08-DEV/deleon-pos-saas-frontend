@@ -16,10 +16,10 @@ const endOfDay = (d) => {
 const addDays = (d, n) => new Date(d.getTime() + n * 24 * 60 * 60 * 1000);
 
 const TIME_RANGES = [
-    { key: "all", label: "All time", build: () => ({ start: null, end: null }) },
+    { key: "all", label: "Todo el tiempo", build: () => ({ start: null, end: null }) },
     {
         key: "last7",
-        label: "Last 7 days",
+        label: "Últimos 7 días",
         build: () => {
             const end = endOfDay(new Date());
             const start = startOfDay(addDays(end, -6));
@@ -28,7 +28,7 @@ const TIME_RANGES = [
     },
     {
         key: "thisMonth",
-        label: "This month",
+        label: "Este mes",
         build: () => {
             const now = new Date();
             const start = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -38,7 +38,7 @@ const TIME_RANGES = [
     },
     {
         key: "lastMonth",
-        label: "Last month",
+        label: "Mes pasado",
         build: () => {
             const now = new Date();
             const firstThis = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -50,10 +50,20 @@ const TIME_RANGES = [
     },
 ];
 
-// ---- Helpers de métricas ---------------------------------------------------
-const inRange = (dateStr, start, end) => {
+
+const toDate = (v) => {
+    if (!v) return null;
+    if (typeof v === "string" || typeof v === "number") return new Date(v);
+    if (typeof v === "object" && v.$date) return new Date(v.$date);
+    // si viene { date: ... } u otro wrapper, agrega aquí si aplica
+    return new Date(v);
+};
+
+const inRange = (dateVal, start, end) => {
     if (!start || !end) return true;
-    const t = new Date(dateStr).getTime();
+    const d = toDate(dateVal);
+    if (!d || Number.isNaN(d.getTime())) return false; // si no se puede parsear, no cuenta
+    const t = d.getTime();
     return t >= start.getTime() && t <= end.getTime();
 };
 
@@ -102,7 +112,7 @@ const Metrics = () => {
 
     // Filtrar solo órdenes completadas o listas
     const validOrders = orders.filter(
-        (order) => order.orderStatus !== "Cancelled"
+        (order) => order.orderStatus !== "Cancelado"
     );
 
 // Calcular ganancias
@@ -162,7 +172,7 @@ const Metrics = () => {
     const completedDelta = pctDelta(completedNow, completedPrev);
 
     const totalActiveOrders = orders.filter(
-        (o) => o.orderStatus === "In Progress" || o.orderStatus === "Ready"
+        (o) => o.orderStatus === "En Progreso" || o.orderStatus === "Listo"
     ).length;
 
     // 5) Datos para tarjetas

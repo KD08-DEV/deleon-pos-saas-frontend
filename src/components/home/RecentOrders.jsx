@@ -29,7 +29,7 @@ const RecentOrders = ({ fill = false }) => {
             <div className="bg-[#1a1a1a] w-full rounded-lg shadow-md flex flex-col">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center px-4 sm:px-6 py-3">
                     <h1 className="text-[#f5f5f5] text-base sm:text-lg font-semibold tracking-wide">
-                        Recent Orders
+                        Ordenes Recientes
                     </h1>
                 </div>
 

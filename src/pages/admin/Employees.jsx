@@ -15,8 +15,9 @@ const Employees = () => {
             // backend responde { success, data: [...] }
             return Array.isArray(data?.data) ? data.data : [];
         },
-        staleTime: 30_000,
-        refetchOnWindowFocus: false,
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnReconnect: true,
     });
 
     if (isLoading) {

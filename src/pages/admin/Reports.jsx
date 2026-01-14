@@ -103,8 +103,9 @@ const Reports = () => {
                         onChange={(e) => setFilters((f) => ({ ...f, method: e.target.value }))}
                         className="p-2 bg-[#1f1f1f] rounded text-white">
                     <option value="">Todos los métodos</option>
-                    <option value="Cash">Cash</option>
+                    <option value="Efectivo">Efectivo</option>
                     <option value="Tarjeta">Tarjeta</option>
+                    <option value="Transferencia">Transferencia</option>
                 </select>
                 <input placeholder="Usuario" value={filters.user}
                        onChange={(e) => setFilters((f) => ({ ...f, user: e.target.value }))}
@@ -152,7 +153,7 @@ const Reports = () => {
                             <tr key={r._id} className="border-t border-[#2a2a2a]">
                                 <td className="p-3">{new Date(r.createdAt).toLocaleDateString()}</td>
                                 <td className="p-3">{r.user?.name || "—"}</td>
-                                <td className="p-3">{r.paymentMethod || "Cash"}</td>
+                                <td className="p-3">{r.paymentMethod || "Efectivo"}</td>
                                 <td className="p-3 font-bold text-[#F6B100]">{currency(r.bills?.totalWithTax)}</td>
                                 <td className="p-3">
                                     {r._id && r.paymentMethod ? (

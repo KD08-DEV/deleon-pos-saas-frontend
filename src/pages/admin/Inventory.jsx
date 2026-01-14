@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "../../components/shared/Modal";
 import { inventoryApi, downloadBlob } from "../../lib/inventoryApi";
 
-const emptyForm = { name: "", category: "General", unit: "unidad", cost: 0, stockCurrent: 0, stockMin: 0 };
+const emptyForm = {
+    name: "",
+    category: "General",
+    unit: "unidad",
+    cost: 0,
+    stockCurrent: 0,
+    stockMin: 0,
+};
+
 function Field({ label, children }) {
     return (
         <label className="block">
@@ -34,13 +42,49 @@ export default function Inventory({ plan }) {
 
     const [openMove, setOpenMove] = useState(false);
     const [moveItem, setMoveItem] = useState(null);
-    const [movement, setMovement] = useState({ type: "purchase", qty: 1, unitCost: "", note: "" });
+    const [movement, setMovement] = useState({
+        type: "purchase",
+        qty: 1,
+        unitCost: "",
+        note: "",
+    });
+
+    // Tabs
+    const [tab, setTab] = useState("items"); // items | consumption
+
+    // Consumption range
+    const [range, setRange] = useState(() => {
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const today = `${yyyy}-${mm}-${dd}`;
+        return { from: today, to: today };
+    });
+
+    const [consumptionRows, setConsumptionRows] = useState([]);
+    const [loadingConsumption, setLoadingConsumption] = useState(false);
+
+    async function loadConsumption() {
+        setLoadingConsumption(true);
+        try {
+            const { data } = await inventoryApi.consumption({
+                from: range.from ? new Date(range.from).toISOString() : undefined,
+                to: range.to ? new Date(range.to).toISOString() : undefined,
+            });
+            setConsumptionRows(data.rows || []);
+        } finally {
+            setLoadingConsumption(false);
+        }
+    }
 
     const filtered = useMemo(() => {
         const s = q.trim().toLowerCase();
         if (!s) return items;
-        return items.filter((i) =>
-            (i.name || "").toLowerCase().includes(s) || (i.category || "").toLowerCase().includes(s)
+        return items.filter(
+            (i) =>
+                (i.name || "").toLowerCase().includes(s) ||
+                (i.category || "").toLowerCase().includes(s)
         );
     }, [items, q]);
 
@@ -64,13 +108,15 @@ export default function Inventory({ plan }) {
             <div className="p-2">
                 <h2 className="text-xl font-semibold">Inventario</h2>
                 <p className="mt-2 text-gray-400">
-                    Este módulo está disponible solo para los planes <b>Pro (Premium)</b> y <b>VIP</b>.
+                    Este módulo está disponible solo para los planes <b>Pro (Premium)</b> y{" "}
+                    <b>VIP</b>.
                 </p>
             </div>
         );
     }
 
     function openCreate() {
+        setQ(""); // evita “no aparece” por filtros previos
         setEditing(null);
         setForm(emptyForm);
         setOpenForm(true);
@@ -156,63 +202,234 @@ export default function Inventory({ plan }) {
             <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-semibold">Inventario</h2>
                 <div className="flex gap-2">
-                    <button className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold" onClick={openCreate}>
+                    <button
+                        className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold"
+                        onClick={openCreate}
+                    >
                         Nuevo insumo
                     </button>
-                    <button className="px-4 py-2 rounded-xl border border-gray-700" onClick={exportItems}>
+                    <button
+                        className="px-4 py-2 rounded-xl border border-gray-700"
+                        onClick={exportItems}
+                    >
                         Exportar Items
                     </button>
-                    <button className="px-4 py-2 rounded-xl border border-gray-700" onClick={exportMovements}>
+                    <button
+                        className="px-4 py-2 rounded-xl border border-gray-700"
+                        onClick={exportMovements}
+                    >
                         Exportar Kardex
                     </button>
                 </div>
             </div>
 
-            {lowStock.length > 0 && (
-                <div className="mt-4 p-4 rounded-2xl border border-gray-800 bg-[#111111]">
-                    <div className="font-semibold">Alertas: Stock bajo</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                        {lowStock.slice(0, 12).map((i) => (
-                            <span key={i._id} className="px-3 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 text-sm">
-                {i.name} ({i.stockCurrent}/{i.stockMin})
-              </span>
-                        ))}
+            {/* Tabs */}
+            <div className="mt-3 flex gap-2">
+                <button
+                    className={`px-4 py-2 rounded-xl border ${
+                        tab === "items"
+                            ? "border-yellow-500/50 bg-yellow-500/10"
+                            : "border-gray-700"
+                    }`}
+                    onClick={() => setTab("items")}
+                >
+                    Insumos
+                </button>
+
+                <button
+                    className={`px-4 py-2 rounded-xl border ${
+                        tab === "consumption"
+                            ? "border-yellow-500/50 bg-yellow-500/10"
+                            : "border-gray-700"
+                    }`}
+                    onClick={() => {
+                        setTab("consumption");
+                        loadConsumption();
+                    }}
+                >
+                    Consumo / Vendido
+                </button>
+            </div>
+
+            {/* TAB: INSUMOS */}
+            {tab === "items" && (
+                <>
+                    {lowStock.length > 0 && (
+                        <div className="mt-4 p-4 rounded-2xl border border-gray-800 bg-[#111111]">
+                            <div className="font-semibold">Alertas: Stock bajo</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {lowStock.slice(0, 12).map((i) => (
+                                    <span
+                                        key={i._id}
+                                        className="px-3 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 text-sm"
+                                    >
+                    {i.name} ({i.stockCurrent}/{i.stockMin})
+                  </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-4">
+                        <input
+                            className={inputCls}
+                            placeholder="Buscar por nombre o categoría..."
+                            value={q}
+                            onChange={(e) => setQ(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                        {filtered.map((i) => {
+                            const stockCurrent = Number(i.stockCurrent ?? 0);
+                            const stockMin = Number(i.stockMin ?? 0);
+                            const isLow = stockCurrent <= stockMin && stockMin > 0;
+
+                            return (
+                                <div
+                                    key={i._id}
+                                    className="p-4 rounded-2xl border border-gray-800 bg-[#111111] flex items-center justify-between"
+                                >
+                                    <div>
+                                        <div className="font-semibold flex items-center gap-2">
+                                            {i.name}
+                                            {isLow && (
+                                                <span className="text-xs px-2 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300">
+                          Bajo
+                        </span>
+                                            )}
+                                        </div>
+                                        <div className="text-sm text-gray-400">
+                                            {i.category} · {i.unit} · Costo: {i.cost ?? 0} · Stock:{" "}
+                                            {i.stockCurrent ?? 0} (Min: {i.stockMin ?? 0})
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="px-4 py-2 rounded-xl border border-gray-700"
+                                            onClick={() => openMovementModal(i)}
+                                        >
+                                            Movimiento
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 rounded-xl border border-gray-700"
+                                            onClick={() => openEdit(i)}
+                                        >
+                                            Editar
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 rounded-xl border border-gray-700"
+                                            onClick={() => archiveItem(i._id)}
+                                        >
+                                            Archivar
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
+
+            {/* TAB: CONSUMO / VENDIDO */}
+            {tab === "consumption" && (
+                <div className="mt-4">
+                    <div className="p-4 rounded-2xl border border-gray-800 bg-[#111111]">
+                        <div className="flex flex-col md:flex-row gap-3 md:items-end md:justify-between">
+                            <div>
+                                <div className="font-semibold">Consumo / Vendido</div>
+                                <div className="text-sm text-gray-400">
+                                    Resumen basado en movimientos automáticos tipo <b>sale</b> al
+                                    completar órdenes.
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 items-end">
+                                <div>
+                                    <div className="text-xs text-gray-400 mb-1">Desde</div>
+                                    <input
+                                        type="date"
+                                        className="p-2 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
+                                        value={range.from}
+                                        onChange={(e) =>
+                                            setRange((r) => ({ ...r, from: e.target.value }))
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <div className="text-xs text-gray-400 mb-1">Hasta</div>
+                                    <input
+                                        type="date"
+                                        className="p-2 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
+                                        value={range.to}
+                                        onChange={(e) =>
+                                            setRange((r) => ({ ...r, to: e.target.value }))
+                                        }
+                                    />
+                                </div>
+                                <button
+                                    className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold"
+                                    onClick={loadConsumption}
+                                >
+                                    Ver
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3">
+                            {loadingConsumption && (
+                                <div className="text-gray-400">Cargando...</div>
+                            )}
+
+                            {!loadingConsumption && consumptionRows.length === 0 && (
+                                <div className="text-gray-400">
+                                    No hay consumo/ventas en el rango seleccionado.
+                                </div>
+                            )}
+
+                            {!loadingConsumption &&
+                                consumptionRows.map((r) => {
+                                    const stockCurrent = Number(r.stockCurrent ?? 0);
+                                    const stockMin = Number(r.stockMin ?? 0);
+                                    const soldQty = Number(r.soldQty ?? 0);
+                                    const low = stockMin > 0 && stockCurrent <= stockMin;
+
+                                    return (
+                                        <div
+                                            key={r.itemId}
+                                            className="p-4 rounded-2xl border border-gray-800 bg-[#0b0b0b] flex items-center justify-between"
+                                        >
+                                            <div>
+                                                <div className="font-semibold flex items-center gap-2">
+                                                    {r.name}
+                                                    {low && (
+                                                        <span className="text-xs px-2 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300">
+                              Bajo
+                            </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="text-sm text-gray-400">
+                                                    Vendido: <b className="text-white">{soldQty}</b>{" "}
+                                                    {r.unit} · Stock:{" "}
+                                                    <b className="text-white">{stockCurrent}</b> (Min:{" "}
+                                                    {stockMin})
+                                                </div>
+
+                                                {low && (
+                                                    <div className="mt-1 text-sm text-yellow-300">
+                                                        Alerta: stock bajo
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                        </div>
                     </div>
                 </div>
             )}
-
-            <div className="mt-4">
-                <input
-                    className="w-full p-3 border border-gray-800 rounded-xl bg-[#0b0b0b]"
-                    placeholder="Buscar por nombre o categoría..."
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                />
-            </div>
-
-            <div className="mt-4 grid gap-3">
-                {filtered.map((i) => (
-                    <div key={i._id} className="p-4 rounded-2xl border border-gray-800 bg-[#111111] flex items-center justify-between">
-                        <div>
-                            <div className="font-semibold">{i.name}</div>
-                            <div className="text-sm text-gray-400">
-                                {i.category} · {i.unit} · Costo: {i.cost ?? 0} · Stock: {i.stockCurrent ?? 0} (Min: {i.stockMin ?? 0})
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            <button className="px-4 py-2 rounded-xl border border-gray-700" onClick={() => openMovementModal(i)}>
-                                Movimiento
-                            </button>
-                            <button className="px-4 py-2 rounded-xl border border-gray-700" onClick={() => openEdit(i)}>
-                                Editar
-                            </button>
-                            <button className="px-4 py-2 rounded-xl border border-gray-700" onClick={() => archiveItem(i._id)}>
-                                Archivar
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
 
             {/* Modal Crear/Editar */}
             {openForm && (
@@ -221,8 +438,6 @@ export default function Inventory({ plan }) {
                     onClose={() => setOpenForm(false)}
                 >
                     <form onSubmit={saveItem} className="w-full max-w-full text-white">
-                        {/* QUITADO: el h3 duplicado */}
-
                         <div className="grid gap-4">
                             <Field label="Nombre del insumo *">
                                 <input
@@ -240,20 +455,45 @@ export default function Inventory({ plan }) {
                                         className={inputCls}
                                         placeholder="Ej: Granos"
                                         value={form.category}
-                                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                                        onChange={(e) =>
+                                            setForm({ ...form, category: e.target.value })
+                                        }
                                     />
                                     <Help>Ej: Carnes, Vegetales, Bebidas.</Help>
                                 </Field>
 
                                 <Field label="Unidad">
-                                    <input
-                                        className={inputCls}
-                                        placeholder="Ej: lb, kg, unidad, litro"
+                                    <select
+                                        className="w-full p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/40"
                                         value={form.unit}
                                         onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                                    />
-                                    <Help>Esto te ayuda a registrar compras/desperdicios.</Help>
+                                    >
+                                        <option value="unidad">Unidad</option>
+                                        <option value="lb">Libra (lb)</option>
+                                        <option value="kg">Kilogramo (kg)</option>
+                                        <option value="g">Gramo (g)</option>
+                                        <option value="l">Litro (L)</option>
+                                        <option value="ml">Mililitro (ml)</option>
+                                        <option value="pz">Porción</option>
+                                        <option value="otro">Otro…</option>
+                                    </select>
+
+                                    {form.unit === "otro" && (
+                                        <input
+                                            className={`${inputCls} mt-2`}
+                                            placeholder="Escribe la unidad (ej: caja, funda, bandeja)"
+                                            value={form.customUnit || ""}
+                                            onChange={(e) => setForm({ ...form, customUnit: e.target.value })}
+                                            onBlur={() => {
+                                                const v = (form.customUnit || "").trim();
+                                                if (v) setForm((f) => ({ ...f, unit: v, customUnit: "" }));
+                                            }}
+                                        />
+                                    )}
+
+                                    <Help>Unidad del insumo para compras, desperdicios y kardex.</Help>
                                 </Field>
+
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -276,7 +516,9 @@ export default function Inventory({ plan }) {
                                         step="0.01"
                                         placeholder="Ej: 5"
                                         value={form.stockMin}
-                                        onChange={(e) => setForm({ ...form, stockMin: e.target.value })}
+                                        onChange={(e) =>
+                                            setForm({ ...form, stockMin: e.target.value })
+                                        }
                                     />
                                     <Help>Si baja de aquí, te saldrá alerta.</Help>
                                 </Field>
@@ -290,13 +532,14 @@ export default function Inventory({ plan }) {
                                         step="0.01"
                                         placeholder="Ej: 20"
                                         value={form.stockCurrent}
-                                        onChange={(e) => setForm({ ...form, stockCurrent: e.target.value })}
+                                        onChange={(e) =>
+                                            setForm({ ...form, stockCurrent: e.target.value })
+                                        }
                                     />
                                     <Help>Cuánto tienes ahora mismo en inventario.</Help>
                                 </Field>
                             )}
                         </div>
-
 
                         <div className="mt-5 flex justify-end gap-2">
                             <button
@@ -313,13 +556,13 @@ export default function Inventory({ plan }) {
 
                         {editing && (
                             <p className="mt-3 text-sm text-gray-400">
-                                Nota: el stock se ajusta usando “Movimiento” → “Ajuste (+/-)” para que quede registrado en el Kardex.
+                                Nota: el stock se ajusta usando “Movimiento” → “Ajuste (+/-)”
+                                para que quede registrado en el Kardex.
                             </p>
                         )}
                     </form>
                 </Modal>
             )}
-
 
             {/* Modal Movimiento */}
             {openMove && moveItem && (
@@ -330,9 +573,11 @@ export default function Inventory({ plan }) {
                     <form onSubmit={submitMovement} className="w-full max-w-full text-white">
                         <div className="grid gap-3">
                             <select
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b]"
+                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
                                 value={movement.type}
-                                onChange={(e) => setMovement({ ...movement, type: e.target.value })}
+                                onChange={(e) =>
+                                    setMovement({ ...movement, type: e.target.value })
+                                }
                             >
                                 <option value="purchase">Compra (entrada)</option>
                                 <option value="waste">Desperdicio (salida)</option>
@@ -340,30 +585,38 @@ export default function Inventory({ plan }) {
                             </select>
 
                             <input
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b]"
+                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
                                 type="number"
                                 step="0.01"
-                                placeholder={movement.type === "adjustment" ? "Cantidad (+/-)" : "Cantidad"}
+                                placeholder={
+                                    movement.type === "adjustment" ? "Cantidad (+/-)" : "Cantidad"
+                                }
                                 value={movement.qty}
-                                onChange={(e) => setMovement({ ...movement, qty: e.target.value })}
+                                onChange={(e) =>
+                                    setMovement({ ...movement, qty: e.target.value })
+                                }
                             />
 
                             {movement.type === "purchase" && (
                                 <input
-                                    className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b]"
+                                    className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
                                     type="number"
                                     step="0.01"
                                     placeholder="Costo unitario (opcional)"
                                     value={movement.unitCost}
-                                    onChange={(e) => setMovement({ ...movement, unitCost: e.target.value })}
+                                    onChange={(e) =>
+                                        setMovement({ ...movement, unitCost: e.target.value })
+                                    }
                                 />
                             )}
 
                             <input
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b]"
+                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
                                 placeholder="Nota (opcional)"
                                 value={movement.note}
-                                onChange={(e) => setMovement({ ...movement, note: e.target.value })}
+                                onChange={(e) =>
+                                    setMovement({ ...movement, note: e.target.value })
+                                }
                             />
                         </div>
 

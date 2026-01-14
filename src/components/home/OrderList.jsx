@@ -5,6 +5,18 @@ import { getAvatarName } from "../../utils/index";
 
 const OrderList = ({ order }) => {
     const customerName = order.customerDetails.name;
+    const normalizeStatusUI = (s) => {
+        const v = String(s || "").trim();
+        const map = {
+            "In Progress": "En Progreso",
+            "Ready": "Listo",
+            "Completed": "Completado",
+            "Cancelled": "Cancelado",
+            "Canceled": "Cancelado",
+        };
+        return map[v] || v || "En Progreso";
+    };
+    const status = normalizeStatusUI(order.orderStatus);
 
     return (
         <div className="flex items-center gap-4 p-3 rounded-xl bg-[#1c1c1c] hover:bg-[#222] transition-colors">
@@ -45,35 +57,33 @@ const OrderList = ({ order }) => {
 
                 {/* Status */}
                 <div className="shrink-0">
-                    {order.orderStatus === "Ready" && (
+                    {status === "Listo" && (
                         <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#1f3f35] text-green-500">
-              <FaCheckDouble />
-              Ready
-            </span>
+                          <FaCheckDouble />
+                          Listo
+                        </span>
                     )}
 
-                    {order.orderStatus === "Completed" && (
-                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#1f2f3f] text-blue-500">
-              <FaCheckDouble />
-              Completed
-            </span>
-                    )}
-
-                    {order.orderStatus === "Cancelled" && (
+                    {status === "Cancelado" && (
                         <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#3f1f1f] text-red-500">
-              <FaCircle />
-              Cancelled
-            </span>
+                          <FaCircle />
+                          Cancelado
+                        </span>
+                    )}
+                    {status === "Completado" && (
+                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#1f2f3f] text-blue-500">
+                        <FaCheckDouble />
+                            Completado
+                        </span>
                     )}
 
-                    {order.orderStatus !== "Ready" &&
-                        order.orderStatus !== "Completed" &&
-                        order.orderStatus !== "Cancelled" && (
-                            <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#3f3a1f] text-yellow-500">
-                <FaCircle />
-                                {order.orderStatus}
-              </span>
-                        )}
+                    {status !== "Listo" && status !== "Completado" && status !== "Cancelado" && (
+                        <span className="flex items-center gap-2 px-3 py-1 text-xs md:text-sm rounded-full bg-[#3f3a1f] text-yellow-500">
+                            <FaCircle />
+                            {status}
+                              </span>
+                    )}
+
                 </div>
             </div>
         </div>

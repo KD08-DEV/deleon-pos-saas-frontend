@@ -8,12 +8,15 @@ import { SnackbarProvider } from "notistack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime : 30000,
-    }
-  }
-})
+    defaultOptions: {
+        queries: {
+            staleTime: 30000,
+            refetchOnWindowFocus: true,
+            refetchOnMount: true,
+            refetchOnReconnect: true,
+        },
+    },
+});
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
@@ -27,7 +30,7 @@ createRoot(document.getElementById("root")).render(
   </StrictMode>
 );
 
-if ("serviceWorker" in navigator) {
+if (import.meta.env.PROD &&"serviceWorker" in navigator) {
     window.addEventListener("load", () => {
         navigator.serviceWorker
             .register("/sw.js")

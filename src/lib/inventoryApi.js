@@ -10,10 +10,12 @@ export const inventoryApi = {
 
     createMovement: (payload) => api.post("/api/inventory/movements", payload),
     listMovements: (params = {}) => api.get("/api/inventory/movements", { params }),
+    consumption: (params = {}) => api.get("/api/inventory/consumption", { params }),
 
     exportItemsCSV: () => api.get("/api/inventory/export/items.csv", { responseType: "blob" }),
     exportMovementsCSV: (params = {}) =>
         api.get("/api/inventory/export/movements.csv", { params, responseType: "blob" }),
+
 };
 
 export function downloadBlob(blob, filename) {
