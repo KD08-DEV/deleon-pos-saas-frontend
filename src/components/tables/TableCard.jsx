@@ -7,8 +7,13 @@ import React from "react";
  * - Muestra badge amarillo "Quick" para mesa sin número.
  */
 export default function TableCard({ table, onPick }) {
-    const isVirtual = !!table.isVirtual;
-    const status = isVirtual ? "Quick" : table?.status || "Available";
+    const isVirtual = !!table?.isVirtual;
+    const virtualType = table?.virtualType || "QUICK"; // QUICK / PEDIDOSYA / UBEREATS
+    const status = isVirtual ? (virtualType === "QUICK" ? "Quick" : "Delivery") : (table?.status || "Available");
+
+    const titleLeft = isVirtual ? "Canal" : "Mesa";
+    const titleRight = isVirtual ? (table?.displayName || "—") : (table?.tableNo ?? "—");
+
 
     return (
         <div
@@ -19,24 +24,27 @@ export default function TableCard({ table, onPick }) {
         >
             <div className="flex items-center justify-between">
                 <p className="text-white font-semibold">
-                    Mesa <span className="mx-1">→</span>{" "}
-                    {isVirtual ? "—" : table?.tableNo ?? "—"}
+                    {titleLeft} <span className="mx-1">→</span> {titleRight}
                 </p>
+
 
                 {/* 🔹 Aquí añadimos la condición especial para Quick */}
                 {isVirtual ? (
-                    <span className="bg-yellow-600 text-xs px-2 py-1 rounded">Rapido</span>
+                    virtualType === "QUICK" ? (
+                        <span className="bg-yellow-600 text-xs px-2 py-1 rounded">Rápido</span>
+                    ) : (
+                        <span className="bg-yellow-600 text-xs px-2 py-1 rounded">
+                          Delivery {table?.badgeText ? `• ${table.badgeText}` : ""}
+                        </span>
+                    )
                 ) : (
-                    <span
-                        className={`px-2 py-1 rounded text-xs ${
-                            status === "Available"
-                                ? "bg-yellow-700/40"
-                                : "bg-green-700/40"
-                        }`}
-                    >
-            {status}
-          </span>
+                    <span className={`px-2 py-1 rounded text-xs ${
+                        status === "Disponible" ? "bg-yellow-700/40" : "bg-green-700/40"
+                    }`}>
+                        {status}
+                      </span>
                 )}
+
             </div>
 
             <div className="h-12 w-12 rounded-full bg-black/40 flex items-center justify-center text-gray-300">

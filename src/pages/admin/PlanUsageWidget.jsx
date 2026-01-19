@@ -63,15 +63,15 @@ const PlanUsageWidget = () => {
         },
         {
             label: "Cajeras",
-            used: usage.cashiers,
+            used: usage.cajeras,
             max: limits.maxCashiers,
-            remaining: remaining.cashiers,
+            remaining: remaining.cajeras,
         },
         {
-            label: "Meseros",
-            used: usage.waiters,
+            label: "Camareros",
+            used: usage.camareros,
             max: limits.maxWaiters,
-            remaining: remaining.waiters,
+            remaining: remaining.camareros,
         },
         {
             label: "Platos",
@@ -184,7 +184,7 @@ const UpgradePlanModal = ({ onClose, plan }) => {
                 </p>
 
                 <ul className="text-xs text-gray-400 mb-4 list-disc pl-4 space-y-1">
-                    <li>Más empleados (administradores, cajeros, camareros).</li>
+                    <li>Más empleados (administradores, cajeras, camareros).</li>
                     <li>Más mesas y platos para tu restaurante.</li>
                     <li>Soporte multisucursal en niveles superiores.</li>
                 </ul>

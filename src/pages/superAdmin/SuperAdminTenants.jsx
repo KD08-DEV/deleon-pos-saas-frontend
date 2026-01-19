@@ -164,7 +164,7 @@ const SuperAdminTenants = () => {
                                     className="bg-gray-800 px-2 py-1 rounded text-sm text-gray-100"
                                 >
                                     <option value="emprendedor">emprendedor</option>
-                                    <option value="pro">Pro</option>
+                                    <option value="premium">premium</option>
                                     <option value="vip">vip</option>
                                 </select>
                             </div>

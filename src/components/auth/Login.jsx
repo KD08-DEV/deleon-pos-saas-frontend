@@ -19,12 +19,22 @@ const Login = () => {
     const handleChange = (e) => {
       setFormData({...formData, [e.target.name]: e.target.value});
     }
+    const getDeviceId = () => {
+        let id = localStorage.getItem("deviceId");
+        if (!id) {
+            id = crypto.randomUUID();
+            localStorage.setItem("deviceId", id);
+        }
+        return id;
+    };
 
-  
+
     const handleSubmit = (e) => {
-      e.preventDefault();
-      loginMutation.mutate(formData);
-    }
+        e.preventDefault();
+        const deviceId = getDeviceId();
+        loginMutation.mutate({ ...formData, deviceId });
+    };
+
 
     const loginMutation = useMutation({
         mutationFn: (reqData) => login(reqData),

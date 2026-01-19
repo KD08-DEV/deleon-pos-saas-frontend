@@ -30,4 +30,32 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+api.interceptors.response.use(
+    (res) => res,
+    (err) => {
+        const status = err?.response?.status;
+        const message = String(err?.response?.data?.message || err?.message || "");
+
+        // Solo disparar “force logout” cuando sea sesión inválida por otro dispositivo
+        const isSessionMismatch =
+            status === 401 &&
+            message.toLowerCase().includes("session expired") &&
+            message.toLowerCase().includes("another device");
+
+        if (isSessionMismatch) {
+            // Limpieza opcional (si usas token en localStorage)
+            localStorage.removeItem("token");
+
+            // Disparar evento global para que App.jsx haga dispatch + navigate
+            window.dispatchEvent(
+                new CustomEvent("auth:forceLogout", {
+                    detail: { status, message },
+                })
+            );
+        }
+
+        return Promise.reject(err);
+    }
+);
+
 export default api;

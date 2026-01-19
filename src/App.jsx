@@ -9,7 +9,7 @@ import {
 
 import { Home, Auth, Orders, Tables, Menu, Dashboard } from "./pages";
 import Header from "./components/shared/Header";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import useLoadData from "./hooks/useLoadData";
 import FullScreenLoader from "./components/shared/FullScreenLoader";
 import BottomNav from "./components/shared/BottomNav";
@@ -24,14 +24,74 @@ import SuperAdminCreateTenant from "./pages/superAdmin/SuperAdminCreateTenant";
 import SuperAdminLayout from "./components/superAdmin/SuperAdminLayout";
 import SuperAdminTenantUsage from "@pages/superAdmin/SuperAdminTenantUsage.jsx";
 import { connectSocket, disconnectSocket } from "./realtime/socket.js";
-import { useDispatch } from "react-redux";
 import { setTenant } from "./redux/slices/storeSlice";
 import { getTenant } from "./https";
+import { removeUser } from "./redux/slices/userSlice"; // ajusta ruta si es distinta
+import { getUserData } from "./https"; // ajusta si tu export está en otra ruta
+
+
 import { QK } from "./queryKeys";
+import api from "./lib/api";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+function SessionHeartbeat() {
+    const dispatch = useDispatch();
+    const { isAuth, userData } = useSelector((s) => s.user);
 
+    // 1) escuchar evento global emitido por api.js cuando llega 401 por otra sesión
+    useEffect(() => {
+        const handler = (e) => {
+            // limpiar estado redux => te saca de ProtectedRoutes
+            dispatch(removeUser());
+
+            // limpiar storage (por si guardas token/scope)
+            localStorage.removeItem("token");
+
+            // redirigir al login
+            if (window.location.pathname !== "/auth") {
+                window.location.href = "/auth";
+            }
+        };
+
+        window.addEventListener("auth:forceLogout", handler);
+        return () => window.removeEventListener("auth:forceLogout", handler);
+    }, [dispatch]);
+
+    // 2) ping cada 30 segundos usando el MISMO endpoint real (getUserData)
+    useEffect(() => {
+        if (!isAuth || !userData?._id) return;
+
+        let cancelled = false;
+
+        const ping = async () => {
+            try {
+                await getUserData(); // <- ESTE debe ser el real en tu proyecto
+            } catch (err) {
+                // si por alguna razón no entró por el interceptor, fuerza logout aquí también
+                if (err?.response?.status === 401) {
+                    dispatch(removeUser());
+                    localStorage.removeItem("token");
+                    if (window.location.pathname !== "/auth") {
+                        window.location.href = "/auth";
+                    }
+                }
+            }
+        };
+
+        ping();
+        const id = setInterval(() => {
+            if (!cancelled) ping();
+        }, 30_000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(id);
+        };
+    }, [isAuth, userData?._id, dispatch]);
+
+    return null;
+}
 
 function RealtimeTenantConfig() {
     const dispatch = useDispatch();
@@ -121,6 +181,7 @@ function Layout() {
     return (
         <>
             <RealtimeTenantConfig />
+            <SessionHeartbeat />
             {shouldShowPosChrome && <Header />}
 
             <Routes>

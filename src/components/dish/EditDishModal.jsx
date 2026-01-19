@@ -3,9 +3,12 @@ import { motion } from "framer-motion";
 import { IoMdClose } from "react-icons/io";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
+import { useSelector } from "react-redux";
 import { updateDish } from "../../https";
 
 const EditDishModal = ({ dish, onClose }) => {
+    const userData = useSelector((state) => state.user.userData);
+    const tenantId = userData?.tenantId;
     const qc = useQueryClient();
 
     const [form, setForm] = useState({
@@ -22,7 +25,7 @@ const EditDishModal = ({ dish, onClose }) => {
 
     const previewUrl = useMemo(() => {
         if (form.imageFile) return URL.createObjectURL(form.imageFile);
-        return dish?.imageUrl || "";
+        return dish?.imageUrl || " /placeholder.jpg";
     }, [form.imageFile, dish]);
 
     useEffect(() => {
@@ -88,9 +91,9 @@ const EditDishModal = ({ dish, onClose }) => {
             return updateDish(dishId, fd);
         },
         onSuccess: (res) => {
-            enqueueSnackbar(res?.data?.message || "Plato actualizado.", { variant: "success" });
-            qc.invalidateQueries({ queryKey: ["dishes"], exact: true });
-            qc.refetchQueries({ queryKey: ["dishes"], exact: true, type: "active" });
+            enqueueSnackbar(res?.data?.message || "Plato actualizado exitosamente", { variant: "success" });
+            qc.invalidateQueries({ queryKey: ["dishes", tenantId] });
+            qc.refetchQueries({ queryKey: ["dishes", tenantId], type: "active" });
             onClose?.();
         },
         onError: (err) => {
@@ -225,7 +228,12 @@ const EditDishModal = ({ dish, onClose }) => {
 
                         {previewUrl ? (
                             <div className="mb-3">
-                                <img src={previewUrl} alt="preview" className="h-40 w-full object-cover rounded" />
+                                <img
+                                    src={previewUrl}
+                                    alt="preview"
+                                    className="h-40 w-full object-cover rounded"
+                                    onError={(e) => { e.currentTarget.src = " /placeholder.jpg"; }}
+                                />
                             </div>
                         ) : null}
 

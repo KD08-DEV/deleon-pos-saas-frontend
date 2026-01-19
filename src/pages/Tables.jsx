@@ -17,7 +17,9 @@ export default function Tables() {
     const location = useLocation();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-
+    const tenantState = useSelector((s) => s.store || s.tenant || {});
+    const tenant = tenantState?.tenant || tenantState?.data || tenantState;
+    const orderSources = tenant?.features?.orderSources || {};
 
     const userState = useSelector((state) => state.user);
 
@@ -89,30 +91,44 @@ export default function Tables() {
 
     const handlePickTable = async (table) => {
         const tableId = table?._id;
-        const status = table?.status || "Available";
+        const status = table?.status || "Disponible";
 
-        // QUICK (sin mesa física)
+
+        //QUICK Mesa
         if (table?.isVirtual) {
             if (!orderId) {
-                enqueueSnackbar("Primero crea una orden para continuar.", {
-                    variant: "warning",
-                });
+                enqueueSnackbar("Primero crea una orden para continuar.", { variant: "warning" });
                 return;
             }
+
+            // Si es canal delivery, seteamos orderSource antes de ir al menú
+            if (table?.virtualType === "PEDIDOSYA" || table?.virtualType === "UBEREATS") {
+                try {
+                    await mUpdateOrder.mutateAsync({
+                        id: orderId,
+                        body: { orderSource: table.virtualType },
+                    });
+                } catch (e) {
+                    enqueueSnackbar("No se pudo seleccionar el canal.", { variant: "error" });
+                    return;
+                }
+            }
+
             navigate(`/menu?orderId=${orderId}`);
             return;
         }
 
-        // Mesa AVAILABLE + sin orderId => bloquear
-        if (status === "Available" && !orderId) {
+
+        // Mesa Disponible + sin orderId => bloquear
+        if (status === "Disponible" && !orderId) {
             enqueueSnackbar("Debes crear una orden antes de usar esta mesa.", {
                 variant: "warning",
             });
             return;
         }
 
-        // Mesa BOOKED => abrir orden existente (si tienes permiso)
-        if (status === "Booked") {
+        // Mesa Ocupada => abrir orden existente (si tienes permiso)
+        if (status === "Ocupada") {
             const existingOrderId =
                 table?.currentOrder?._id ||
                 table?.currentOrder?.id ||
@@ -144,7 +160,7 @@ export default function Tables() {
             return;
         }
 
-        // Mesa AVAILABLE + orderId => asignar mesa a la orden
+        // Mesa Disponible + orderId => asignar mesa a la orden
         try {
             await mUpdateOrder.mutateAsync({
                 id: orderId,
@@ -162,11 +178,40 @@ export default function Tables() {
 
     // Tarjeta virtual (no se guarda en BD)
     const quickCard = { _id: "no-table", isVirtual: true, tableNo: 0, status: "Quick", seats: 0 };
+    const pedidosYaEnabled = !!orderSources?.pedidosYa?.enabled;
+    const uberEatsEnabled = !!orderSources?.uberEats?.enabled;
+
+    const pedidosYaCard = {
+        _id: "virtual-pedidosya",
+        isVirtual: true,
+        virtualType: "PEDIDOSYA",
+        displayName: "PedidosYa",
+        badgeText: `${Math.round((Number(orderSources?.pedidosYa?.commissionRate ?? 0.26) * 100))}%`,
+        status: "Delivery",
+        seats: 0,
+    };
+
+    const uberEatsCard = {
+        _id: "virtual-ubereats",
+        isVirtual: true,
+        virtualType: "UBEREATS",
+        displayName: "Uber Eats",
+        badgeText: `${Math.round((Number(orderSources?.uberEats?.commissionRate ?? 0.22) * 100))}%`,
+        status: "Delivery",
+        seats: 0,
+    };
 
     return (
-        <section className="bg-[#111] min-h-screen px-6 py-6">
+        <section className="bg-[#111] min-h-screen px-6 pt-6 pb-24">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <TableCard table={quickCard} onPick={() => handlePickTable(quickCard)} />
+                {pedidosYaEnabled && (
+                    <TableCard table={pedidosYaCard} onPick={() => handlePickTable(pedidosYaCard)} />
+                )}
+
+                {uberEatsEnabled && (
+                    <TableCard table={uberEatsCard} onPick={() => handlePickTable(uberEatsCard)} />
+                )}
                 {isLoading ? (
                     <div className="text-gray-400">Cargando mesas…</div>
                 ) : (

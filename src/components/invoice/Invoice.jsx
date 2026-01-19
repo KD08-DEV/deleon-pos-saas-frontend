@@ -108,11 +108,26 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const bills = order?.bills || {};
 
     const subtotal = Number(order?.subTotal ?? bills?.subtotal ?? bills?.total ?? 0);
+
     const discount = Number(order?.discountAmount ?? bills?.discount ?? 0);
     const taxEnabled = order?.taxEnabled ?? bills?.taxEnabled ?? true;
     const tax = Number(order?.taxAmount ?? bills?.tax ?? 0);
     const tip = Number(order?.tipAmount ?? bills?.tipAmount ?? bills?.tip ?? 0);
+
     const grandTotal = Number(order?.totalAmount ?? bills?.totalWithTax ?? bills?.total ?? 0);
+    // ===== Comisión Delivery (viene del backend, congelada por orden) =====
+    const orderSource = String(order?.orderSource || "").toUpperCase();
+    const isDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
+
+    const commissionRate = Number(order?.commissionRate ?? bills?.commissionRate ?? 0);
+    const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
+
+    const commissionAmount = Number(order?.commissionAmount ?? bills?.commissionAmount ?? 0);
+    const netTotal = Number(order?.netTotal ?? bills?.netTotal ?? 0);
+
+// Fallback por si solo viene rate y no amount (pero ideal es que el backend lo mande)
+    const computedNet = netTotal || (grandTotal - commissionAmount);
+    const totalToPay = isDelivery ? (grandTotal + commissionAmount) : grandTotal;
 
     const headerGridClass = taxEnabled
         ? "grid grid-cols-[2fr_0.5fr_1fr_1fr]"
@@ -289,7 +304,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
                         {tip > 0 && (
                             <p>
-                                <span className="font-semibold">Propina:</span> RD${tip.toFixed(2)}
+                                <span className="font-semibold">Propina Legal:</span> RD${tip.toFixed(2)}
                             </p>
                         )}
 
@@ -298,8 +313,16 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                                 <span className="font-semibold">ITBIS:</span> RD${tax.toFixed(2)}
                             </p>
                         )}
+                        {isDelivery && commissionAmount > 0 && (
+                            <p>
+                                <span className="font-semibold">Comisión ({commissionPct}%):</span> RD${commissionAmount.toFixed(2)}
+                            </p>
+                        )}
 
-                        <p className="font-semibold">Total a pagar: RD${grandTotal.toFixed(2)}</p>
+                        <p className="font-semibold">
+                            Total a pagar: RD${(isDelivery ? (grandTotal + commissionAmount) : grandTotal).toFixed(2)}
+                        </p>
+
 
                         <p>
                             <span className="font-semibold">Método de pago:</span> {paymentMethod}

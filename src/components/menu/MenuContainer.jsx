@@ -22,28 +22,92 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ["dishes", tenantId],
+        enabled: !!tenantId,
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: true,
         queryFn: async () => {
             const res = await api.get(`/api/dishes?tenantId=${tenantId}`);
             const payload = Array.isArray(res.data?.data) ? res.data.data : res.data;
             return Array.isArray(payload) ? payload : [];
         },
     });
+    const { data: invCatsData } = useQuery({
+        queryKey: ["inventoryCategories", tenantId],
+        enabled: !!tenantId,
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: true,
+        queryFn: async () => {
+            // OJO: si este endpoint es admin-only y el menú lo ven meseros/cajeros,
+            // conviene crear uno público por tenant en backend.
+            const res = await api.get(`/api/admin/inventory/categories?tenantId=${tenantId}`);
+            const payload = Array.isArray(res.data?.data) ? res.data.data : res.data;
+            return Array.isArray(payload) ? payload : [];
+        },
+    });
+
+
 
     const dishes = Array.isArray(data) ? data : [];
     const [search, setSearch] = useState("");
     const searchTrim = search.trim().toLowerCase();
+    const invCategories = Array.isArray(invCatsData) ? invCatsData : [];
+
+    const invCatNameById = useMemo(() => {
+        const m = {};
+        for (const c of invCategories) {
+            if (c?._id) m[String(c._id)] = (c?.name || "").trim();
+        }
+        return m;
+    }, [invCategories]);
+
 
 
     // Agrupar por categoría (ordenadas alfabéticamente)
+    const getInvCatName = (d) => {
+        // Caso 1: backend populó inventoryCategory { _id, name }
+        if (d?.inventoryCategory && typeof d.inventoryCategory === "object") {
+            const n = (d.inventoryCategory.name || "").trim();
+            if (n) return n;
+        }
+
+        // Caso 2: backend manda inventoryCategoryName explícito
+        if (typeof d?.inventoryCategoryName === "string") {
+            const n = d.inventoryCategoryName.trim();
+            if (n) return n;
+        }
+
+        // Caso 3: backend manda inventoryCategoryId (lo normal ahora)
+        const id =
+            d?.inventoryCategoryId ||
+            d?.inventoryCategory?._id ||
+            (typeof d?.inventoryCategory === "string" ? d.inventoryCategory : null);
+
+        if (id) {
+            const name = invCatNameById[String(id)];
+            if (name) return name;
+        }
+
+        return "";
+    };
+
+
     const categories = useMemo(() => {
         const grouped = dishes.reduce((acc, d) => {
-            const k = d.category || "Uncategorized";
+            const invName = getInvCatName(d);
+
+            // 👇 Importante: aquí eliminamos el fallback a d.category,
+            // porque tú quieres que sea LA MISMA de inventario siempre.
+            const k = invName || "Uncategorized";
+
             if (!acc[k]) acc[k] = [];
             acc[k].push(d);
             return acc;
         }, {});
         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
-    }, [dishes]);
+    }, [dishes, invCatNameById]);
+
     const filteredCategories = useMemo(() => {
         if (!searchTrim) return categories;
 
@@ -77,7 +141,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
             setOpenCategory(fallback);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [categories.length]);
+    },  [categories]);
 
     useEffect(() => {
         if (openCategory) {
@@ -97,54 +161,86 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
     // Cantidades por plato (por id)
     const [qtyMap, setQtyMap] = useState({});
+    // Pesos por plato (por id) - para sellMode === "weight"
+    const [weightMap, setWeightMap] = useState({});
+    const getWeight = (id) => {
+        const v = weightMap[id];
+        const n = Number(String(v ?? "1").replace(",", "."));
+        return Number.isFinite(n) ? Math.max(0, n) : 0;
+    };
+    const setWeight = (id, val) => setWeightMap((m) => ({ ...m, [id]: val }));
+
     const getQty = (id) => Math.max(0, qtyMap[id] ?? 1);
     const inc = (id) => setQtyMap((m) => ({ ...m, [id]: Math.min((m[id] ?? 1) + 1, 99) }));
     const dec = (id) =>
         setQtyMap((m) => ({ ...m, [id]: Math.max((m[id] ?? 1) - 1, 0) }));
 
+
+
     // Agregar al carrito
     const addToCart = (dish) => {
-        const quantity = getQty(dish._id);
-        if (quantity <= 0) {
-            enqueueSnackbar?.("Quantity must be at least 1", { variant: "warning" });
+        const sellMode = String(dish?.sellMode || "unit").toLowerCase();
+
+        // UNIT
+        if (sellMode !== "weight") {
+            const quantity = getQty(dish._id);
+            if (quantity <= 0) {
+                enqueueSnackbar?.("Quantity must be at least 1", { variant: "warning" });
+                return;
+            }
+
+            const item = {
+                id: dish._id,
+                dishId: dish._id,
+                name: dish.name,
+                qtyType: "unit",
+                quantity,
+                unitPrice: Number(dish.price) || 0,
+                price: (Number(dish.price) || 0) * quantity,
+                imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
+            };
+
+            if (typeof onAddToCart === "function") {
+                onAddToCart(item);
+                enqueueSnackbar?.(`${item.name} x${item.quantity} added to cart`, { variant: "success" });
+                return;
+            }
+
+            dispatch(addItems(item));
             return;
         }
 
+        // WEIGHT (lb)
+        const weight = getWeight(dish._id);
+        if (weight <= 0) {
+            enqueueSnackbar?.("Las libras deben ser mayor a 0.", { variant: "warning" });
+            return;
+        }
+
+        const unitPrice = Number((dish.pricePerLb ?? dish.pricePerLB ?? dish.price) ?? 0);
+        const lineTotal = Number((unitPrice * weight).toFixed(2));
+
         const item = {
             id: dish._id,
+            dishId: dish._id,
             name: dish.name,
-            price: Number(dish.price) || 0,
-            quantity,
+            qtyType: "weight",
+            weightUnit: dish.weightUnit || "lb",
+            quantity: weight,
+            unitPrice,
+            price: lineTotal,
             imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
         };
 
         if (typeof onAddToCart === "function") {
             onAddToCart(item);
-            enqueueSnackbar?.(`${item.name} x${item.quantity} added to cart`, { variant: "success" });
+            enqueueSnackbar?.(`${item.name} (${weight} ${item.weightUnit}) added to cart`, { variant: "success" });
             return;
         }
 
-        // ✅ Usar Redux directamente si no nos pasan handler
         dispatch(addItems(item));
-
-
-
-        // ✅ Fallback: guardar en localStorage (cart)
-        try {
-            const raw = localStorage.getItem("cart");
-            const cart = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
-            const idx = cart.findIndex((i) => i.id === item.id);
-            if (idx >= 0) {
-                cart[idx].quantity = Math.min(99, (cart[idx].quantity || 0) + quantity);
-            } else {
-                cart.push(item);
-            }
-            localStorage.setItem("cart", JSON.stringify(cart));
-            enqueueSnackbar?.(`${item.name} x${item.quantity} added to cart`, { variant: "success" });
-        } catch {
-            enqueueSnackbar?.("Unable to store cart locally", { variant: "error" });
-        }
     };
+
 
     return (
         <div className="h-full overflow-y-auto scrollbar-hide px-10 pb-6">
@@ -237,6 +333,9 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                                 <div className="grid grid-cols-3 gap-6 pt-1">
                                                     {items.map((dish) => {
                                                         const qty = getQty(dish._id);
+                                                        const isWeight = String(dish?.sellMode || "unit").toLowerCase() === "weight";
+                                                        const canAdd = isWeight ? getWeight(dish._id) > 0 : qty > 0;
+
                                                         return (
                                                             <motion.div
                                                                 key={dish._id}
@@ -245,10 +344,13 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                                             >
                                                                 <div className="flex flex-col items-center text-center">
                                                                     <img
-                                                                        src={dish.imageUrl || "/placeholder.jpg"}
+                                                                        src={dish.imageUrl || " /placeholder.jpg"}
                                                                         alt={dish.name}
                                                                         className="w-[96px] h-[96px] object-cover rounded-full mb-3 ring-1 ring-[#2b2b2b]"
                                                                         loading="lazy"
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.src = " /placeholder.jpg";
+                                                                        }}
                                                                     />
                                                                     <h4 className="text-[#f5f5f5] font-semibold line-clamp-2">
                                                                         {dish.name}
@@ -257,33 +359,56 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                                                         ${Number(dish.price) || 0}
                                                                     </p>
 
-                                                                    {/* Controles + / − */}
-                                                                    <div className="flex items-center gap-3 mt-4">
-                                                                        <button
-                                                                            onClick={() => dec(dish._id)}
-                                                                            className="p-2 rounded-full border border-[#2f2f2f] hover:bg-[#222] text-[#eaeaea]"
-                                                                            aria-label={`Decrease ${dish.name}`}
-                                                                        >
-                                                                            <Minus size={16} />
-                                                                        </button>
-                                                                        <span className="min-w-[28px] text-[#f5f5f5] font-semibold">
-                                      {qty}
-                                    </span>
-                                                                        <button
-                                                                            onClick={() => inc(dish._id)}
-                                                                            className="p-2 rounded-full border border-[#2f2f2f] hover:bg-[#222] text-[#eaeaea]"
-                                                                            aria-label={`Increase ${dish.name}`}
-                                                                        >
-                                                                            <Plus size={16} />
-                                                                        </button>
-                                                                    </div>
+                                                                    {String(dish?.sellMode || "unit").toLowerCase() === "weight" ? (
+                                                                        <div className="w-full mt-4">
+                                                                            <div className="flex items-center justify-between text-xs text-[#ababab]">
+                                                                                <span>Libras</span>
+                                                                                <span>
+                                                                              ${Number((dish.pricePerLb ?? dish.pricePerLB ?? dish.price) ?? 0)} / {dish.weightUnit || "lb"}
+                                                                                </span>
+                                                                            </div>
+
+                                                                            <input
+                                                                                type="text"
+                                                                                inputMode="decimal"
+                                                                                value={weightMap[dish._id] ?? "1"}
+                                                                                onChange={(e) => setWeight(dish._id, e.target.value)}
+                                                                                className="mt-2 w-full px-3 py-2 rounded-lg bg-[#141414] border border-[#2a2a2a]
+                                                                            text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#f6b100] focus:border-[#f6b100]"
+                                                                                placeholder="Ej: 0.5"
+                                                                            />
+
+                                                                            <p className="mt-2 text-sm font-semibold text-[#f6b100]">
+                                                                                Total: ${Number((Number((dish.pricePerLb ?? dish.pricePerLB ?? dish.price) ?? 0) * getWeight(dish._id))).toFixed(2)}
+                                                                            </p>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-3 mt-4">
+                                                                            <button
+                                                                                onClick={() => dec(dish._id)}
+                                                                                className="p-2 rounded-full border border-[#2f2f2f] hover:bg-[#222] text-[#eaeaea]"
+                                                                                aria-label={`Decrease ${dish.name}`}
+                                                                            >
+                                                                                <Minus size={16} />
+                                                                            </button>
+                                                                            <span className="min-w-[28px] text-[#f5f5f5] font-semibold">{qty}</span>
+                                                                            <button
+                                                                                onClick={() => inc(dish._id)}
+                                                                                className="p-2 rounded-full border border-[#2f2f2f] hover:bg-[#222] text-[#eaeaea]"
+                                                                                aria-label={`Increase ${dish.name}`}
+                                                                            >
+                                                                                <Plus size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
+
 
                                                                     {/* Botón Agregar */}
                                                                     <button
-                                                                        onClick={() => addToCart(dish, qty)}
-                                                                        disabled={qty <= 0}
+                                                                        onClick={() => addToCart(dish)}
+                                                                        disabled={!canAdd}
                                                                         className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-semibold transition-colors ${
-                                                                            qty > 0
+                                                                            canAdd
                                                                                 ? "bg-[#025cca] hover:bg-[#0b6fe8] text-white"
                                                                                 : "bg-[#2a2a2a] text-[#777] cursor-not-allowed"
                                                                         }`}

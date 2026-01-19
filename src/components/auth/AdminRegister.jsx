@@ -144,7 +144,7 @@ const AdminRegister = () => {
                             Rol del empleado
                         </label>
                         <div className="grid grid-cols-3 gap-3">
-                            {["Waiter", "Cashier", "Admin"].map((role) => (
+                            {["Camarero", "Cajera", "Admin"].map((role) => (
                                 <button
                                     key={role}
                                     type="button"

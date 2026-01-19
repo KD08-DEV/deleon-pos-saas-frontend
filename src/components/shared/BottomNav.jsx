@@ -1,7 +1,5 @@
-import React, { useState } from "react";
-import { FaHome } from "react-icons/fa";
-import { MdOutlineReorder, MdTableBar, MdOutlineSettings } from "react-icons/md";
-import { BiSolidDish } from "react-icons/bi";
+import React, { useState, memo, useCallback } from "react";
+import { Home, ListOrdered, Table2, Settings, Plus } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
 import { useDispatch, useSelector } from "react-redux";
@@ -9,13 +7,12 @@ import { setCustomer } from "../../redux/slices/customerSlice";
 import { useMutation } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
 import { addOrder } from "../../https";
+import { motion, AnimatePresence } from "framer-motion";
 
-const BottomNav = () => {
+const BottomNav = memo(() => {
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useDispatch();
-
-
     const { userData } = useSelector((s) => s.user);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -23,19 +20,26 @@ const BottomNav = () => {
     const [phone, setPhone] = useState("");
     const [guestCount, setGuestCount] = useState(0);
 
-    const openModal = () => setIsModalOpen(true);
-    const closeModal = () => setIsModalOpen(false);
+    const openModal = useCallback(() => setIsModalOpen(true), []);
+    const closeModal = useCallback(() => setIsModalOpen(false), []);
 
     if (userData?.role === "SuperAdmin") {
         return (
-            <div className="fixed bottom-0 left-0 right-0 bg-[#262626] p-2 h-16 flex justify-center items-center z-40">
-                <button
-                    className="flex items-center justify-center font-bold text-yellow-400 w-[400px]"
+            <motion.div
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#1a1a1a] to-[#1f1f1f] p-2 h-16 flex justify-center items-center z-40 border-t border-[#2a2a2a]/50 backdrop-blur-lg"
+            >
+                <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="flex items-center justify-center gap-2 font-bold bg-gradient-to-r from-yellow-500 to-amber-500 text-black px-6 py-3 rounded-xl shadow-lg hover:shadow-yellow-500/20 transition-all"
                     onClick={() => navigate("/superadmin")}
                 >
+                    <Settings className="w-5 h-5" />
                     SuperAdmin Panel
-                </button>
-            </div>
+                </motion.button>
+            </motion.div>
         );
     }
 
@@ -89,64 +93,67 @@ const BottomNav = () => {
 
     const isActive = (path) => location.pathname.startsWith(path);
 
+    const navItems = [
+        { path: "/", label: "Home", icon: Home, id: "home" },
+        { path: "/orders", label: "Ordenes", icon: ListOrdered, id: "orders" },
+        { path: "/tables", label: "Mesas", icon: Table2, id: "tables" },
+    ];
+
+    if (userData?.role === "Admin") {
+        navItems.push({ path: "/admin", label: "Admin", icon: Settings, id: "admin" });
+    }
+
     return (
         <>
-            {/* 🔹 Bottom navigation bar (diseño original) */}
-            <div className="fixed bottom-0 left-0 right-0 bg-[#262626] p-2 h-16 flex justify-between items-center z-40">
-                <button
-                    className={`flex items-center justify-center font-bold ${
-                        isActive("/") ? "text-white" : "text-[#ababab]"
-                    } w-[300px]`}
-                    onClick={() => navigate("/")}
-                >
-                    <FaHome className="inline mr-2" size={20} /> Home
-                </button>
+            {/* Bottom navigation bar optimizado */}
+            <motion.div
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] p-3 h-20 flex justify-between items-center z-50 border-t border-[#2a2a2a]/50 shadow-2xl transition-colors duration-300"
+            >
+                {navItems.map((item) => {
+                    const active = isActive(item.path);
+                    const Icon = item.icon;
+                    return (
+                        <button
+                            key={item.id}
+                            onClick={() => navigate(item.path)}
+                            className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
+                                active
+                                    ? "text-white"
+                                    : "text-[#ababab] hover:text-white"
+                            }`}
+                        >
+                            {active && (
+                                <motion.div
+                                    layoutId="activeTab"
+                                    className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
+                                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                />
+                            )}
+                            <Icon className={`w-5 h-5 relative z-10 ${active ? "text-blue-400" : ""}`} />
+                            <span className={`text-xs font-semibold relative z-10 ${active ? "text-blue-400" : ""}`}>
+                                {item.label}
+                            </span>
+                        </button>
+                    );
+                })}
 
-                <button
-                    className={`flex items-center justify-center font-bold ${
-                        isActive("/orders") ? "text-white" : "text-[#ababab]"
-                    } w-[300px]`}
-                    onClick={() => navigate("/orders")}
-                >
-                    <MdOutlineReorder className="inline mr-2" size={20} /> Ordenes
-                </button>
-
-                {/* 🔸 Botón central: abrir modal para crear orden */}
+                {/* Botón central: crear orden - simplificado */}
                 <button
                     onClick={openModal}
-                    className="w-16 h-16 rounded-full bg-[#e7b400] text-black font-bold flex items-center justify-center -mt-10 shadow-lg"
-                    title="Create Order"
+                    className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 via-amber-500 to-orange-500 text-black font-bold flex items-center justify-center shadow-2xl hover:shadow-yellow-500/50 hover:scale-110 active:scale-95 transition-transform duration-200 z-50"
+                    title="Crear Orden"
                 >
-                    <BiSolidDish size={24} />
+                    <Plus className="w-7 h-7" />
                 </button>
+            </motion.div>
 
-
-                <button
-                    className={`flex items-center justify-center font-bold ${
-                        isActive("/tables") ? "text-white" : "text-[#ababab]"
-                    } w-[300px]`}
-                    onClick={() => navigate("/tables")}
-                >
-                    <MdTableBar className="inline mr-2" size={20} />Mesas
-                </button>
-
-                {/* 🔒 Mostrar botón Admin SOLO si el rol es "Admin" */}
-                {userData?.role === "Admin" && (
-                    <button
-                        className={`flex items-center justify-center font-bold ${
-                            isActive("/admin") ? "text-white" : "text-[#ababab]"
-                        } w-[300px]`}
-                        onClick={() => navigate("/admin")}
-                    >
-                        <MdOutlineSettings className="inline mr-2" size={20} /> Admin
-                    </button>
-                )}
-
-            </div>
-
-            {/* 🔹 Modal Crear Orden (sin cambios visuales) */}
-            {isModalOpen && (
-                <Modal onClose={closeModal} title="Create Order">
+            {/* Modal Crear Orden mejorado */}
+            <AnimatePresence>
+                {isModalOpen && (
+                    <Modal onClose={closeModal} title="Crear Nueva Orden">
                     <div className="space-y-4 text-white">
                         <div>
                             <label className="block mb-2 text-sm text-white/70">Customer Name</label>
@@ -190,19 +197,24 @@ const BottomNav = () => {
                         </div>
 
                         <div className="pt-2">
-                            <button
+                            <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
                                 onClick={handleCreateOrder}
                                 disabled={createOrder.isPending}
-                                className="w-full py-3 rounded-lg bg-[#e7b400] text-black font-semibold hover:opacity-90 disabled:opacity-70"
+                                className="w-full py-3 rounded-lg bg-gradient-to-r from-yellow-400 to-amber-500 text-black font-semibold hover:shadow-lg hover:shadow-yellow-500/30 disabled:opacity-70 transition-all"
                             >
-                                {createOrder.isPending ? "Creating..." : "Create Order"}
-                            </button>
+                                {createOrder.isPending ? "Creando..." : "Crear Orden"}
+                            </motion.button>
                         </div>
                     </div>
-                </Modal>
-            )}
+                    </Modal>
+                )}
+            </AnimatePresence>
         </>
     );
-};
+});
+
+BottomNav.displayName = 'BottomNav';
 
 export default BottomNav;

@@ -40,8 +40,8 @@ const TenantUsageCard = ({ tenant }) => {
     const rows = [
         { label: "Users", used: usage.users, max: limits.maxUsers, left: remaining.users },
         { label: "Admins", used: usage.admins, max: limits.maxAdmins, left: remaining.admins },
-        { label: "Cashiers", used: usage.cashiers, max: limits.maxCashiers, left: remaining.cashiers },
-        { label: "Waiters", used: usage.waiters, max: limits.maxWaiters, left: remaining.waiters },
+        { label: "Cajeras", used: usage.cajeras, max: limits.maxCashiers, left: remaining.cajeras },
+        { label: "Camareros", used: usage.camareros, max: limits.maxWaiters, left: remaining.camareros },
         { label: "Dishes", used: usage.dishes, max: limits.maxDishes, left: remaining.dishes },
         { label: "Tables", used: usage.tables, max: limits.maxTables, left: remaining.tables },
     ];

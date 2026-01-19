@@ -156,7 +156,7 @@ const Menu = () => {
 
 
     return (
-        <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col">
+        <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col pb-24">
             {/* CONTENT */}
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row gap-3">
                 {/* LEFT */}
@@ -199,7 +199,11 @@ const Menu = () => {
                             <div className="flex-1 min-h-0 overflow-y-auto pb-24">
                                 <CartInfo orderId={orderId} />
                                 <hr className="border-[#2a2a2a] border-t-2" />
-                                <Bill orderId={orderId} setIsOrderModalOpen={setIsOrderModalOpen} />
+                                <Bill
+                                    orderId={orderId}
+                                    order={order}
+                                    setIsOrderModalOpen={setIsOrderModalOpen}
+                                />
                             </div>
                         </>
                     )}

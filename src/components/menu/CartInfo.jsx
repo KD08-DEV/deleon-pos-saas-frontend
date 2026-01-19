@@ -40,7 +40,12 @@ const CartInfo = () => {
                 <h1 className="text-[#ababab] font-semibold tracling-wide text-md">
                   {item.name}
                 </h1>
-                <p className="text-[#ababab] font-semibold">x{item.quantity}</p>
+                  <p className="text-[#ababab] font-semibold">
+                      {item.qtyType === "weight"
+                          ? `${Number(item.quantity || 0)} ${item.weightUnit || "lb"}`
+                          : `x${item.quantity}`}
+                  </p>
+
               </div>
               <div className="flex items-center justify-between mt-3">
                 <div className="flex items-center gap-3">
@@ -54,7 +59,9 @@ const CartInfo = () => {
                     size={20}
                   />
                 </div>
-                <p className="text-[#f5f5f5] text-md font-bold">${item.price}</p>
+                  <p className="text-[#f5f5f5] text-md font-bold">
+                      ${Number(item.price || 0).toFixed(2)}
+                  </p>
               </div>
             </div>
           );

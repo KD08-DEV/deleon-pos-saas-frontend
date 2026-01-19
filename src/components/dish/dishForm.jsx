@@ -1,27 +1,52 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "react-query";
-import { addDish } from "../api/dishes";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { addDish } from "../../https";
+import { useSelector } from "react-redux";
+import { enqueueSnackbar } from "notistack";
 
 export default function DishForm({ onClose }) {
-    const [form, setForm] = useState({ name: "", price: "", category: "" });
+    const userData = useSelector((state) => state.user.userData);
+    const tenantId = userData?.tenantId;
+    const [form, setForm] = useState({ name: "", price: "", category: "", sellMode: "unit" });
     const [image, setImage] = useState(null);
     const queryClient = useQueryClient();
 
-    const mutation = useMutation(addDish, {
-        onSuccess: () => {
-            queryClient.invalidateQueries("dishes");
-            setForm({ name: "", price: "", category: "" });
+    const mutation = useMutation({
+        mutationFn: (formData) => addDish(formData, tenantId),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries(["dishes", tenantId]);
+            setForm({ name: "", price: "", category: "", sellMode: "unit" });
             setImage(null);
-            onClose(); // ✅ Cierra modal al terminar
+            enqueueSnackbar(res?.data?.message || "Plato agregado exitosamente", { variant: "success" });
+            onClose();
+        },
+        onError: (error) => {
+            const msg = error?.response?.data?.message || "Error al agregar plato";
+            enqueueSnackbar(msg, { variant: "error" });
         },
     });
 
-    const handleChange = (e) =>
-        setForm({ ...form, [e.target.name]: e.target.value });
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setForm({ ...form, [name]: value });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        mutation.mutate({ ...form, image });
+        
+        if (!tenantId) {
+            enqueueSnackbar("TenantId no encontrado. Inicia sesión de nuevo.", { variant: "warning" });
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("name", form.name);
+        formData.append("category", form.category);
+        formData.append("price", form.price);
+        formData.append("sellMode", form.sellMode || "unit");
+        if (image) formData.append("image", image);
+
+        mutation.mutate(formData);
     };
 
     return (

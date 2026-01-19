@@ -2,16 +2,20 @@ import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDishes, deleteDish } from "../../https";
 import { enqueueSnackbar } from "notistack";
+import { useSelector } from "react-redux";
 import EditDishModal from "./EditDishModal";
 
 const RemoveDishModal = ({ setIsRemoveDishModalOpen }) => {
+    const userData = useSelector((state) => state.user.userData);
+    const tenantId = userData?.tenantId;
     const queryClient = useQueryClient();
     const [selectedDishId, setSelectedDishId] = useState("");
     const [isEditOpen, setIsEditOpen] = useState(false);
 
     const { data: resData, isLoading, isError } = useQuery({
-        queryKey: ["dishes"],
-        queryFn: async () => await getDishes(),
+        queryKey: ["dishes", tenantId],
+        queryFn: async () => await getDishes(tenantId),
+        enabled: !!tenantId,
     });
 
     const dishes = resData?.data?.data || [];
@@ -24,12 +28,15 @@ const RemoveDishModal = ({ setIsRemoveDishModalOpen }) => {
     const mutation = useMutation({
         mutationFn: (id) => deleteDish(id),
         onSuccess: () => {
-            enqueueSnackbar("Dish removed successfully!", { variant: "success" });
-            queryClient.invalidateQueries({ queryKey: ["dishes"], exact: true });
-            queryClient.refetchQueries({ queryKey: ["dishes"], exact: true, type: "active" });
+            enqueueSnackbar("Plato eliminado exitosamente", { variant: "success" });
+            queryClient.invalidateQueries({ queryKey: ["dishes", tenantId] });
+            queryClient.refetchQueries({ queryKey: ["dishes", tenantId], type: "active" });
             setIsRemoveDishModalOpen(false);
         },
-        onError: () => enqueueSnackbar("Failed to remove dish!", { variant: "error" }),
+        onError: (error) => {
+            const msg = error?.response?.data?.message || "Error al eliminar plato";
+            enqueueSnackbar(msg, { variant: "error" });
+        },
     });
 
     const handleSubmit = (e) => {

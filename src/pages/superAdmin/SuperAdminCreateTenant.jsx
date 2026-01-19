@@ -137,7 +137,7 @@ const SuperAdminCreateTenant = () => {
                         className="w-full p-2 border rounded bg-white text-black"
                     >
                         <option value="emprendedor">emprendedor</option>
-                        <option value="pro">pro</option>
+                        <option value="premium">premium</option>
                         <option value="vip">vip</option>
                     </select>
                 </div>

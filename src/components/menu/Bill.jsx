@@ -25,15 +25,36 @@ const isLikelyRncOrCedula = (value) => {
 
 
 
-const Bill = ({ orderId, setIsOrderModalOpen }) => {
+const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const dispatch = useDispatch();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     const cart = useSelector((state) => state.cart);
+    const subtotalFromStore = useSelector(getTotalPrice);
+    const orderSource = String(order?.orderSource || "").toUpperCase();
+    const isDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
+    useEffect(() => {
+        if (!isDelivery) return;
+
+        // Fuerza el método de pago por canal
+        if (orderSource === "PEDIDOSYA") setPaymentMethod("Pedido Ya");
+        if (orderSource === "UBEREATS") setPaymentMethod("Uber Eats");
+    }, [isDelivery, orderSource]);
+
+    const commissionRate = num(order?.commissionRate);
+    const commissionAmountFromServer = num(order?.commissionAmount);
+    const netTotalFromServer = num(order?.netTotal);
+
+// Comisión calculada en front como fallback (SIN TIP)
+// Base para comisión: base + tax (sin propina)
+
+
+    const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
+
 
     // Total del carrito (tu helper)
-    const subtotalFromStore = useSelector(getTotalPrice);
+
     const subtotal = useMemo(() => num(subtotalFromStore), [subtotalFromStore]);
 
     // Items fallback
@@ -42,11 +63,13 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
         return Array.isArray(raw) ? raw : [];
     }, [cart]);
 
-    const itemsCount = useMemo(
-        () =>
-            itemsArray.reduce((acc, it) => acc + num(it?.quantity ?? 1), 0),
-        [itemsArray]
-    );
+    const itemsCount = useMemo(() => {
+        return itemsArray.reduce((acc, it) => {
+            const isWeight = it?.qtyType === "weight";
+            return acc + (isWeight ? 1 : num(it?.quantity ?? 1));
+        }, 0);
+    }, [itemsArray]);
+
 
     // Tenant Info
     const { tenantInfo } = useTenant();
@@ -151,6 +174,7 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
         const tipCalc = tipEnabled ? (baseCalc * num(tipPercent || 0)) / 100 : 0;
 
         return {
+
             discount: discountCalc,
             base: baseCalc,
             tax: taxCalc,
@@ -158,6 +182,29 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             total: baseCalc + taxCalc + tipCalc,
         };
     }, [subtotal, discountType, discountValue, taxEnabled, tipEnabled, tipPercent]);
+    const computedCommission = useMemo(() => {
+        if (!isDelivery) return 0;
+        const rate = num(commissionRate);
+        if (!rate) return 0;
+
+        // comisión SIN tip: (base + tax) * rate
+        const baseNoTip = num(base) + num(tax);
+        const val = baseNoTip * rate;
+
+        return Number(val.toFixed(2));
+    }, [isDelivery, commissionRate, base, tax]);
+
+    const commissionAmountEffective = useMemo(() => {
+        const serverVal = num(commissionAmountFromServer);
+        return serverVal > 0 ? serverVal : computedCommission;
+    }, [commissionAmountFromServer, computedCommission]);
+
+    const totalToPay = useMemo(() => {
+        return isDelivery ? num(total) + num(commissionAmountEffective) : num(total);
+    }, [isDelivery, total, commissionAmountEffective]);
+
+
+
 
     // Si el usuario activa wantsFiscal pero el tenant no puede, lo apagamos y avisamos
     useEffect(() => {
@@ -244,18 +291,33 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             const qtyType = item.qtyType || "unit";
             const weightUnit = qtyType === "weight" ? (item.weightUnit || "lb") : undefined;
 
-            const unitPrice = num(item.price ?? item.unitPrice ?? item.pricePerQuantity);
+// IMPORTANTE:
+// - Para weight: unitPrice debe venir de item.unitPrice (600), NO de item.price (1200)
+// - Para unit: unitPrice puede venir de unitPrice/pricePerQuantity/price
+            const unitPrice =
+                qtyType === "weight"
+                    ? num(item.unitPrice ?? item.pricePerQuantity ?? 0)
+                    : num(item.unitPrice ?? item.pricePerQuantity ?? item.price ?? 0);
+
+// Line total:
+// - Para weight: ya viene en item.price (1200). Si no viene, lo calculas.
+// - Para unit: unitPrice * quantity
+            const lineTotal =
+                qtyType === "weight"
+                    ? num(item.price ?? (unitPrice * quantity))
+                    : Number((unitPrice * quantity).toFixed(2));
 
             return {
                 dishId,
-                dish: dishId, // compatibilidad por si tu schema viejo usa "dish"
+                dish: dishId,
                 name: item.name ?? "Producto",
                 qtyType,
                 weightUnit,
                 quantity,
                 unitPrice,
-                price: unitPrice * quantity,
+                price: Number(lineTotal.toFixed(2)),
             };
+
         });
 
         // Bills consistentes
@@ -272,7 +334,9 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
         const basePayload = {
             orderStatus: "En Progreso",
             items,
-            paymentMethod,
+            paymentMethod: isDelivery
+                ? (orderSource === "PEDIDOSYA" ? "Pedido Ya" : "Uber Eats")
+                : paymentMethod,
             discount: { type: discountType, value: num(discountValue) || 0 },
             bills,
         };
@@ -384,6 +448,10 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
             const invoice = {
                 _id: server._id ?? orderId,
                 createdAt: server.createdAt ?? new Date().toISOString(),
+                orderSource: server.orderSource,
+                commissionRate: server.commissionRate,
+                commissionAmount: server.commissionAmount,
+                netTotal: server.netTotal,
 
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
@@ -544,16 +612,21 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                 )}
 
                 {/* ✅ RESUMEN */}
-                <div className="mt-3 text-xs text-[#ababab] space-y-1">
-                    <div className="flex justify-between">
-                        <span>Subtotal</span>
-                        <span>${num(subtotal).toFixed(2)}</span>
+                {isDelivery && num(commissionAmountEffective) > 0 && (
+                    <div className="mt-3 text-xs text-[#ababab] space-y-1">
+                        <div className="flex justify-between">
+                            <span>Comisión ({commissionPct}%)</span>
+                            <span>${num(commissionAmountEffective).toFixed(2)}</span>
+                        </div>
                     </div>
+                )}
+
+                <div className="mt-3 text-xs text-[#ababab] space-y-1">
 
                     {discountEnabledByTenant && (
                         <div className="flex justify-between">
                             <span>Descuento</span>
-                            <span>-${num(discount).toFixed(2)}</span>
+                            <span>${num(discount).toFixed(2)}</span>
                         </div>
                     )}
 
@@ -571,71 +644,63 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
 
                     <div className="flex justify-between text-[#f5f5f5] font-semibold">
                         <span>Total</span>
-                        <span>${num(total).toFixed(2)}</span>
+                        <span>${num(totalToPay).toFixed(2)}</span>
                     </div>
                 </div>
             </div>
 
             {/* Método de pago */}
             <div className="flex items-center justify-between gap-4 px-5 mt-4">
-                <button
-                    onClick={() => setPaymentMethod("Efectivo")}
-                    className={`px-4 py-3 w-full rounded-lg font-semibold ${
-                        paymentMethod === "Efectivo"
-                            ? "bg-[#2b2b2b] text-white"
-                            : "bg-[#1f1f1f] text-[#ababab]"
-                    }`}
-                >
-                    Efectivo
-                </button>
+                {isDelivery ? (
+                    <button
+                        type="button"
+                        disabled
+                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#2b2b2b] text-white opacity-90 cursor-not-allowed"
+                        title="El método de pago se asigna automáticamente por el canal"
+                    >
+                        {orderSource === "PEDIDOSYA" ? "Pedido Ya" : "Uber Eats"}
+                    </button>
+                ) : (
+                    <>
+                        <button
+                            onClick={() => setPaymentMethod("Efectivo")}
+                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                                paymentMethod === "Efectivo"
+                                    ? "bg-[#2b2b2b] text-white"
+                                    : "bg-[#1f1f1f] text-[#ababab]"
+                            }`}
+                        >
+                            Efectivo
+                        </button>
 
-                <button
-                    onClick={() => setPaymentMethod("Tarjeta")}
-                    className={`px-4 py-3 w-full rounded-lg font-semibold ${
-                        paymentMethod === "Tarjeta"
-                            ? "bg-[#2b2b2b] text-white"
-                            : "bg-[#1f1f1f] text-[#ababab]"
-                    }`}
-                >
-                    Tarjeta
-                </button>
-                <button
-                    onClick={() => setPaymentMethod("Transferencia")}
-                    className={`px-4 py-3 w-full rounded-lg font-semibold ${
-                        paymentMethod === "Transferencia"
-                            ? "bg-[#2b2b2b] text-white"
-                            : "bg-[#1f1f1f] text-[#ababab]"
-                    }`}
-                >
-                    Transferencia
-                </button>
+                        <button
+                            onClick={() => setPaymentMethod("Tarjeta")}
+                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                                paymentMethod === "Tarjeta"
+                                    ? "bg-[#2b2b2b] text-white"
+                                    : "bg-[#1f1f1f] text-[#ababab]"
+                            }`}
+                        >
+                            Tarjeta
+                        </button>
+
+                        <button
+                            onClick={() => setPaymentMethod("Transferencia")}
+                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                                paymentMethod === "Transferencia"
+                                    ? "bg-[#2b2b2b] text-white"
+                                    : "bg-[#1f1f1f] text-[#ababab]"
+                            }`}
+                        >
+                            Transferencia
+                        </button>
+                    </>
+                )}
             </div>
+
 
             {/* Datos del cliente + Fiscal */}
             <div className="px-5 mt-4">
-                <p className="text-xs text-[#ababab] mb-2">Datos del cliente (opcional)</p>
-
-                <div className="space-y-2">
-                    <input
-                        type="text"
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                        placeholder="Nombre / Razón Social"
-                    />
-
-                    <input
-                        type="text"
-                        value={customerRnc}
-                        onChange={(e) => setCustomerRnc(e.target.value)}
-                        onBlur={() => {
-                            if (wantsFiscal && fiscalCapable) lookupDgii(customerRnc);
-                        }}
-                        className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                        placeholder="RNC / Cédula (opcional)"
-                    />
-                </div>
-
                 {/* ✅ FACTURA FISCAL (solo si el tenant lo permite) */}
                 {fiscalEnabledByTenant && (
                     <div className="mt-4 border-t border-[#2b2b2b] pt-3">
@@ -690,7 +755,29 @@ const Bill = ({ orderId, setIsOrderModalOpen }) => {
                                     {!dgiiLoading && dgiiStatus === "ERROR" ? " Error consultando." : ""}
                                 </p>
                             </div>
+
                         )}
+                        <p className="text-xs text-[#ababab] mb-2">Datos del cliente </p>
+
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                value={customerRnc}
+                                onChange={(e) => setCustomerRnc(e.target.value)}
+                                onBlur={() => {
+                                    if (wantsFiscal && fiscalCapable) lookupDgii(customerRnc);
+                                }}
+                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                placeholder="RNC / Cédula "
+                            />
+                            <input
+                                type="text"
+                                value={customerName}
+                                onChange={(e) => setCustomerName(e.target.value)}
+                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                placeholder="Nombre / Razón Social"
+                            />
+                        </div>
                     </div>
                 )}
             </div>

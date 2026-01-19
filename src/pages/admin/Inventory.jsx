@@ -1,639 +1,636 @@
-import { useEffect, useMemo, useState } from "react";
-import Modal from "../../components/shared/Modal";
-import { inventoryApi, downloadBlob } from "../../lib/inventoryApi";
-
-const emptyForm = {
-    name: "",
-    category: "General",
-    unit: "unidad",
-    cost: 0,
-    stockCurrent: 0,
-    stockMin: 0,
-};
-
-function Field({ label, children }) {
-    return (
-        <label className="block">
-            <div className="mb-1 text-sm font-medium text-gray-200">{label}</div>
-            {children}
-        </label>
-    );
-}
-
-function Help({ children }) {
-    return <div className="mt-1 text-xs text-gray-400">{children}</div>;
-}
+// src/pages/admin/Inventory.jsx
+import React, { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSelector } from "react-redux";
+import { enqueueSnackbar } from "notistack";
+import api from "../../lib/api";
+import { getDishes } from"../../https";
 
 const inputCls =
-    "w-full p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white placeholder:text-gray-500 " +
+    "w-full p-3 border border-gray-800/30 rounded-xl bg-[#0b0b0b] text-white placeholder:text-gray-500 " +
     "focus:outline-none focus:ring-2 focus:ring-yellow-500/40";
+
+const selectCls =
+    "w-full p-3 border border-gray-800/30 rounded-xl bg-[#0b0b0b] text-white " +
+    "focus:outline-none focus:ring-2 focus:ring-yellow-500/40";
+
+const cardCls =
+    "rounded-2xl border border-gray-800/30 bg-[#0b0b0b]/60 backdrop-blur";
+
+const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const moneyRD = (v) => {
+    const n = num(v);
+    return new Intl.NumberFormat("es-DO", {
+        style: "currency",
+        currency: "DOP",
+        maximumFractionDigits: 2,
+    }).format(n);
+};
+
+const formatDateTimeDO = (dateLike) => {
+    if (!dateLike) return "N/A";
+    const d = new Date(dateLike?.$date ?? dateLike);
+    if (Number.isNaN(d.getTime())) return "N/A";
+    return new Intl.DateTimeFormat("es-DO", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+    }).format(d);
+};
+
+const toISOStartOfDayLocal = (yyyyMMdd) => {
+    if (!yyyyMMdd) return "";
+    const [y, m, d] = yyyyMMdd.split("-").map((x) => parseInt(x, 10));
+    if (!y || !m || !d) return "";
+    const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
+    return dt.toISOString();
+};
+
+const toISOEndOfDayLocal = (yyyyMMdd) => {
+    if (!yyyyMMdd) return "";
+    const [y, m, d] = yyyyMMdd.split("-").map((x) => parseInt(x, 10));
+    if (!y || !m || !d) return "";
+    const dt = new Date(y, m - 1, d, 23, 59, 59, 999);
+    return dt.toISOString();
+};
+
+const getTodayYMD = () => new Date().toISOString().slice(0, 10);
+const addDaysYMD = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+};
+
+// ---------- safe readers ----------
+const getItemName = (it) =>
+    String(it?.name || it?.title || it?.productName || "Producto sin nombre");
+
+const getItemProductId = (it) =>
+    String(it?.productId || it?.dishId || it?.dish || it?._id || it?.id || "");
+
+const getItemDishId = (it) => String(it?.dishId || it?.dish || it?._id || it?.id || "");
+
+const getItemInventoryCategoryId = (it) =>
+    String(it?.inventoryCategoryId || it?.inventoryCategory || it?.invCategoryId || "");
+
+const getItemQty = (it) => {
+    const q = num(it?.qty ?? it?.quantity ?? it?.qtySold ?? 0);
+    return q > 0 ? q : 0;
+};
+
+const getItemWeight = (it) => {
+    const w = num(it?.weight ?? it?.lbs ?? it?.lb ?? it?.weightLb);
+    return w > 0 ? w : 0;
+};
+
+const getItemSoldAmount = (it) => {
+    const w = getItemWeight(it);
+    if (w > 0) return w;
+    return getItemQty(it);
+};
+
+const getItemUnitPrice = (it) => {
+    const u = num(it?.unitPrice ?? it?.pricePerQuantity ?? it?.unit_price);
+    if (u > 0) return u;
+
+    const p = num(it?.price);
+    if (p > 0) return p;
+
+    const lt = num(it?.lineTotal ?? it?.total ?? it?.amount);
+    const amt = getItemSoldAmount(it);
+    if (lt > 0 && amt > 0) return lt / amt;
+
+    return 0;
+};
+
+const getItemLineTotal = (it) => {
+    const lt = num(it?.lineTotal ?? it?.total ?? it?.amount);
+    if (lt > 0) return lt;
+
+    const unit = getItemUnitPrice(it);
+    const amt = getItemSoldAmount(it);
+    return unit * amt;
+};
+
+async function fetchInventoryCategories() {
+    const res = await api.get("/api/admin/inventory/categories");
+    return res.data?.data || [];
+}
 
 export default function Inventory({ plan }) {
     const rawPlan = (plan || "").toLowerCase();
-    const canUseInventory = ["pro", "vip"].includes(rawPlan);
+    const canUseInventory = ["premium", "vip"].includes(rawPlan);
 
-    const [items, setItems] = useState([]);
-    const [lowStock, setLowStock] = useState([]);
-    const [q, setQ] = useState("");
+    const userData = useSelector((state) => state.user.userData);
+    const tenantId = userData?.tenantId;
 
-    const [openForm, setOpenForm] = useState(false);
-    const [editing, setEditing] = useState(null);
-    const [form, setForm] = useState(emptyForm);
-
-    const [openMove, setOpenMove] = useState(false);
-    const [moveItem, setMoveItem] = useState(null);
-    const [movement, setMovement] = useState({
-        type: "purchase",
-        qty: 1,
-        unitCost: "",
-        note: "",
+    const [filters, setFilters] = useState({
+        from: addDaysYMD(-1),
+        to: getTodayYMD(),
+        inventoryCategoryId: "",
+        search: "",
     });
 
-    // Tabs
-    const [tab, setTab] = useState("items"); // items | consumption
+    const [selected, setSelected] = useState(null);
 
-    // Consumption range
-    const [range, setRange] = useState(() => {
-        const d = new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const today = `${yyyy}-${mm}-${dd}`;
-        return { from: today, to: today };
+    // Params para reportes (incluye día completo)
+    const cleanedParams = useMemo(() => {
+        const params = {};
+        const fromISO = filters.from ? toISOStartOfDayLocal(filters.from) : "";
+        const toISO = filters.to ? toISOEndOfDayLocal(filters.to) : "";
+        if (fromISO) params.from = fromISO;
+        if (toISO) params.to = toISO;
+        return params;
+    }, [filters.from, filters.to]);
+
+    // Órdenes / reportes
+    const {
+        data: reportsData,
+        isLoading: ordersLoading,
+        isError: ordersError,
+        error: ordersErrObj,
+    } = useQuery({
+        queryKey: ["admin/reports", cleanedParams, tenantId],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/reports", { params: cleanedParams });
+            return res.data;
+        },
+        enabled: canUseInventory && Boolean(tenantId),
+        keepPreviousData: true,
+        staleTime: 30_000,
     });
 
-    const [consumptionRows, setConsumptionRows] = useState([]);
-    const [loadingConsumption, setLoadingConsumption] = useState(false);
+    // Categorías
+    const {
+        data: inventoryCategories,
+        isLoading: catsLoading,
+        isError: catsError,
+        error: catsErrObj,
+    } = useQuery({
+        queryKey: ["admin/inventory/categories", tenantId],
+        queryFn: fetchInventoryCategories,
+        enabled: canUseInventory && Boolean(tenantId),
+        staleTime: 60_000,
+    });
 
-    async function loadConsumption() {
-        setLoadingConsumption(true);
-        try {
-            const { data } = await inventoryApi.consumption({
-                from: range.from ? new Date(range.from).toISOString() : undefined,
-                to: range.to ? new Date(range.to).toISOString() : undefined,
-            });
-            setConsumptionRows(data.rows || []);
-        } finally {
-            setLoadingConsumption(false);
+    // Dishes: para resolver inventoryCategoryId por dishId cuando las órdenes NO lo traen
+    const {
+        data: dishes,
+        isLoading: dishesLoading,
+        isError: dishesError,
+    } = useQuery({
+        queryKey: ["admin/dishes", tenantId],
+        queryFn: async () => {
+            const res = await getDishes(tenantId);
+            const raw = res?.data?.data ?? res?.data ?? [];
+            return Array.isArray(raw) ? raw : [];
+        },
+        enabled: canUseInventory && Boolean(tenantId),
+        staleTime: 60_000,
+    });
+
+    // Snackbar de errores (una sola vez por render)
+    React.useEffect(() => {
+        if (catsError) {
+            const msg =
+                catsErrObj?.response?.data?.message ||
+                catsErrObj?.message ||
+                "No se pudieron cargar las categorías de inventario. Verifica el endpoint.";
+            enqueueSnackbar(msg, { variant: "warning" });
         }
-    }
+    }, [catsError, catsErrObj]);
 
-    const filtered = useMemo(() => {
-        const s = q.trim().toLowerCase();
-        if (!s) return items;
-        return items.filter(
-            (i) =>
-                (i.name || "").toLowerCase().includes(s) ||
-                (i.category || "").toLowerCase().includes(s)
-        );
-    }, [items, q]);
+    React.useEffect(() => {
+        if (ordersError) {
+            const msg =
+                ordersErrObj?.response?.data?.message ||
+                ordersErrObj?.message ||
+                "No se pudieron cargar las órdenes.";
+            enqueueSnackbar(msg, { variant: "error" });
+        }
+    }, [ordersError, ordersErrObj]);
 
-    async function load() {
-        const [{ data: a }, { data: b }] = await Promise.all([
-            inventoryApi.listItems(),
-            inventoryApi.lowStock(),
-        ]);
-        setItems(a.items || []);
-        setLowStock(b.items || []);
-    }
+    // Mapas rápidos
+    const categoryNameById = useMemo(() => {
+        const arr = Array.isArray(inventoryCategories) ? inventoryCategories : [];
+        const m = new Map();
+        for (const c of arr) {
+            const id = String(c?._id || c?.id || "");
+            if (!id) continue;
+            m.set(id, String(c?.name || "Sin nombre"));
+        }
+        return m;
+    }, [inventoryCategories]);
 
-    useEffect(() => {
-        if (!canUseInventory) return;
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [canUseInventory]);
+    const dishCategoryIdByDishId = useMemo(() => {
+        const arr = Array.isArray(dishes) ? dishes : [];
+        const m = new Map();
+        for (const d of arr) {
+            const id = String(d?._id || d?.id || "");
+            if (!id) continue;
+            const catId = String(
+                d?.inventoryCategoryId ||
+                d?.inventoryCategory?._id ||
+                d?.inventoryCategory ||
+                ""
+            );
+            if (catId) m.set(id, catId);
+        }
+        return m;
+    }, [dishes]);
+
+    // Parse orders array con fallback
+    const orders = useMemo(() => {
+        const payload = reportsData;
+        const raw =
+            payload?.data?.data ??
+            payload?.data ??
+            payload?.orders ??
+            payload ??
+            [];
+        return Array.isArray(raw) ? raw : [];
+    }, [reportsData]);
+
+    // Breakdown + filtros
+    const breakdown = useMemo(() => {
+        const map = new Map();
+
+        const search = (filters.search || "").trim().toLowerCase();
+        const filterCat = String(filters.inventoryCategoryId || "");
+
+        for (const order of orders) {
+            const createdAt = order?.createdAt ?? order?.created_at ?? order?.date;
+            const orderId = String(order?._id || order?.id || order?.orderId || "");
+
+            const items = Array.isArray(order?.items) ? order.items : [];
+            for (const it of items) {
+                const name = getItemName(it);
+                const productIdRaw = getItemProductId(it);
+                const dishId = getItemDishId(it);
+
+                // Resuelve categoría:
+                // 1) del item (si existe)
+                // 2) por dishId desde catálogo de platos
+                const itemCatId = getItemInventoryCategoryId(it);
+                const resolvedCatId =
+                    itemCatId ||
+                    (dishId && dishCategoryIdByDishId.get(String(dishId))) ||
+                    "";
+
+                // filtro por categoría (si aplica)
+                if (filterCat && resolvedCatId !== filterCat) continue;
+
+                // filtro search por nombre
+                if (search && !String(name).toLowerCase().includes(search)) continue;
+
+                const productKey = productIdRaw || `${String(name).toLowerCase()}::noid`;
+
+                const amt = getItemSoldAmount(it);
+                const revenue = getItemLineTotal(it);
+
+                const prev = map.get(productKey);
+                const row = prev || {
+                    productKey,
+                    productId: productIdRaw,
+                    name,
+                    inventoryCategoryId: resolvedCatId,
+                    sold: 0,
+                    revenue: 0,
+                    ordersSet: new Set(),
+                    lastSaleAt: null,
+                    details: [],
+                };
+
+                row.sold += amt;
+                row.revenue += revenue;
+                if (orderId) row.ordersSet.add(orderId);
+
+                const ts = createdAt ? new Date(createdAt).getTime() : 0;
+                const prevTs = row.lastSaleAt ? new Date(row.lastSaleAt).getTime() : 0;
+                if (ts && ts >= prevTs) row.lastSaleAt = createdAt;
+
+                row.details.push({
+                    orderId,
+                    createdAt,
+                    qty: amt,
+                    total: revenue,
+                });
+
+                map.set(productKey, row);
+            }
+        }
+
+        const arr = Array.from(map.values()).map((r) => ({
+            ...r,
+            ordersCount: r.ordersSet.size,
+            categoryName: r.inventoryCategoryId
+                ? categoryNameById.get(String(r.inventoryCategoryId)) || "Sin categoría"
+                : "Sin categoría",
+        }));
+
+        // Orden: revenue desc, luego última venta desc
+        arr.sort((a, b) => {
+            if (b.revenue !== a.revenue) return b.revenue - a.revenue;
+            const ta = a.lastSaleAt ? new Date(a.lastSaleAt).getTime() : 0;
+            const tb = b.lastSaleAt ? new Date(b.lastSaleAt).getTime() : 0;
+            return tb - ta;
+        });
+
+        return arr;
+    }, [
+        orders,
+        filters.search,
+        filters.inventoryCategoryId,
+        categoryNameById,
+        dishCategoryIdByDishId,
+    ]);
+
+    const isLoading = ordersLoading || catsLoading || dishesLoading;
 
     if (!canUseInventory) {
         return (
             <div className="p-2">
-                <h2 className="text-xl font-semibold">Inventario</h2>
+                <h2 className="text-xl font-semibold text-white">Inventario</h2>
                 <p className="mt-2 text-gray-400">
-                    Este módulo está disponible solo para los planes <b>Pro (Premium)</b> y{" "}
-                    <b>VIP</b>.
+                    Este módulo está disponible solo para los planes <b>Premium</b> y <b>VIP</b>.
                 </p>
             </div>
         );
     }
 
-    function openCreate() {
-        setQ(""); // evita “no aparece” por filtros previos
-        setEditing(null);
-        setForm(emptyForm);
-        setOpenForm(true);
-    }
-
-    function openEdit(item) {
-        setEditing(item);
-        setForm({
-            name: item.name || "",
-            category: item.category || "General",
-            unit: item.unit || "unidad",
-            cost: item.cost ?? 0,
-            stockCurrent: item.stockCurrent ?? 0,
-            stockMin: item.stockMin ?? 0,
-        });
-        setOpenForm(true);
-    }
-
-    async function saveItem(e) {
-        e.preventDefault();
-        if (!form.name.trim()) return;
-
-        if (editing?._id) {
-            await inventoryApi.updateItem(editing._id, {
-                name: form.name,
-                category: form.category,
-                unit: form.unit,
-                cost: Number(form.cost) || 0,
-                stockMin: Number(form.stockMin) || 0,
-            });
-        } else {
-            await inventoryApi.createItem({
-                ...form,
-                cost: Number(form.cost) || 0,
-                stockCurrent: Number(form.stockCurrent) || 0,
-                stockMin: Number(form.stockMin) || 0,
-            });
-        }
-
-        setOpenForm(false);
-        await load();
-    }
-
-    async function archiveItem(id) {
-        await inventoryApi.archiveItem(id);
-        await load();
-    }
-
-    function openMovementModal(item) {
-        setMoveItem(item);
-        setMovement({ type: "purchase", qty: 1, unitCost: "", note: "" });
-        setOpenMove(true);
-    }
-
-    async function submitMovement(e) {
-        e.preventDefault();
-        if (!moveItem?._id) return;
-
-        await inventoryApi.createMovement({
-            itemId: moveItem._id,
-            type: movement.type,
-            qty: Number(movement.qty),
-            unitCost: movement.unitCost === "" ? undefined : Number(movement.unitCost),
-            note: movement.note,
-        });
-
-        setOpenMove(false);
-        await load();
-    }
-
-    async function exportItems() {
-        const res = await inventoryApi.exportItemsCSV();
-        downloadBlob(res.data, "inventory-items.csv");
-    }
-
-    async function exportMovements() {
-        const res = await inventoryApi.exportMovementsCSV();
-        downloadBlob(res.data, "inventory-movements.csv");
-    }
+    const closeModal = () => setSelected(null);
 
     return (
-        <div className="p-2">
-            <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-semibold">Inventario</h2>
-                <div className="flex gap-2">
-                    <button
-                        className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold"
-                        onClick={openCreate}
-                    >
-                        Nuevo insumo
-                    </button>
-                    <button
-                        className="px-4 py-2 rounded-xl border border-gray-700"
-                        onClick={exportItems}
-                    >
-                        Exportar Items
-                    </button>
-                    <button
-                        className="px-4 py-2 rounded-xl border border-gray-700"
-                        onClick={exportMovements}
-                    >
-                        Exportar Kardex
-                    </button>
-                </div>
-            </div>
+        <div className="p-2 text-white">
+            <div className={`${cardCls} p-5`}>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 className="text-xl font-semibold">Inventario · Movimiento de Ventas</h2>
+                        <p className="mt-1 text-sm text-gray-400">
+                            Resumen de ventas por producto basado en órdenes vendidas.
+                        </p>
 
-            {/* Tabs */}
-            <div className="mt-3 flex gap-2">
-                <button
-                    className={`px-4 py-2 rounded-xl border ${
-                        tab === "items"
-                            ? "border-yellow-500/50 bg-yellow-500/10"
-                            : "border-gray-700"
-                    }`}
-                    onClick={() => setTab("items")}
-                >
-                    Insumos
-                </button>
-
-                <button
-                    className={`px-4 py-2 rounded-xl border ${
-                        tab === "consumption"
-                            ? "border-yellow-500/50 bg-yellow-500/10"
-                            : "border-gray-700"
-                    }`}
-                    onClick={() => {
-                        setTab("consumption");
-                        loadConsumption();
-                    }}
-                >
-                    Consumo / Vendido
-                </button>
-            </div>
-
-            {/* TAB: INSUMOS */}
-            {tab === "items" && (
-                <>
-                    {lowStock.length > 0 && (
-                        <div className="mt-4 p-4 rounded-2xl border border-gray-800 bg-[#111111]">
-                            <div className="font-semibold">Alertas: Stock bajo</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                                {lowStock.slice(0, 12).map((i) => (
-                                    <span
-                                        key={i._id}
-                                        className="px-3 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 text-sm"
-                                    >
-                    {i.name} ({i.stockCurrent}/{i.stockMin})
-                  </span>
-                                ))}
+                        {(dishesError || catsError) && (
+                            <div className="mt-3 text-xs text-yellow-400">
+                                Nota: si los items de las órdenes no guardan <b>inventoryCategoryId</b>, esta pantalla lo
+                                resuelve por <b>dishId</b> usando el catálogo de platos.
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
 
-                    <div className="mt-4">
+                    <div className="shrink-0">
+                        <button
+                            className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-yellow-500 transition-colors"
+                            onClick={() => {
+                                setFilters((p) => ({ ...p, from: addDaysYMD(-7), to: getTodayYMD() }));
+                            }}
+                        >
+                            Click aqui para ver Últimos 7 días
+                        </button>
+                    </div>
+                </div>
+
+                {/* Filters */}
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                        <div className="mb-1 text-xs text-gray-400">Fecha desde</div>
                         <input
                             className={inputCls}
-                            placeholder="Buscar por nombre o categoría..."
-                            value={q}
-                            onChange={(e) => setQ(e.target.value)}
+                            type="date"
+                            value={filters.from}
+                            onChange={(e) => setFilters((p) => ({ ...p, from: e.target.value }))}
                         />
                     </div>
 
-                    <div className="mt-4 grid gap-3">
-                        {filtered.map((i) => {
-                            const stockCurrent = Number(i.stockCurrent ?? 0);
-                            const stockMin = Number(i.stockMin ?? 0);
-                            const isLow = stockCurrent <= stockMin && stockMin > 0;
-
-                            return (
-                                <div
-                                    key={i._id}
-                                    className="p-4 rounded-2xl border border-gray-800 bg-[#111111] flex items-center justify-between"
-                                >
-                                    <div>
-                                        <div className="font-semibold flex items-center gap-2">
-                                            {i.name}
-                                            {isLow && (
-                                                <span className="text-xs px-2 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300">
-                          Bajo
-                        </span>
-                                            )}
-                                        </div>
-                                        <div className="text-sm text-gray-400">
-                                            {i.category} · {i.unit} · Costo: {i.cost ?? 0} · Stock:{" "}
-                                            {i.stockCurrent ?? 0} (Min: {i.stockMin ?? 0})
-                                        </div>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button
-                                            className="px-4 py-2 rounded-xl border border-gray-700"
-                                            onClick={() => openMovementModal(i)}
-                                        >
-                                            Movimiento
-                                        </button>
-                                        <button
-                                            className="px-4 py-2 rounded-xl border border-gray-700"
-                                            onClick={() => openEdit(i)}
-                                        >
-                                            Editar
-                                        </button>
-                                        <button
-                                            className="px-4 py-2 rounded-xl border border-gray-700"
-                                            onClick={() => archiveItem(i._id)}
-                                        >
-                                            Archivar
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                    <div>
+                        <div className="mb-1 text-xs text-gray-400">Fecha hasta</div>
+                        <input
+                            className={inputCls}
+                            type="date"
+                            value={filters.to}
+                            onChange={(e) => setFilters((p) => ({ ...p, to: e.target.value }))}
+                        />
                     </div>
-                </>
-            )}
 
-            {/* TAB: CONSUMO / VENDIDO */}
-            {tab === "consumption" && (
-                <div className="mt-4">
-                    <div className="p-4 rounded-2xl border border-gray-800 bg-[#111111]">
-                        <div className="flex flex-col md:flex-row gap-3 md:items-end md:justify-between">
+                    <div>
+                        <div className="mb-1 text-xs text-gray-400">Categoría de inventario</div>
+                        <select
+                            className={selectCls}
+                            value={filters.inventoryCategoryId}
+                            onChange={(e) => setFilters((p) => ({ ...p, inventoryCategoryId: e.target.value }))}
+                        >
+                            <option value="">Todas</option>
+                            {(Array.isArray(inventoryCategories) ? inventoryCategories : []).map((c) => (
+                                <option key={c?._id || c?.id} value={String(c?._id || c?.id || "")}>
+                                    {c?.name || "Sin nombre"}
+                                </option>
+                            ))}
+                        </select>
+                        {catsLoading && (
+                            <div className="mt-1 text-xs text-gray-500">Cargando categorías...</div>
+                        )}
+                        {catsError && (
+                            <div className="mt-1 text-xs text-yellow-400">
+                                No se pudieron cargar categorías. Verifica el endpoint.
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <div className="mb-1 text-xs text-gray-400">Buscar producto</div>
+                        <input
+                            className={inputCls}
+                            placeholder="Ej: Chicharrón, Pollo..."
+                            value={filters.search}
+                            onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
+                        />
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className={`${cardCls} mt-5 overflow-hidden`}>
+                    <div className="w-full overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-[#0b0b0b]">
+                            <tr className="text-left text-gray-300 border-b border-gray-800/30">
+                                <th className="p-3">Producto</th>
+                                <th className="p-3">Categoría de inventario</th>
+                                <th className="p-3 text-right">Cantidad vendida</th>
+                                <th className="p-3 text-right">Revenue</th>
+                                <th className="p-3 text-right">Órdenes</th>
+                                <th className="p-3 text-right">Última venta</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {isLoading ? (
+                                <tr>
+                                    <td className="p-4 text-gray-400" colSpan={6}>
+                                        Cargando movimientos...
+                                    </td>
+                                </tr>
+                            ) : breakdown.length === 0 ? (
+                                <tr>
+                                    <td className="p-4 text-gray-400" colSpan={6}>
+                                        No hay movimientos con los filtros actuales.
+                                    </td>
+                                </tr>
+                            ) : (
+                                breakdown.map((row) => (
+                                    <tr
+                                        key={row.productKey}
+                                        className="border-b border-gray-800/30 hover:bg-yellow-500/5 cursor-pointer"
+                                        onClick={() => setSelected(row)}
+                                        title="Click para ver detalle"
+                                    >
+                                        <td className="p-3">
+                                            <div className="font-semibold">{row.name}</div>
+                                            <div className="text-xs text-gray-500">
+                                                ID: {row.productId || row.productKey}
+                                            </div>
+                                        </td>
+
+                                        <td className="p-3">
+                        <span className="px-2 py-1 rounded-full text-xs border border-gray-800/30 bg-[#0b0b0b]">
+                          {row.categoryName || "Sin categoría"}
+                        </span>
+                                        </td>
+
+                                        <td className="p-3 text-right font-semibold">{num(row.sold).toFixed(2)}</td>
+                                        <td className="p-3 text-right font-semibold">{moneyRD(row.revenue)}</td>
+                                        <td className="p-3 text-right">{row.ordersCount}</td>
+                                        <td className="p-3 text-right">{formatDateTimeDO(row.lastSaleAt)}</td>
+                                    </tr>
+                                ))
+                            )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="p-3 text-xs text-gray-500">
+                        Click en un producto para ver el detalle por órdenes.
+                    </div>
+                </div>
+            </div>
+
+            {/* Detail Modal */}
+            {selected && (
+                <div className="fixed inset-0 z-50 flex items-start justify-center p-3 overflow-y-auto">
+                <div
+                        className="absolute inset-0 bg-black/70"
+                        onClick={closeModal}
+                        aria-hidden="true"
+                    />
+                    <div
+                        className={`relative w-full max-w-3xl ${cardCls} overflow-hidden my-6`}
+                        style={{ maxHeight: "85vh" }}
+                    >
+
+                    {/* Header */}
+                        <div className="p-4 border-b border-gray-800/30 flex items-center justify-between">
                             <div>
-                                <div className="font-semibold">Consumo / Vendido</div>
-                                <div className="text-sm text-gray-400">
-                                    Resumen basado en movimientos automáticos tipo <b>sale</b> al
-                                    completar órdenes.
-                                </div>
+                                <div className="text-sm text-gray-400">Detalle</div>
+                                <div className="text-lg font-semibold">{selected.name}</div>
                             </div>
-
-                            <div className="flex flex-wrap gap-2 items-end">
-                                <div>
-                                    <div className="text-xs text-gray-400 mb-1">Desde</div>
-                                    <input
-                                        type="date"
-                                        className="p-2 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                        value={range.from}
-                                        onChange={(e) =>
-                                            setRange((r) => ({ ...r, from: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <div className="text-xs text-gray-400 mb-1">Hasta</div>
-                                    <input
-                                        type="date"
-                                        className="p-2 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                        value={range.to}
-                                        onChange={(e) =>
-                                            setRange((r) => ({ ...r, to: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                                <button
-                                    className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold"
-                                    onClick={loadConsumption}
-                                >
-                                    Ver
-                                </button>
-                            </div>
+                            <button
+                                className="px-3 py-2 rounded-xl border border-gray-800/30 hover:border-yellow-500/50 hover:bg-yellow-500/10 transition-colors"
+                                onClick={closeModal}
+                            >
+                                Cerrar
+                            </button>
                         </div>
 
-                        <div className="mt-4 grid gap-3">
-                            {loadingConsumption && (
-                                <div className="text-gray-400">Cargando...</div>
-                            )}
-
-                            {!loadingConsumption && consumptionRows.length === 0 && (
-                                <div className="text-gray-400">
-                                    No hay consumo/ventas en el rango seleccionado.
+                        {/* Body (scrollable) */}
+                        <div className="p-4 overflow-y-auto" style={{ maxHeight: "calc(85vh - 64px)" }}>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className={`${cardCls} p-3`}>
+                                    <div className="text-xs text-gray-400">Categoría de inventario</div>
+                                    <div className="mt-1 font-semibold">
+                                        {selected.categoryName || "Sin categoría"}
+                                    </div>
                                 </div>
-                            )}
 
-                            {!loadingConsumption &&
-                                consumptionRows.map((r) => {
-                                    const stockCurrent = Number(r.stockCurrent ?? 0);
-                                    const stockMin = Number(r.stockMin ?? 0);
-                                    const soldQty = Number(r.soldQty ?? 0);
-                                    const low = stockMin > 0 && stockCurrent <= stockMin;
+                                <div className={`${cardCls} p-3`}>
+                                    <div className="text-xs text-gray-400">Cantidad vendida</div>
+                                    <div className="mt-1 font-semibold">{num(selected.sold).toFixed(2)}</div>
+                                </div>
 
-                                    return (
-                                        <div
-                                            key={r.itemId}
-                                            className="p-4 rounded-2xl border border-gray-800 bg-[#0b0b0b] flex items-center justify-between"
-                                        >
-                                            <div>
-                                                <div className="font-semibold flex items-center gap-2">
-                                                    {r.name}
-                                                    {low && (
-                                                        <span className="text-xs px-2 py-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 text-yellow-300">
-                              Bajo
-                            </span>
-                                                    )}
-                                                </div>
+                                <div className={`${cardCls} p-3`}>
+                                    <div className="text-xs text-gray-400">Revenue</div>
+                                    <div className="mt-1 font-semibold text-yellow-400">{moneyRD(selected.revenue)}</div>
+                                </div>
 
-                                                <div className="text-sm text-gray-400">
-                                                    Vendido: <b className="text-white">{soldQty}</b>{" "}
-                                                    {r.unit} · Stock:{" "}
-                                                    <b className="text-white">{stockCurrent}</b> (Min:{" "}
-                                                    {stockMin})
-                                                </div>
+                                <div className={`${cardCls} p-3`}>
+                                    <div className="text-xs text-gray-400">Órdenes</div>
+                                    <div className="mt-1 font-semibold">{selected.ordersCount}</div>
+                                </div>
 
-                                                {low && (
-                                                    <div className="mt-1 text-sm text-yellow-300">
-                                                        Alerta: stock bajo
-                                                    </div>
-                                                )}
-                                            </div>
+                                <div className={`${cardCls} p-3`}>
+                                    <div className="text-xs text-gray-400">Última venta</div>
+                                    <div className="mt-1 font-semibold">{formatDateTimeDO(selected.lastSaleAt)}</div>
+                                </div>
+
+                                <div className={`${cardCls} p-3 md:col-span-3`}>
+                                    <div className="text-xs text-gray-400">Product ID</div>
+                                    <div className="mt-1 font-semibold break-all">
+                                        {selected.productId || selected.productKey}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-5">
+                                <div className="font-semibold mb-2">Órdenes donde se vendió</div>
+                                <div className={`${cardCls} overflow-hidden`}>
+                                    <div className="max-h-[45vh] overflow-y-auto">
+                                        <div className="w-full overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead className="sticky top-0 bg-[#0b0b0b] z-10">
+                                                <tr className="text-left text-gray-300 border-b border-gray-800/30">
+                                                    <th className="p-3">Order ID</th>
+                                                    <th className="p-3">Fecha</th>
+                                                    <th className="p-3 text-right">Cantidad</th>
+                                                    <th className="p-3 text-right">Total item</th>
+                                                </tr>
+                                                </thead>
+
+                                                <tbody>
+                                                {(selected.details || [])
+                                                    .slice()
+                                                    .sort((a, b) => {
+                                                        const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+                                                        const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+                                                        return tb - ta;
+                                                    })
+                                                    .map((d, idx) => (
+                                                        <tr key={`${d.orderId}-${idx}`} className="border-b border-gray-800/30">
+                                                            <td className="p-3">
+                                                                <div className="break-all">{d.orderId || "N/A"}</div>
+                                                            </td>
+                                                            <td className="p-3">{formatDateTimeDO(d.createdAt)}</td>
+                                                            <td className="p-3 text-right">{num(d.qty).toFixed(2)}</td>
+                                                            <td className="p-3 text-right">{moneyRD(d.total)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+
+                                    <div className="p-3 text-xs text-gray-500">
+                                        Si todavía ves “Sin categoría”, revisa que tus platos tengan <b>inventoryCategoryId</b> y
+                                        que el catálogo de platos se esté cargando correctamente.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            )}
-
-            {/* Modal Crear/Editar */}
-            {openForm && (
-                <Modal
-                    title={editing ? "Editar insumo" : "Nuevo insumo"}
-                    onClose={() => setOpenForm(false)}
-                >
-                    <form onSubmit={saveItem} className="w-full max-w-full text-white">
-                        <div className="grid gap-4">
-                            <Field label="Nombre del insumo *">
-                                <input
-                                    className={inputCls}
-                                    placeholder="Ej: Arroz"
-                                    value={form.name}
-                                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                />
-                                <Help>Cómo lo verás en reportes y kardex.</Help>
-                            </Field>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Field label="Categoría">
-                                    <input
-                                        className={inputCls}
-                                        placeholder="Ej: Granos"
-                                        value={form.category}
-                                        onChange={(e) =>
-                                            setForm({ ...form, category: e.target.value })
-                                        }
-                                    />
-                                    <Help>Ej: Carnes, Vegetales, Bebidas.</Help>
-                                </Field>
-
-                                <Field label="Unidad">
-                                    <select
-                                        className="w-full p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/40"
-                                        value={form.unit}
-                                        onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                                    >
-                                        <option value="unidad">Unidad</option>
-                                        <option value="lb">Libra (lb)</option>
-                                        <option value="kg">Kilogramo (kg)</option>
-                                        <option value="g">Gramo (g)</option>
-                                        <option value="l">Litro (L)</option>
-                                        <option value="ml">Mililitro (ml)</option>
-                                        <option value="pz">Porción</option>
-                                        <option value="otro">Otro…</option>
-                                    </select>
-
-                                    {form.unit === "otro" && (
-                                        <input
-                                            className={`${inputCls} mt-2`}
-                                            placeholder="Escribe la unidad (ej: caja, funda, bandeja)"
-                                            value={form.customUnit || ""}
-                                            onChange={(e) => setForm({ ...form, customUnit: e.target.value })}
-                                            onBlur={() => {
-                                                const v = (form.customUnit || "").trim();
-                                                if (v) setForm((f) => ({ ...f, unit: v, customUnit: "" }));
-                                            }}
-                                        />
-                                    )}
-
-                                    <Help>Unidad del insumo para compras, desperdicios y kardex.</Help>
-                                </Field>
-
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Field label="Costo unitario (RD$)">
-                                    <input
-                                        className={inputCls}
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="Ej: 55.00"
-                                        value={form.cost}
-                                        onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                                    />
-                                    <Help>Costo estimado por unidad (opcional).</Help>
-                                </Field>
-
-                                <Field label="Stock mínimo (alerta)">
-                                    <input
-                                        className={inputCls}
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="Ej: 5"
-                                        value={form.stockMin}
-                                        onChange={(e) =>
-                                            setForm({ ...form, stockMin: e.target.value })
-                                        }
-                                    />
-                                    <Help>Si baja de aquí, te saldrá alerta.</Help>
-                                </Field>
-                            </div>
-
-                            {!editing && (
-                                <Field label="Stock inicial">
-                                    <input
-                                        className={inputCls}
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="Ej: 20"
-                                        value={form.stockCurrent}
-                                        onChange={(e) =>
-                                            setForm({ ...form, stockCurrent: e.target.value })
-                                        }
-                                    />
-                                    <Help>Cuánto tienes ahora mismo en inventario.</Help>
-                                </Field>
-                            )}
-                        </div>
-
-                        <div className="mt-5 flex justify-end gap-2">
-                            <button
-                                type="button"
-                                className="px-4 py-2 rounded-xl border border-gray-700"
-                                onClick={() => setOpenForm(false)}
-                            >
-                                Cancelar
-                            </button>
-                            <button className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold">
-                                Guardar
-                            </button>
-                        </div>
-
-                        {editing && (
-                            <p className="mt-3 text-sm text-gray-400">
-                                Nota: el stock se ajusta usando “Movimiento” → “Ajuste (+/-)”
-                                para que quede registrado en el Kardex.
-                            </p>
-                        )}
-                    </form>
-                </Modal>
-            )}
-
-            {/* Modal Movimiento */}
-            {openMove && moveItem && (
-                <Modal
-                    title={`Movimiento: ${moveItem.name}`}
-                    onClose={() => setOpenMove(false)}
-                >
-                    <form onSubmit={submitMovement} className="w-full max-w-full text-white">
-                        <div className="grid gap-3">
-                            <select
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                value={movement.type}
-                                onChange={(e) =>
-                                    setMovement({ ...movement, type: e.target.value })
-                                }
-                            >
-                                <option value="purchase">Compra (entrada)</option>
-                                <option value="waste">Desperdicio (salida)</option>
-                                <option value="adjustment">Ajuste (+/-)</option>
-                            </select>
-
-                            <input
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                type="number"
-                                step="0.01"
-                                placeholder={
-                                    movement.type === "adjustment" ? "Cantidad (+/-)" : "Cantidad"
-                                }
-                                value={movement.qty}
-                                onChange={(e) =>
-                                    setMovement({ ...movement, qty: e.target.value })
-                                }
-                            />
-
-                            {movement.type === "purchase" && (
-                                <input
-                                    className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="Costo unitario (opcional)"
-                                    value={movement.unitCost}
-                                    onChange={(e) =>
-                                        setMovement({ ...movement, unitCost: e.target.value })
-                                    }
-                                />
-                            )}
-
-                            <input
-                                className="p-3 border border-gray-800 rounded-xl bg-[#0b0b0b] text-white"
-                                placeholder="Nota (opcional)"
-                                value={movement.note}
-                                onChange={(e) =>
-                                    setMovement({ ...movement, note: e.target.value })
-                                }
-                            />
-                        </div>
-
-                        <div className="mt-5 flex justify-end gap-2">
-                            <button
-                                type="button"
-                                className="px-4 py-2 rounded-xl border border-gray-700"
-                                onClick={() => setOpenMove(false)}
-                            >
-                                Cancelar
-                            </button>
-                            <button className="px-4 py-2 rounded-xl bg-[#f6b100] text-black font-semibold">
-                                Registrar
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
             )}
         </div>
     );
