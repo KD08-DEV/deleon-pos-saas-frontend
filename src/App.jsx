@@ -105,27 +105,50 @@ function RealtimeTenantConfig() {
     const tenantId = currentUser?.tenantId;
 
     useEffect(() => {
+        if (!isAuth || !tenantId) {
+            disconnectSocket();
+            socketRef.current = null;
+            return;
+        }
+
         if (!isAuth || !tenantId) return;
+        // si cambia tenantId, desconecta y resetea
+        if (socketRef.current && socketRef.current.__tenantId !== tenantId) {
+            disconnectSocket();
+            socketRef.current = null;
+        }
 
         if (!socketRef.current) {
-            socketRef.current = connectSocket({
-                baseUrl: SOCKET_URL,
-                tenantId,
-            });
+            socketRef.current = connectSocket({ baseUrl: SOCKET_URL, tenantId });
+            socketRef.current.__tenantId = tenantId;
         }
 
         const s = socketRef.current;
         if (!s) return;
 
         const onConfigUpdated = async (payload) => {
-            if (payload?.tenantId && payload.tenantId !== tenantId) return;
+            try {
+                if (payload?.tenantId && payload.tenantId !== tenantId) return;
 
-            const res = await getTenant(tenantId);
-            dispatch(setTenant(res.data.data));
+                const res = await getTenant(tenantId);
+                dispatch(setTenant(res.data.data));
 
-            queryClient.invalidateQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true });
-            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+                queryClient.invalidateQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true });
+                queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+
+                queryClient.refetchQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true, type: "active" });
+                queryClient.refetchQueries({ queryKey: QK.ORDERS, exact: true, type: "active" });
+            } catch (e) {
+                console.error("tenant:configUpdated handler error", e);
+
+                // aunque falle getTenant, por lo menos refresca config
+                queryClient.invalidateQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true });
+                queryClient.refetchQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true, type: "active" });
+            }
         };
+
+
+
 
         const onTablesUpdated = (payload) => {
             if (payload?.tenantId && payload.tenantId !== tenantId) return;

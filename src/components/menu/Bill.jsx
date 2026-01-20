@@ -75,10 +75,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const { tenantInfo } = useTenant();
     const tenantFeatures = tenantInfo?.features || {};
 
-    const discountEnabledByTenant = tenantFeatures?.discount?.enabled !== false;
-    const taxEnabledByTenant = tenantFeatures?.tax?.enabled !== false;
+    const discountEnabledByTenant = tenantFeatures?.discount?.enabled === true;
+    const taxEnabledByTenant = tenantFeatures?.tax?.enabled === true;
+    const tipEnabledByTenant = tenantFeatures?.tip?.enabled === true;
     const fiscalEnabledByTenant = !!tenantInfo?.fiscal?.enabled;
-    const tipEnabledByTenant = tenantFeatures?.tip?.enabled !== false;
 
 
     useEffect(() => {
