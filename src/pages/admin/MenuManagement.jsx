@@ -26,7 +26,14 @@ const currency = (n) =>
 
 const MenuManagement = () => {
     const userData = useSelector((state) => state.user.userData);
-    const tenantId = userData?.tenantId;
+    const tenantId = userData?.tenantId || localStorage.getItem("tenantId") || "";
+
+    useEffect(() => {
+        if (userData?.tenantId) {
+            localStorage.setItem("tenantId", userData.tenantId);
+        }
+    }, [userData?.tenantId]);
+
     const queryClient = useQueryClient();
 
     const [searchTerm, setSearchTerm] = useState("");
@@ -50,8 +57,10 @@ const MenuManagement = () => {
     const { data, isLoading, isError } = useQuery({
         queryKey: ["dishes", tenantId],
         queryFn: () => getDishes(tenantId),
-        enabled: !!tenantId,
+        enabled: Boolean(tenantId),
+        staleTime: 30_000,
     });
+
 
     const dishes = useMemo(() => {
         const raw =

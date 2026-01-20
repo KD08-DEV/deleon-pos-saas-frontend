@@ -22,7 +22,12 @@ const Greetings = memo(() => {
     }, []);
 
     const formatTime = useCallback((date) => {
-        return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+        let hours = date.getHours();
+        const ampm = hours >= 12 ? "PM" : "AM";
+        hours = hours % 12;
+        hours = hours ? hours : 12; // 0 => 12
+
+        return `${String(hours).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")} ${ampm}`;
     }, []);
 
     const { formattedDate, formattedTime, greeting, firstName, professionalMessage } = useMemo(() => {

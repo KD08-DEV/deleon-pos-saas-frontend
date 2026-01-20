@@ -136,7 +136,7 @@ export default function Tables() {
                 null;
 
             const canEditBooked =
-                normalizedRole === "admin" || normalizedRole === "owner" || normalizedRole === "manager";
+                normalizedRole === "admin" || normalizedRole === "camarero" || normalizedRole === "manager";
 
             // Debug rápido (puedes borrarlo luego)
             console.log("ROLE:", normalizedRole, "existingOrderId:", existingOrderId);

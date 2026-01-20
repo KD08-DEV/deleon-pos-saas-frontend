@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
@@ -53,6 +53,10 @@ const Admin = () => {
     const [showPlanDetails, setShowPlanDetails] = useState(false);
     const navigate = useNavigate();
     const { userData, isAuth } = useSelector((state) => state.user);
+    const role = userData?.role;
+    const isCashier = role === "Cajera";
+    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+
 
     // 🔐 Redirección segura
     useEffect(() => {
@@ -60,9 +64,18 @@ const Admin = () => {
             navigate("/");
             return;
         }
+        const role = userData?.role;
 
-        if (userData?.role !== "Admin") {
+        const canEnterAdminPanel = ["Owner", "Admin", "Cajera"].includes(role);
+        if (!canEnterAdminPanel) {
             navigate("/");
+            return;
+        }
+
+        // Si es Cajera, mándala directo a reportes (evita tabs de gestión)
+        if (role === "Cajera") {
+            setTab("cash-register"); // o "sales-reports" si prefieres
+            setExpandedMenu("reportes");
         }
     }, [userData, isAuth, navigate]);
 
@@ -122,7 +135,7 @@ const Admin = () => {
     };
 
     // Configuración de menú con submenús organizados
-    const menuSections = [
+    const menuSectionsBase  = [
         {
             id: "reportes",
             label: "Reportes y Análisis",
@@ -288,17 +301,42 @@ const Admin = () => {
         }
     ];
 
+    const menuSections = useMemo(() => {
+        // Cajera: solo puede ver Reportes y Análisis
+        if (isCashier) {
+            return menuSectionsBase.filter((s) => s.id === "reportes");
+        }
+        // Owner/Admin: todo normal
+        return menuSectionsBase;
+    }, [isCashier]);
+
+
     const toggleMenu = (menuId) => {
         setExpandedMenu(expandedMenu === menuId ? null : menuId);
     };
+    const allowedTabIds = useMemo(() => {
+        return new Set(
+            (menuSections || [])
+                .flatMap((s) => s.items || [])
+                .filter((i) => !i.comingSoon && !i.action)
+                .map((i) => i.id)
+        );
+    }, [menuSections]);
+
 
     const handleTabClick = (item) => {
         if (item.action) {
             item.action();
-        } else if (!item.comingSoon) {
-            setTab(item.id);
+            return;
         }
+        if (item.comingSoon) return;
+
+        // 🔒 Si no está permitido para el rol, no lo dejes cambiar
+        if (!allowedTabIds.has(item.id)) return;
+
+        setTab(item.id);
     };
+
 
     return (
         <div className="bg-gradient-to-br from-[#060606] via-[#0a0a0a] to-[#060606] min-h-screen py-10 pb-24 px-4 md:px-8 text-white">
@@ -323,6 +361,7 @@ const Admin = () => {
                             Gestiona tu equipo, revisa reportes y controla el uso de tu plan.
                         </p>
                     </div>
+                    {isOwnerOrAdmin && (
 
                     <button
                         onClick={() => navigate("/register")}
@@ -331,6 +370,7 @@ const Admin = () => {
                         <UserPlus className="w-4 h-4" />
                         <span>Registrar Usuario</span>
                     </button>
+                    )}
                 </div>
 
                 {/* MÉTRICAS RÁPIDAS MEJORADAS */}

@@ -103,9 +103,9 @@ export default function FiscalConfig() {
         const b02 = data?.fiscal?.ncfConfig?.B02 || {};
         return {
             features: {
-                taxEnabled: data?.features?.tax?.enabled !== false,
-                tipEnabled: data?.features?.tip?.enabled !== false,
-                discountEnabled: data?.features?.discount?.enabled !== false,
+                taxEnabled: typeof data?.features?.tax?.enabled === "boolean" ? data.features.tax.enabled : true,
+                tipEnabled: typeof data?.features?.tip?.enabled === "boolean" ? data.features.tip.enabled : true,
+                discountEnabled: typeof data?.features?.discount?.enabled === "boolean" ? data.features.discount.enabled : true,
                 pedidosYaEnabled: !!data?.features?.orderSources?.pedidosYa?.enabled,
                 uberEatsEnabled: !!data?.features?.orderSources?.uberEats?.enabled,
                 pedidosYaCommissionPct: Math.round((Number(data?.features?.orderSources?.pedidosYa?.commissionRate ?? 0.26)) * 100),

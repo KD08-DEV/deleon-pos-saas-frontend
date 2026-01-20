@@ -264,7 +264,16 @@ const TablesManagement = () => {
                             {table.currentOrder && (
                                 <div className="pt-3 border-t border-gray-800/30">
                                     <p className="text-xs text-gray-500">Orden activa</p>
-                                    <p className="text-xs text-gray-400 font-mono">{table.currentOrder?.slice(-8)}</p>
+                                    {(() => {
+                                        const currentOrderId = table.currentOrder?._id ?? table.currentOrder; // soporta objeto poblado o string/id
+                                        const shortId = String(currentOrderId || "").slice(-8);
+                                        return (
+                                            <p className="text-xs text-gray-400 font-mono">
+                                                {shortId || "—"}
+                                            </p>
+                                        );
+                                    })()}
+
                                 </div>
                             )}
                         </div>
@@ -351,8 +360,8 @@ const TablesManagement = () => {
                                     className="flex-1 px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
                                     <Save className="w-4 h-4" />
-                                    {createMutation.isPending || updateMutation.isPending 
-                                        ? "Guardando..." 
+                                    {createMutation.isPending || updateMutation.isPending
+                                        ? "Guardando..."
                                         : editingTable ? "Actualizar" : "Agregar"}
                                 </button>
                             </div>

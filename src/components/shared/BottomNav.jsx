@@ -99,7 +99,9 @@ const BottomNav = memo(() => {
         { path: "/tables", label: "Mesas", icon: Table2, id: "tables" },
     ];
 
-    if (userData?.role === "Admin") {
+    const canSeeAdmin = ["Owner", "Admin", "Cajera"].includes(userData?.role);
+
+    if (canSeeAdmin) {
         navItems.push({ path: "/admin", label: "Admin", icon: Settings, id: "admin" });
     }
 
