@@ -1,5 +1,5 @@
 // src/pages/Admin/Reports.jsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -12,13 +12,65 @@ const currency = (n) =>
         .format(Number(n || 0));
 
 const Reports = () => {
-    const [filters, setFilters] = useState({
-        from: "",
-        to: "",
-        method: "",
-        user: "",
-        client: "",
+    const todayYMD = () => {
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+
+    const [filters, setFilters] = useState(() => {
+        const today = todayYMD();
+        return {
+            from: today,
+            to: today,
+            method: "",
+            user: "",
+            client: "",
+        };
     });
+    // ✅ Mantener "HOY" como filtro por defecto
+// - Al cargar: fuerza hoy
+// - Si cambia el día (medianoche) y el usuario seguía en "hoy", lo actualiza automático
+    const lastAutoDayRef = useRef(todayYMD());
+
+    useEffect(() => {
+        const forceTodayOnLoad = () => {
+            const today = todayYMD();
+            lastAutoDayRef.current = today;
+            setFilters((f) => ({
+                ...f,
+                from: today,
+                to: today,
+            }));
+        };
+
+        forceTodayOnLoad();
+
+        const id = setInterval(() => {
+            const today = todayYMD();
+
+            // Si cambió el día (ej. pasó medianoche)
+            if (today !== lastAutoDayRef.current) {
+                const prev = lastAutoDayRef.current;
+
+                setFilters((f) => {
+                    // Solo auto-actualiza si el usuario seguía en el día anterior (modo "hoy")
+                    if (f.from === prev && f.to === prev) {
+                        return { ...f, from: today, to: today };
+                    }
+                    return f; // si el usuario eligió otro rango, no lo tocamos
+                });
+
+                lastAutoDayRef.current = today;
+            }
+        }, 60_000); // revisa cada 1 minuto
+
+        return () => clearInterval(id);
+    }, []);
+
 
     // Debounce de filtros
     const [debounced, setDebounced] = useState(filters);
@@ -40,6 +92,24 @@ const Reports = () => {
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
+        // Reglas:
+        // - Si solo hay from -> to = from
+        // - Si solo hay to -> from = to
+        // - Si ninguno -> por defecto hoy (opcional, pero recomendado)
+        const today = todayYMD();
+
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        if (!hasFrom && !hasTo) {
+            obj.from = today;
+            obj.to = today;
+        } else if (hasFrom && !hasTo) {
+            obj.to = obj.from;
+        } else if (!hasFrom && hasTo) {
+            obj.from = obj.to;
+        }
+
         // Normaliza rango para cubrir días completos:
         // from = inicio del día, to = inicio del día siguiente (fin exclusivo)
         if (obj.from) obj.from = `${obj.from}T00:00:00.000`;
@@ -51,6 +121,7 @@ const Reports = () => {
 
         return obj;
     }, [filters]);
+
 
     const normalize = (v) => String(v || "").trim().toLowerCase();
 
@@ -90,21 +161,55 @@ const Reports = () => {
 
     // ✅ Filtro real en frontend (cliente/usuario/metodo/rango fechas) aunque el backend no lo soporte todavía
     const filteredReports = useMemo(() => {
-        const from = debounced.from ? new Date(`${debounced.from}T00:00:00`) : null;
-        const to = debounced.to ? new Date(`${debounced.to}T23:59:59`) : null;
+        const today = todayYMD();
 
-        const method = normalize(debounced.method);
-        const user = normalize(debounced.user);
-        const client = normalize(debounced.client);
+        const onlyYMD = (v) => String(v || "").split("T")[0]; // por si viene con hora
+
+        let fromYMD = onlyYMD(debounced.from);
+        let toYMD = onlyYMD(debounced.to);
+
+        const hasFrom = !!fromYMD;
+        const hasTo = !!toYMD;
+
+        if (!hasFrom && !hasTo) {
+            fromYMD = today;
+            toYMD = today;
+        } else if (hasFrom && !hasTo) {
+            toYMD = fromYMD;
+        } else if (!hasFrom && hasTo) {
+            fromYMD = toYMD;
+        }
+
+// YMD local del createdAt (no ISO UTC)
+        const toLocalYMD = (d) => {
+            const dt = new Date(d);
+            const yyyy = dt.getFullYear();
+            const mm = String(dt.getMonth() + 1).padStart(2, "0");
+            const dd = String(dt.getDate()).padStart(2, "0");
+            return `${yyyy}-${mm}-${dd}`;
+        };
 
         return reports.filter((r) => {
-            const createdAt = r?.createdAt ? new Date(r.createdAt) : null;
-            if (from && createdAt && createdAt < from) return false;
-            if (to && createdAt && createdAt > to) return false;
+            if (r?.createdAt) {
+                const createdYMD = toLocalYMD(r.createdAt);
+
+                // compara por strings YYYY-MM-DD (funciona perfecto)
+                if (fromYMD && createdYMD < fromYMD) return false;
+                if (toYMD && createdYMD > toYMD) return false;
+            }
+
+            const client = normalize(debounced.client);
+            const method = normalize(debounced.method);
+            const user = normalize(debounced.user);
 
             if (method) {
                 const pm = normalize(r?.paymentMethod || "Efectivo");
-                if (!pm.includes(method)) return false;
+                const os = normalize(r?.orderSource || "");
+                if (method.includes("delivery") || method.includes("pedido") || method.includes("uber")) {
+                    if (!pm.includes(method) && !os.includes(method)) return false;
+                } else {
+                    if (!pm.includes(method)) return false;
+                }
             }
 
             if (user) {
@@ -120,6 +225,7 @@ const Reports = () => {
             return true;
         });
     }, [reports, debounced]);
+
     console.log("SAMPLE REPORT", filteredReports?.[0]);
 
 
@@ -146,6 +252,8 @@ const Reports = () => {
             pedidoya: { label: "Pedido Ya", total: 0, count: 0 },
             ubereats: { label: "Uber Eats", total: 0, count: 0 },
             otros: { label: "Otros", total: 0, count: 0 },
+            delivery: { label: "Delivery", total: 0, count: 0 },
+
         };
 
         let grandTotal = 0;
@@ -168,6 +276,9 @@ const Reports = () => {
             else if (pmRaw.includes("transf")) key = "transferencia";
             else if (pmRaw.includes("pedido")) key = "pedidoya";
             else if (pmRaw.includes("uber")) key = "ubereats";
+            else if (channel.includes("delivery")) key = "delivery";
+
+
 
             buckets[key].total += total;
             buckets[key].count += 1;
@@ -215,6 +326,9 @@ const Reports = () => {
                 Metodo: r?.paymentMethod || "Efectivo",
                 Total: Number(r?.bills?.totalWithTax || 0),
                 OrderId: r?._id || "",
+                Canal: r?.orderSource || "—",
+                Envio: Number(r?.shippingFee ?? r?.deliveryFee ?? r?.bills?.shippingFee ?? r?.bills?.deliveryFee ?? 0),
+
             }));
 
             const ws = XLSX.utils.json_to_sheet(rows);
@@ -262,6 +376,8 @@ const Reports = () => {
                     <option value="Transferencia">Transferencia</option>
                     <option value="Pedido Ya">Pedido Ya</option>
                     <option value="Uber Eats">Uber Eats</option>
+                    <option value="Delivery">Delivery</option>
+
                 </select>
 
                 <input
@@ -281,7 +397,7 @@ const Reports = () => {
             {/* Cierre de caja */}
             <div className="mb-6 rounded-lg border border-[#2a2a2a] bg-[#171717] p-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-white font-semibold">Cierre de caja</h3>
+                    <h3 className="text-white font-semibold">Cierre de aa</h3>
                     <div className="text-sm text-gray-300">
                         Total: <span className="font-semibold text-white">{currency(cashClosure.grandTotal)}</span>
                         <span className="text-gray-500">{" "}({cashClosure.totalCount} ordenes)</span>

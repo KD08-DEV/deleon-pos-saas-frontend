@@ -30,10 +30,23 @@ const SalesReports = () => {
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
-        // Normaliza rango para cubrir días completos:
-        // from = inicio del día, to = inicio del día siguiente (fin exclusivo)
-        if (obj.from) obj.from = `${obj.from}T00:00:00.000`;
-        if (obj.to) obj.to = addDaysISOStart(obj.to, 1);
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        // Si solo selecciona "desde", asumimos "hasta" = mismo día
+        // Si solo selecciona "hasta", asumimos "desde" = mismo día
+        let fromYMD = obj.from || obj.to || "";
+        let toYMD = obj.to || obj.from || "";
+
+        // Evita rango invertido (to < from)
+        if (fromYMD && toYMD && toYMD < fromYMD) {
+            const tmp = fromYMD;
+            fromYMD = toYMD;
+            toYMD = tmp;
+        }
+
+        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
+        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo (día siguiente 00:00)
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -41,6 +54,7 @@ const SalesReports = () => {
 
         return obj;
     }, [filters]);
+
 
 
     const { data, isLoading, isError, error } = useQuery({
@@ -120,6 +134,7 @@ const SalesReports = () => {
                 Total: Number(o.bills?.totalWithTax || 0),
                 Usuario: o?.user?.name || "—",
                 Mesa: o?.table?.tableNumber || "—",
+                Envio: Number(o?.shippingFee ?? o?.deliveryFee ?? o?.bills?.shippingFee ?? o?.bills?.deliveryFee ?? 0),
             }));
 
             const ws = XLSX.utils.json_to_sheet(rows);
@@ -274,7 +289,8 @@ const SalesReports = () => {
                                 {source === "DINE_IN" ? "Comedor" : 
                                  source === "TAKEOUT" ? "Para Llevar" :
                                  source === "PEDIDOSYA" ? "Pedidos Ya" :
-                                 source === "UBEREATS" ? "Uber Eats" : source}
+                                 source === "UBEREATS" ? "Uber Eats" :
+                                 source === "DELIVERY" ? "Delivery" :source}
                             </p>
                             <p className="text-lg font-bold text-white">{currency(data.total)}</p>
                             <p className="text-xs text-gray-500 mt-1">{data.count} órdenes</p>

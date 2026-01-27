@@ -3,7 +3,7 @@ import React, { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getTables, updateTable, updateOrder } from "@https";
+import { getTables, updateTable, updateOrder,  addOrder } from "@https";
 import TableCard from "@components/tables/TableCard";
 import { enqueueSnackbar } from "notistack";
 import { useDispatch } from "react-redux";
@@ -49,9 +49,12 @@ export default function Tables() {
     const { data, isLoading } = useQuery({
         queryKey: QK.TABLES,
         queryFn: getTables,
+        enabled: !!currentUser?._id,
+
         refetchInterval: 0,
         refetchOnWindowFocus: true,
         refetchOnMount: true,
+
         select: (res) => {
             if (Array.isArray(res?.data?.data)) return res.data.data;
             if (Array.isArray(res?.data)) return res.data;
@@ -82,6 +85,10 @@ export default function Tables() {
             });
         },
     });
+    const mCreateOrder = useMutation({
+        mutationFn: (payload) => addOrder(payload),
+    });
+
 
 
 
@@ -94,38 +101,53 @@ export default function Tables() {
         const status = table?.status || "Disponible";
 
 
-        //QUICK Mesa
+        /// CANALES (Quick / Delivery)
         if (table?.isVirtual) {
-            if (!orderId) {
-                enqueueSnackbar("Primero crea una orden para continuar.", { variant: "warning" });
-                return;
-            }
+            try {
+                let effectiveOrderId = orderId;
 
-            // Si es canal delivery, seteamos orderSource antes de ir al menú
-            if (table?.virtualType === "PEDIDOSYA" || table?.virtualType === "UBEREATS") {
-                try {
+                // ✅ Si NO hay orderId, crear orden automática (sin nombre)
+                if (!effectiveOrderId) {
+                    const created = await mCreateOrder.mutateAsync({
+                        customerId: null,
+                        customerDetails: {
+                            name: "",      // <- sin nombre (como pediste)
+                            phone: "",
+                            address: "",
+                            guests: 0,
+                        },
+                        user: currentUser?._id || null,
+                    });
+
+                    effectiveOrderId = created?.data?.data?._id;
+
+                    if (!effectiveOrderId) {
+                        enqueueSnackbar("No se pudo crear la orden.", { variant: "error" });
+                        return;
+                    }
+                }
+
+                // Si es canal delivery/pedidosya/ubereats, seteamos orderSource antes de ir al menú
+                if (
+                    table?.virtualType === "PEDIDOSYA" ||
+                    table?.virtualType === "UBEREATS" ||
+                    table?.virtualType === "DELIVERY"
+                ) {
                     await mUpdateOrder.mutateAsync({
-                        id: orderId,
+                        id: effectiveOrderId,
                         body: { orderSource: table.virtualType },
                     });
-                } catch (e) {
-                    enqueueSnackbar("No se pudo seleccionar el canal.", { variant: "error" });
-                    return;
                 }
+
+                navigate(`/menu?orderId=${effectiveOrderId}`);
+                return;
+            } catch (e) {
+                enqueueSnackbar("No se pudo acceder al canal.", { variant: "error" });
+                return;
             }
-
-            navigate(`/menu?orderId=${orderId}`);
-            return;
         }
 
 
-        // Mesa Disponible + sin orderId => bloquear
-        if (status === "Disponible" && !orderId) {
-            enqueueSnackbar("Debes crear una orden antes de usar esta mesa.", {
-                variant: "warning",
-            });
-            return;
-        }
 
         // Mesa Ocupada => abrir orden existente (si tienes permiso)
         if (status === "Ocupada") {
@@ -136,7 +158,7 @@ export default function Tables() {
                 null;
 
             const canEditBooked =
-                normalizedRole === "admin" || normalizedRole === "camarero" || normalizedRole === "manager";
+                normalizedRole === "admin" || normalizedRole === "camarero" || normalizedRole === "cajera";
 
             // Debug rápido (puedes borrarlo luego)
             console.log("ROLE:", normalizedRole, "existingOrderId:", existingOrderId);
@@ -180,6 +202,17 @@ export default function Tables() {
     const quickCard = { _id: "no-table", isVirtual: true, tableNo: 0, status: "Quick", seats: 0 };
     const pedidosYaEnabled = !!orderSources?.pedidosYa?.enabled;
     const uberEatsEnabled = !!orderSources?.uberEats?.enabled;
+    const deliveryEnabled = !!orderSources?.delivery?.enabled;
+
+    const deliveryCard = {
+        _id: "virtual-delivery",
+        isVirtual: true,
+        virtualType: "DELIVERY",
+        displayName: "Delivery",
+        badgeText: "ENVÍO",
+        status: "Delivery",
+        seats: 0,
+    };
 
     const pedidosYaCard = {
         _id: "virtual-pedidosya",
@@ -207,6 +240,9 @@ export default function Tables() {
                 <TableCard table={quickCard} onPick={() => handlePickTable(quickCard)} />
                 {pedidosYaEnabled && (
                     <TableCard table={pedidosYaCard} onPick={() => handlePickTable(pedidosYaCard)} />
+                )}
+                {deliveryEnabled && (
+                    <TableCard table={deliveryCard} onPick={() => handlePickTable(deliveryCard)} />
                 )}
 
                 {uberEatsEnabled && (

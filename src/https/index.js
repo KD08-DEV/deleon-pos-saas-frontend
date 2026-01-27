@@ -54,5 +54,12 @@ export const updateDishRecipe = (id, body) => api.put(`/api/dishes/${encodeURICo
 export const getTenant = (tenantId) =>
     api.get(`/api/tenant/${encodeURIComponent(tenantId)}`);
 
+// CUSTOMERS (clientes finales)
+export const getCustomers = (q = "", limit = 20) =>
+    api.get(`/api/customer?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`);
+
+export const createCustomer = (data) => api.post("/api/customer", data);
+
+
 
 export default api;

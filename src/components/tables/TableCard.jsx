@@ -8,7 +8,7 @@ import React from "react";
  */
 export default function TableCard({ table, onPick }) {
     const isVirtual = !!table?.isVirtual;
-    const virtualType = table?.virtualType || "QUICK"; // QUICK / PEDIDOSYA / UBEREATS
+    const virtualType = table?.virtualType || "QUICK"; // QUICK / PEDIDOSYA / UBEREATS/DELIVERY
     const status = isVirtual ? (virtualType === "QUICK" ? "Quick" : "Delivery") : (table?.status || "Disponible");
 
     const titleLeft = isVirtual ? "Canal" : "Mesa";

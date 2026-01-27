@@ -33,14 +33,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const cart = useSelector((state) => state.cart);
     const subtotalFromStore = useSelector(getTotalPrice);
     const orderSource = String(order?.orderSource || "").toUpperCase();
-    const isDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
+
+    const isAppDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
+    const isInternalDelivery = orderSource === "DELIVERY";
+
     useEffect(() => {
-        if (!isDelivery) return;
+        if (!isAppDelivery) return;
 
         // Fuerza el método de pago por canal
         if (orderSource === "PEDIDOSYA") setPaymentMethod("Pedido Ya");
         if (orderSource === "UBEREATS") setPaymentMethod("Uber Eats");
-    }, [isDelivery, orderSource]);
+    }, [isAppDelivery, orderSource]);
 
     const commissionRate = num(order?.commissionRate);
     const commissionAmountFromServer = num(order?.commissionAmount);
@@ -126,6 +129,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     const [discountType, setDiscountType] = useState("flat"); // flat | percent
     const [discountValue, setDiscountValue] = useState(0);
+    const [deliveryFee, setDeliveryFee] = useState(num(order?.bills?.deliveryFee ?? 0));
+    useEffect(() => {
+        setDeliveryFee(num(order?.bills?.deliveryFee ?? 0));
+    }, [order?._id]); // cuando cambias de orden
+
 
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
@@ -133,6 +141,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [customerName, setCustomerName] = useState("");
     const [customerRnc, setCustomerRnc] = useState("");
     const [guests, setGuests] = useState(0);
+    const [customerPhone, setCustomerPhone] = useState("");
+    const [customerAddress, setCustomerAddress] = useState("");
 
     // Fiscal (NCF) opcional
     const [wantsFiscal, setWantsFiscal] = useState(false);
@@ -160,7 +170,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [fiscalEnabledByTenant]);
 
     // Totales
-    const { discount, base, tax, tip, total } = useMemo(() => {
+    const { discount, base, deliveryFeeCalc, tax, tip, total } = useMemo(() => {
         const discountCalc =
             discountType === "percent"
                 ? (subtotal * num(discountValue || 0)) / 100
@@ -168,22 +178,36 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         const baseCalc = Math.max(subtotal - discountCalc, 0);
 
+        const ship = isInternalDelivery ? Math.max(num(deliveryFee || 0), 0) : 0;
+
         const effectiveTaxRate = taxEnabled ? TAX_RATE : 0;
-        const taxCalc = (baseCalc * effectiveTaxRate) / 100;
+
+        const taxableBase = baseCalc + ship;
+        const taxCalc = (taxableBase * effectiveTaxRate) / 100;
 
         const tipCalc = tipEnabled ? (baseCalc * num(tipPercent || 0)) / 100 : 0;
 
         return {
-
             discount: discountCalc,
             base: baseCalc,
+            deliveryFeeCalc: ship,
             tax: taxCalc,
             tip: tipCalc,
-            total: baseCalc + taxCalc + tipCalc,
+            total: taxableBase + taxCalc + tipCalc,
         };
-    }, [subtotal, discountType, discountValue, taxEnabled, tipEnabled, tipPercent]);
+    }, [
+        subtotal,
+        discountType,
+        discountValue,
+        taxEnabled,
+        tipEnabled,
+        tipPercent,
+        isInternalDelivery,
+        deliveryFee,
+    ]);
+
     const computedCommission = useMemo(() => {
-        if (!isDelivery) return 0;
+        if (!isAppDelivery) return 0;
         const rate = num(commissionRate);
         if (!rate) return 0;
 
@@ -192,7 +216,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         const val = baseNoTip * rate;
 
         return Number(val.toFixed(2));
-    }, [isDelivery, commissionRate, base, tax]);
+    }, [isAppDelivery, commissionRate, base, tax]);
 
     const commissionAmountEffective = useMemo(() => {
         const serverVal = num(commissionAmountFromServer);
@@ -200,8 +224,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [commissionAmountFromServer, computedCommission]);
 
     const totalToPay = useMemo(() => {
-        return isDelivery ? num(total) + num(commissionAmountEffective) : num(total);
-    }, [isDelivery, total, commissionAmountEffective]);
+        return isAppDelivery ? num(total) + num(commissionAmountEffective) : num(total);
+    }, [isAppDelivery, total, commissionAmountEffective]);
 
 
 
@@ -329,12 +353,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             totalWithTax: num(total),
             taxEnabled,
             tipEnabled,
+            deliveryFee: num(deliveryFeeCalc),
         };
 
         const basePayload = {
             orderStatus: "En Progreso",
             items,
-            paymentMethod: isDelivery
+            paymentMethod: isAppDelivery
                 ? (orderSource === "PEDIDOSYA" ? "Pedido Ya" : "Uber Eats")
                 : paymentMethod,
             discount: { type: discountType, value: num(discountValue) || 0 },
@@ -352,6 +377,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 name: String(customerName || "").trim(),
                 rnc: String(customerRnc || "").trim(),
                 guests: Number(guests || 0),
+                phone: String(customerPhone || "").trim(),
+                address: String(customerAddress || "").trim(),
             };
         }
 
@@ -438,6 +465,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 totalWithTax: server.bills?.totalWithTax ?? fallback.bills?.totalWithTax ?? 0,
                 taxEnabled: server.bills?.taxEnabled ?? fallback.bills?.taxEnabled ?? true,
                 tipEnabled: server.bills?.tipEnabled ?? fallback.bills?.tipEnabled ?? true,
+                deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
+
             };
 
             // Fiscal (prioriza siempre lo del server)
@@ -452,6 +481,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 commissionRate: server.commissionRate,
                 commissionAmount: server.commissionAmount,
                 netTotal: server.netTotal,
+
+                customerDetails: {
+                    name: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
+                    rnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
+                    guests: server.customerDetails?.guests ?? fallback.customerDetails?.guests ?? 0,
+                    phone: server.customerDetails?.phone ?? fallback.customerDetails?.phone ?? "",
+                    address: server.customerDetails?.address ?? fallback.customerDetails?.address ?? "",
+                },
+
 
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
@@ -573,6 +611,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     </div>
                 )}
 
+
+
                 {/* ✅ PROPINA (siempre visible) */}
                 {tipEnabledByTenant && (
                 <div className="flex items-center justify-between mt-3">
@@ -610,9 +650,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         <span className="text-xs text-[#ababab]">{TAX_RATE}%</span>
                     </div>
                 )}
+                {isInternalDelivery && (
+                    <div className="flex items-center justify-between mt-3">
+                        <span className="text-xs text-[#ababab]">Envío</span>
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            value={deliveryFee === 0 ? "" : deliveryFee}
+                            onChange={(e) => {
+                                const val = e.target.value.trim();
+                                setDeliveryFee(val === "" ? 0 : Number(val));
+                            }}
+                            className="w-28 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#facc15]"
+                            placeholder="0.00"
+                        />
+                    </div>
+                )}
+
 
                 {/* ✅ RESUMEN */}
-                {isDelivery && num(commissionAmountEffective) > 0 && (
+                {isAppDelivery  && num(commissionAmountEffective) > 0 && (
                     <div className="mt-3 text-xs text-[#ababab] space-y-1">
                         <div className="flex justify-between">
                             <span>Comisión ({commissionPct}%)</span>
@@ -620,6 +677,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         </div>
                     </div>
                 )}
+
+
 
                 <div className="mt-3 text-xs text-[#ababab] space-y-1">
 
@@ -651,7 +710,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             {/* Método de pago */}
             <div className="flex items-center justify-between gap-4 px-5 mt-4">
-                {isDelivery ? (
+                {isAppDelivery  ? (
                     <button
                         type="button"
                         disabled

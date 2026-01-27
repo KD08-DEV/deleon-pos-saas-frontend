@@ -110,6 +110,8 @@ export default function FiscalConfig() {
                 uberEatsEnabled: !!data?.features?.orderSources?.uberEats?.enabled,
                 pedidosYaCommissionPct: Math.round((Number(data?.features?.orderSources?.pedidosYa?.commissionRate ?? 0.26)) * 100),
                 uberEatsCommissionPct: Math.round((Number(data?.features?.orderSources?.uberEats?.commissionRate ?? 0.22)) * 100),
+                deliveryEnabled: !!data?.features?.orderSources?.delivery?.enabled,
+
             },
             fiscalEnabled: !!data?.fiscal?.enabled,
             B01: {
@@ -187,6 +189,10 @@ export default function FiscalConfig() {
                             enabled: !!form.features.uberEatsEnabled,
                             commissionRate: Number(form.features.uberEatsCommissionPct || 0) / 100,
                         },
+                        delivery: {
+                            enabled: !!form.features.deliveryEnabled,
+                        },
+
                     },
                 },
                 ncfConfig: {
@@ -351,6 +357,18 @@ export default function FiscalConfig() {
                                 </div>
                             )}
                         </div>
+                        {/* DELIVERY  */}
+                        <div className="rounded-lg border border-gray-800/30 bg-[#1a1a1a]/50 p-4">
+                            <ToggleRow
+                                label="Delivery"
+                                desc="Habilita el canal Delivery en la pantalla de Mesas"
+                                checked={!!form.features.deliveryEnabled}
+                                onChange={(v) =>
+                                    setForm((f) => ({ ...f, features: { ...f.features, deliveryEnabled: v } }))
+                                }
+                            />
+                        </div>
+
 
                         {/* Uber Eats */}
                         <div className="rounded-lg border border-gray-800/30 bg-[#1a1a1a]/50 p-4">

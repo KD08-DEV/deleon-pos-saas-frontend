@@ -28,8 +28,23 @@ const ProductReports = () => {
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
-        if (obj.from) obj.from = `${obj.from}T00:00:00.000`;
-        if (obj.to) obj.to = addDays(obj.to, 1); // fin exclusivo
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        // Si solo selecciona "desde", asumimos "hasta" = mismo día
+        // Si solo selecciona "hasta", asumimos "desde" = mismo día
+        let fromYMD = obj.from || obj.to || "";
+        let toYMD = obj.to || obj.from || "";
+
+        // Evita rango invertido (to < from)
+        if (fromYMD && toYMD && toYMD < fromYMD) {
+            const tmp = fromYMD;
+            fromYMD = toYMD;
+            toYMD = tmp;
+        }
+
+        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
+        if (toYMD) obj.to = addDays(toYMD, 1); // fin exclusivo (día siguiente 00:00)
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -37,6 +52,7 @@ const ProductReports = () => {
 
         return obj;
     }, [filters]);
+
 
 
     const { data, isLoading, isError, error } = useQuery({

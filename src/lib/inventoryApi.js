@@ -28,3 +28,5 @@ export function downloadBlob(blob, filename) {
     a.remove();
     window.URL.revokeObjectURL(url);
 }
+
+export const createMerma = (payload) => api.post("/inventory/merma", payload);

@@ -20,6 +20,17 @@ const formatDMY = (dateLike) => {
     }).format(d);
 };
 
+const safeNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    const s = String(v).trim();
+
+    // limpia "RD$", comas, espacios
+    const normalized = s.replace(/rd\$/gi, "").replace(/,/g, "").trim();
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : 0;
+};
+
 const formatDMYTime = (dateLike) => {
     if (!dateLike) return "N/A";
     if (typeof dateLike === "object" && dateLike.$date) dateLike = dateLike.$date;
@@ -98,7 +109,16 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         order?.customerRnc ||
         order?.customerRNC ||
         "";
+    const clientPhone =
+        order?.customerDetails?.phone ||
+        order?.customerPhone ||
+        "";
 
+    const clientAddress =
+        order?.customerDetails?.address ||
+        order?.customerAddress ||
+        "";
+    // ===== Pago =====
     const paymentMethod = order?.paymentMethod || "Efectivo";
 
     // ===== Items =====
@@ -115,19 +135,51 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const tip = Number(order?.tipAmount ?? bills?.tipAmount ?? bills?.tip ?? 0);
 
     const grandTotal = Number(order?.totalAmount ?? bills?.totalWithTax ?? bills?.total ?? 0);
-    // ===== Comisión Delivery (viene del backend, congelada por orden) =====
+// ===== Canal / Delivery / Envío =====
     const orderSource = String(order?.orderSource || "").toUpperCase();
-    const isDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
 
+// Apps (tienen comisión)
+    const isAppDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
+
+// Delivery interno (tiene envío)
+    const isInternalDelivery = orderSource === "DELIVERY";
+
+// Comisión (solo apps)
     const commissionRate = Number(order?.commissionRate ?? bills?.commissionRate ?? 0);
     const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
-
     const commissionAmount = Number(order?.commissionAmount ?? bills?.commissionAmount ?? 0);
-    const netTotal = Number(order?.netTotal ?? bills?.netTotal ?? 0);
 
-// Fallback por si solo viene rate y no amount (pero ideal es que el backend lo mande)
-    const computedNet = netTotal || (grandTotal - commissionAmount);
-    const totalToPay = isDelivery ? (grandTotal + commissionAmount) : grandTotal;
+// Envío (solo delivery interno)
+    const shippingFee = safeNum(
+        order?.shippingFee ??
+        order?.deliveryFee ??
+        bills?.shippingFee ??
+        bills?.deliveryFee ??
+        0
+    );
+    const showShipping = shippingFee > 0;
+    const treatAsInternalDelivery = isInternalDelivery || showShipping;
+
+
+
+// Si el backend ya incluyó el envío en grandTotal, no lo sumamos doble.
+// Recalculamos un “expected” y comparamos.
+    const expectedTotalWithShipping =
+        (subtotal - discount) +
+        (taxEnabled ? tax : 0) +
+        tip +
+        (treatAsInternalDelivery ? shippingFee : 0);
+
+    const shippingAlreadyIncluded =
+        treatAsInternalDelivery && Math.abs(expectedTotalWithShipping - grandTotal) < 0.01;
+
+    const totalToPay = isAppDelivery
+        ? (grandTotal + commissionAmount)
+        : treatAsInternalDelivery
+            ? (shippingAlreadyIncluded ? grandTotal : (grandTotal + shippingFee))
+            : grandTotal;
+
+
 
     const headerGridClass = taxEnabled
         ? "grid grid-cols-[2fr_0.5fr_1fr_1fr]"
@@ -222,6 +274,17 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         <p>
                             <span className="font-semibold">Cliente:</span> {clientName}
                         </p>
+                        {clientPhone && (
+                            <p>
+                                <span className="font-semibold">Teléfono:</span> {clientPhone}
+                            </p>
+                        )}
+
+                        {clientAddress && (
+                            <p>
+                                <span className="font-semibold">Dirección:</span> {clientAddress}
+                            </p>
+                        )}
 
                         {clientRnc && (
                             <p>
@@ -313,17 +376,21 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                                 <span className="font-semibold">ITBIS:</span> RD${tax.toFixed(2)}
                             </p>
                         )}
-                        {isDelivery && commissionAmount > 0 && (
+                        {isAppDelivery  && commissionAmount > 0 && (
                             <p>
                                 <span className="font-semibold">Comisión ({commissionPct}%):</span> RD${commissionAmount.toFixed(2)}
                             </p>
                         )}
+                        {showShipping && (
+                            <p>
+                                <span className="font-semibold">Envío:</span> RD${shippingFee.toFixed(2)}
+                            </p>
+                        )}
+
 
                         <p className="font-semibold">
-                            Total a pagar: RD${(isDelivery ? (grandTotal + commissionAmount) : grandTotal).toFixed(2)}
+                            Total a pagar: RD${totalToPay.toFixed(2)}
                         </p>
-
-
                         <p>
                             <span className="font-semibold">Método de pago:</span> {paymentMethod}
                         </p>

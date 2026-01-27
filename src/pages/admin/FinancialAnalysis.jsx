@@ -46,10 +46,22 @@ const FinancialAnalysis = () => {
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
-        // Normaliza rango para cubrir dias completos:
-        // from = inicio del dia, to = inicio del dia siguiente (fin exclusivo)
-        if (obj.from) obj.from = `${obj.from}T00:00:00.000`;
-        if (obj.to) obj.to = addDaysISOStart(obj.to, 1);
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        let fromYMD = obj.from || obj.to || "";
+        let toYMD = obj.to || obj.from || "";
+
+        // Evita rango invertido
+        if (fromYMD && toYMD && toYMD < fromYMD) {
+            const tmp = fromYMD;
+            fromYMD = toYMD;
+            toYMD = tmp;
+        }
+
+        // Normaliza rango (días completos):
+        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
+        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -57,6 +69,7 @@ const FinancialAnalysis = () => {
 
         return obj;
     }, [filters]);
+
 
 
     const { data, isLoading, isError, error } = useQuery({

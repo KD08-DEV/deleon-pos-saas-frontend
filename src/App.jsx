@@ -99,11 +99,31 @@ function RealtimeTenantConfig() {
     const userState = useSelector((s) => s.user);
     const socketRef = useRef(null);
 
-    // soporta varios shapes: {userData}, {user}, o user directo
+    const tenantState = useSelector((s) => s.store || s.tenant || {});
+    const tenant = tenantState?.tenant || tenantState?.data || tenantState;
+    const hasTenant = !!tenant?._id;
+
     const isAuth = !!userState?.isAuth;
     const currentUser = userState?.userData || userState?.user || userState;
     const tenantId = currentUser?.tenantId;
 
+    // 1) Carga inicial del tenant (para que no dependa del refresh)
+    useEffect(() => {
+        if (!isAuth || !tenantId) return;
+
+        if (!hasTenant) {
+            (async () => {
+                try {
+                    const res = await getTenant(tenantId);
+                    dispatch(setTenant(res.data.data));
+                } catch (e) {
+                    console.error("Initial getTenant failed", e);
+                }
+            })();
+        }
+    }, [isAuth, tenantId, hasTenant, dispatch]);
+
+    // 2) Socket + handlers
     useEffect(() => {
         if (!isAuth || !tenantId) {
             disconnectSocket();
@@ -111,7 +131,6 @@ function RealtimeTenantConfig() {
             return;
         }
 
-        if (!isAuth || !tenantId) return;
         // si cambia tenantId, desconecta y resetea
         if (socketRef.current && socketRef.current.__tenantId !== tenantId) {
             disconnectSocket();
@@ -141,27 +160,20 @@ function RealtimeTenantConfig() {
             } catch (e) {
                 console.error("tenant:configUpdated handler error", e);
 
-                // aunque falle getTenant, por lo menos refresca config
                 queryClient.invalidateQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true });
                 queryClient.refetchQueries({ queryKey: QK.ADMIN_FISCAL_CONFIG, exact: true, type: "active" });
             }
         };
 
-
-
-
         const onTablesUpdated = (payload) => {
             if (payload?.tenantId && payload.tenantId !== tenantId) return;
 
-            // 1) marcar stale
             queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
             queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
 
-            // 2) forzar fetch inmediato si la vista está abierta
             queryClient.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
             queryClient.refetchQueries({ queryKey: QK.ORDERS, exact: true, type: "active" });
         };
-
 
         s.off("tenant:configUpdated", onConfigUpdated);
         s.on("tenant:configUpdated", onConfigUpdated);
@@ -179,12 +191,16 @@ function RealtimeTenantConfig() {
 }
 
 
+
 function Layout() {
     const isLoading = useLoadData();
     const location = useLocation();
     const navigate = useNavigate(); // 👈 NUEVO
     const hideHeaderRoutes = ["/auth"];
     const { userData, isAuth } = useSelector((state) => state.user);
+    const tenantState = useSelector((s) => s.store || s.tenant || {});
+    const tenant = tenantState?.tenant || tenantState?.data || tenantState;
+
 
     const isSuperAdminRoute = location.pathname.startsWith("/superadmin");
     const shouldShowPosChrome =
@@ -200,6 +216,23 @@ function Layout() {
     }, [userData, location.pathname, navigate]);
 
     if (isLoading) return <FullScreenLoader />;
+    const isTenantReady = !!tenant?.features?.orderSources;
+
+
+    if (
+        isAuth &&
+        !isTenantReady &&
+        !hideHeaderRoutes.includes(location.pathname) &&
+        !isSuperAdminRoute
+    ) {
+
+        return (
+            <section className="bg-[#111] min-h-screen px-6 pt-6 pb-24">
+                <div className="text-gray-400">Cargando configuración…</div>
+            </section>
+        );
+    }
+
 
     return (
         <>
