@@ -19,6 +19,13 @@ const Reports = () => {
         const dd = String(d.getDate()).padStart(2, "0");
         return `${yyyy}-${mm}-${dd}`;
     };
+    const [toast, setToast] = useState({ open: false, message: "", type: "error" });
+
+    const showToast = (message, type = "error") => {
+        setToast({ open: true, message, type });
+        window.clearTimeout(showToast._t);
+        showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
+    };
 
 
     const [filters, setFilters] = useState(() => {
@@ -226,7 +233,6 @@ const Reports = () => {
         });
     }, [reports, debounced]);
 
-    console.log("SAMPLE REPORT", filteredReports?.[0]);
 
 
     const cashClosure = useMemo(() => {
@@ -303,14 +309,14 @@ const Reports = () => {
 
             if (!url) {
                 console.error("Respuesta invoice:", res.data);
-                alert("No se pudo obtener la factura (sin URL).");
+                showToast("No se pudo obtener la factura (sin URL).");
                 return;
             }
 
             window.open(url, "_blank", "noopener,noreferrer");
         } catch (error) {
             console.error("Error cargando factura:", error);
-            alert("Error al cargar la factura");
+            showToast("Error al cargar la factura");
         }
     };
 
@@ -491,6 +497,29 @@ const Reports = () => {
                     </tbody>
                 </table>
             )}
+            {toast.open && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999]">
+                    <div
+                        className={`px-4 py-3 rounded-xl shadow-2xl border backdrop-blur
+        ${toast.type === "error"
+                            ? "bg-red-500/15 border-red-500/30 text-red-200"
+                            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                        }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="text-sm font-medium">{toast.message}</div>
+                            <button
+                                type="button"
+                                className="ml-2 text-white/70 hover:text-white"
+                                onClick={() => setToast((t) => ({ ...t, open: false }))}
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 };

@@ -112,40 +112,61 @@ const Menu = () => {
         orderFinalizedRef.current = true;
     };
 
+    const hydratedRef = useRef(false);
+    const lastOrderIdRef = useRef(null);
+
     useEffect(() => {
-        return () => {
-            // 🧠 No ejecutar si la orden ya fue finalizada
-            if (orderFinalizedRef.current) return;
+        // Si aún no hay order, NO toques el carrito
+        if (!orderId) return;
+        if (!order) return;
 
-            // 🚫 Ignorar el primer desmontaje fantasma (React Strict Mode)
-            if (!strictGuardRef.current) {
-                strictGuardRef.current = true;
-                return;
-            }
+        const items = Array.isArray(order.items) ? order.items : [];
+        if (items.length === 0) return; // importante: no vaciar mientras carga/refresca
 
-            if (!orderId) return;
+        const mapped = items.map((it) => {
+            const quantity = Number(it.quantity ?? it.qty ?? it.count ?? 1);
+            const dishId = it.dishId ?? it.dish?._id ?? it.dish ?? it.id ?? it._id;
 
-            const hasCart = cartLenRef.current > 0;
-            const hasOrderItems = orderItemsLenRef.current > 0;
+            const name =
+                it.name ||
+                it.dishName ||
+                it.itemName ||
+                it?.dishInfo?.name ||
+                it?.dish?.name ||
+                "Producto";
 
-            // 🚨 Si no hay items ni en carrito ni en la orden -> eliminar orden
-            if (!hasCart && !hasOrderItems) {
-                deleteOrder(orderId)
-                    .then(() =>
-                        console.log(`🗑️ Orden ${orderId} eliminada por estar vacía`)
-                    )
-                    .catch((err) => {
-                        if (err?.response?.status === 404) {
-                            console.warn("⚠️ Orden ya eliminada anteriormente.");
-                        } else {
-                            console.error("Error al eliminar orden vacía:", err);
-                        }
-                    });
-            }
+            const qtyType =
+                it.qtyType ||
+                (it?.dish?.sellMode === "weight" ? "weight" : "unit") ||
+                "unit";
 
-            dispatch(removeAllItems());
-        };
-    }, [orderId, dispatch]);
+            const weightUnit = it.weightUnit || it?.dish?.weightUnit || "lb";
+
+            const unitPrice = Number(
+                it.unitPrice ??
+                it.pricePerQuantity ??
+                it.pricePerLb ??
+                it?.dish?.pricePerLb ??
+                it?.dish?.price ??
+                it.price ??
+                0
+            );
+
+            return {
+                id: dishId,
+                dishId,
+                name,
+                qtyType,
+                weightUnit,
+                quantity,
+                unitPrice,                               // <-- clave
+                price: Number((unitPrice * quantity).toFixed(2)), // <-- lineTotal
+            };
+        });
+
+        dispatch(setCart(mapped));
+    }, [orderId, order?.items, dispatch]);
+
 
     // --- Fin de cambios ---
 

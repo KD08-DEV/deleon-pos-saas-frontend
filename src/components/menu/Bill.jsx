@@ -85,19 +85,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     useEffect(() => {
-        console.log("[BILL] tenant features:", tenantInfo?.features);
-        console.log("[BILL] tipEnabledByTenant:", tipEnabledByTenant);
-        console.log("[BILL] discountEnabledByTenant:", discountEnabledByTenant);
-        console.log("[BILL] taxEnabledByTenant:", taxEnabledByTenant);
+
     }, [tenantInfo, tipEnabledByTenant, discountEnabledByTenant, taxEnabledByTenant]);
 
     useEffect(() => {
-        console.log("TENANT INFO EN BILL:", tenantInfo);
-        console.log("FISCAL EN BILL:", tenantInfo?.fiscal);
+
     }, [tenantInfo]);
     // Fiscal capability (nuevo modelo)
     useEffect(() => {
-        console.log("[BILL] tipEnabledByTenant changed:", tipEnabledByTenant);
 
         if (!tipEnabledByTenant) {
             setTipEnabled(false);
@@ -127,6 +122,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
+    useEffect(() => {
+        if (isAppDelivery) return; // PedidoYa/UberEats se fuerzan
+        if (!order?._id) return;
+        setPaymentMethod(order?.paymentMethod || "Efectivo");
+    }, [order?._id]);
+
     const [discountType, setDiscountType] = useState("flat"); // flat | percent
     const [discountValue, setDiscountValue] = useState(0);
     const [deliveryFee, setDeliveryFee] = useState(num(order?.bills?.deliveryFee ?? 0));
@@ -523,6 +524,34 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             );
         },
     });
+    const paymentMethodMutation = useMutation({
+        mutationFn: async (method) => {
+            // IMPORTANTE: usar api.patch para no pasar items, bills, etc.
+            const res = await api.patch(`/api/order/${orderId}/payment-method`, { paymentMethod: method });
+            return res.data;
+        },
+        onSuccess: (_data, method) => {
+            // actualiza el cache de la orden SIN refetch
+            queryClient.setQueryData(["order", orderId], (prev) => {
+                if (!prev) return prev;
+
+                // según tu backend, a veces es { success, data } o la orden directa
+                if (prev.data) {
+                    return {
+                        ...prev,
+                        data: { ...prev.data, paymentMethod: method },
+                    };
+                }
+
+                return { ...prev, paymentMethod: method };
+            });
+
+            enqueueSnackbar("Método de pago actualizado.", { variant: "success" });
+        },
+
+    });
+
+
 
     const handlePlaceOrder = () => {
         if (!orderId) {
@@ -722,7 +751,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ) : (
                     <>
                         <button
-                            onClick={() => setPaymentMethod("Efectivo")}
+                            type="button"
+                            onClick={() => {
+                                setPaymentMethod("Efectivo");
+                                paymentMethodMutation.mutate("Efectivo");
+                            }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
                                 paymentMethod === "Efectivo"
                                     ? "bg-[#2b2b2b] text-white"
@@ -733,7 +766,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         </button>
 
                         <button
-                            onClick={() => setPaymentMethod("Tarjeta")}
+                            type="button"
+                            onClick={() => {
+                                setPaymentMethod("Tarjeta");
+                                paymentMethodMutation.mutate("Tarjeta");
+                            }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
                                 paymentMethod === "Tarjeta"
                                     ? "bg-[#2b2b2b] text-white"
@@ -744,7 +781,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         </button>
 
                         <button
-                            onClick={() => setPaymentMethod("Transferencia")}
+                            type="button"
+                            onClick={() => {
+                                setPaymentMethod("Transferencia");
+                                paymentMethodMutation.mutate("Transferencia");
+                            }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
                                 paymentMethod === "Transferencia"
                                     ? "bg-[#2b2b2b] text-white"
@@ -844,6 +885,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             {/* Botón actualizar */}
             <div className="flex items-center gap-3 px-5 mt-4">
                 <button
+                    type="button"
                     onClick={handlePlaceOrder}
                     className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
                 >

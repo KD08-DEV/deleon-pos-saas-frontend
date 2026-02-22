@@ -20,6 +20,10 @@ export default function Tables() {
     const tenantState = useSelector((s) => s.store || s.tenant || {});
     const tenant = tenantState?.tenant || tenantState?.data || tenantState;
     const orderSources = tenant?.features?.orderSources || {};
+    const [deliveryPayOpen, setDeliveryPayOpen] = React.useState(false);
+    const [deliveryPayMethod, setDeliveryPayMethod] = React.useState("Efectivo");
+    const [pendingVirtual, setPendingVirtual] = React.useState(null);
+
 
     const userState = useSelector((state) => state.user);
 
@@ -138,7 +142,6 @@ export default function Tables() {
                         body: { orderSource: table.virtualType },
                     });
                 }
-
                 navigate(`/menu?orderId=${effectiveOrderId}`);
                 return;
             } catch (e) {
@@ -183,13 +186,41 @@ export default function Tables() {
         }
 
         // Mesa Disponible + orderId => asignar mesa a la orden
+        // Mesa Disponible => si no hay orderId, crear una orden vacía y asignarla a la mesa
         try {
-            await mUpdateOrder.mutateAsync({
-                id: orderId,
-                body: { table: tableId },
-            });
+            let effectiveOrderId = orderId;
 
-            navigate(`/menu?orderId=${orderId}`);
+            // 1) Si NO hay orderId, crear orden con cliente vacío y con mesa asignada
+            if (!effectiveOrderId) {
+                const created = await mCreateOrder.mutateAsync({
+                    customerId: null,
+                    customerDetails: {
+                        name: "",      // sin nombre
+                        phone: "",
+                        address: "",
+                        guests: 0,
+                    },
+                    table: tableId,              // clave: asigna mesa desde el inicio
+                    orderSource: "DINE_IN",      // opcional, pero recomendado
+                    user: currentUser?._id || null,
+                });
+
+                effectiveOrderId = created?.data?.data?._id;
+
+                if (!effectiveOrderId) {
+                    enqueueSnackbar("No se pudo crear la orden para esta mesa.", { variant: "error" });
+                    return;
+                }
+            } else {
+                // 2) Si ya hay orderId, solo asignar la mesa a esa orden
+                await mUpdateOrder.mutateAsync({
+                    id: effectiveOrderId,
+                    body: { table: tableId },
+                });
+            }
+
+            // 3) Navegar al menú con la orden creada/asignada
+            navigate(`/menu?orderId=${effectiveOrderId}`);
         } catch (error) {
             enqueueSnackbar("No se pudo asignar la mesa.", { variant: "error" });
         }

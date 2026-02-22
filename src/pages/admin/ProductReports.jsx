@@ -6,19 +6,38 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import api from "../../lib/api";
 
+
+
 const currency = (n) =>
     new Intl.NumberFormat("en-IN", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
         .format(Number(n || 0));
+const getLocalYMD = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+};
 
 const ProductReports = () => {
-    const [filters, setFilters] = useState({
-        from: "",
-        to: "",
-        category: "",
+    const [filters, setFilters] = useState(() => {
+        const today = getLocalYMD();
+        return {
+            from: today,
+            to: today,
+            category: "",
+        };
     });
+
     const [productSearch, setProductSearch] = useState("");
     const [productSort, setProductSort] = useState({ key: "totalQuantity", direction: "desc" });
+    const [toast, setToast] = useState({ open: false, message: "", type: "error" });
 
+    const showToast = (message, type = "error") => {
+        setToast({ open: true, message, type });
+        window.clearTimeout(showToast._t);
+        showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
+    };
     const addDays = (ymd, days) => {
         const d = new Date(`${ymd}T00:00:00`);
         d.setDate(d.getDate() + days);
@@ -189,7 +208,7 @@ const ProductReports = () => {
             saveAs(blob, `reportes_productos_${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Error exportando Excel:", error);
-            alert("Error al exportar el archivo.");
+            showToast("Error al exportar el archivo.");
         }
     };
 
@@ -482,6 +501,29 @@ const ProductReports = () => {
                                 </div>
                             </div>
                         ))}
+                    {toast.open && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999]">
+                            <div
+                                className={`px-4 py-3 rounded-xl shadow-2xl border backdrop-blur
+        ${toast.type === "error"
+                                    ? "bg-red-500/15 border-red-500/30 text-red-200"
+                                    : "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="text-sm font-medium">{toast.message}</div>
+                                    <button
+                                        type="button"
+                                        className="ml-2 text-white/70 hover:text-white"
+                                        onClick={() => setToast((t) => ({ ...t, open: false }))}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
         </div>

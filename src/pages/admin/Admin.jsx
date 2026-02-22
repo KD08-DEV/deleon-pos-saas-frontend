@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
-import { 
-    FileText, 
-    Users, 
-    Receipt, 
-    Package, 
+import { useLocation } from "react-router-dom";
+
+import {
+    FileText,
+    Users,
+    Receipt,
+    Package,
     UserPlus,
     TrendingUp,
     Shield,
@@ -29,6 +31,11 @@ import {
     Wallet,
     X
 } from "lucide-react";
+import ExpenseCategories from "./ExpenseCategories";
+import Expenses from "./Expenses";
+import PayrollRuns from "./PayrollRuns";
+import FinanceSummary from "./FinanceSummary";
+
 
 import Reports from "./Reports";
 import Employees from "./Employees";
@@ -44,11 +51,13 @@ import TablesManagement from "./TablesManagement";
 import Suppliers from "./Suppliers";
 import InventoryCategories from "./InventoryCategories";
 import Notifications from "./Notifications";
+
 import HelpAndSupport from "./HelpAndSupport";
 
 
 const Admin = () => {
     const [tab, setTab] = useState("cash-register");
+    const location = useLocation();
     const [expandedMenu, setExpandedMenu] = useState("reportes"); // Menú expandido por defecto
     const [showPlanDetails, setShowPlanDetails] = useState(false);
     const navigate = useNavigate();
@@ -78,6 +87,15 @@ const Admin = () => {
             setExpandedMenu("reportes");
         }
     }, [userData, isAuth, navigate]);
+    useEffect(() => {
+        const nextTab = location.state?.tab;
+        if (nextTab) {
+            setTab(nextTab);
+            // opcional: limpia el state para que no se re-aplique en refresh
+            navigate("/admin", { replace: true, state: {} });
+        }
+    }, [location.state, navigate]);
+
 
     // ⏳ Evitar pantalla en blanco mientras carga el usuario
     if (!userData) {
@@ -87,6 +105,7 @@ const Admin = () => {
             </div>
         );
     }
+
 
     // 📊 Traer resumen de uso del plan
     const { data: usageData } = useQuery({
@@ -167,7 +186,7 @@ const Admin = () => {
                     label: "Análisis Financiero",
                     icon: TrendingUp,
                     description: "Análisis detallado de finanzas"
-                }
+                },
             ]
         },
         {
@@ -184,6 +203,13 @@ const Admin = () => {
                     icon: Users,
                     description: "Gestionar empleados"
                 },
+                {
+                    id: "payroll",
+                    label: "Nómina",
+                    icon: Users,
+                    description: "Crear corridas y postear gasto"
+                },
+
                 {
                     id: "schedules",
                     label: "Horarios y Turnos",
@@ -227,10 +253,22 @@ const Admin = () => {
                     description: "Organizar categorías"
                 },
                 {
-                    id: "inventory",
-                    label: "Control de Stock",
-                    icon: Package,
-                    description: "Gestionar inventario y stock"
+                    id: "expense-categories",
+                    label: "Categorías de Gastos",
+                    icon: FileText,
+                    description: "Crear/editar categorías"
+                },
+                {
+                    id: "expenses",
+                    label: "Gastos Varios",
+                    icon: Receipt,
+                    description: "Registrar gastos del día a día"
+                },
+                {
+                    id: "expenses-summary",
+                    label: "Resumen de gastos",
+                    icon: Receipt,
+                    description: "Registrar gastos del día a día"
                 },
             ]
         },
@@ -257,26 +295,35 @@ const Admin = () => {
                 }
             ]
         },
-      /*  ...(canInventory ? [{
-            id: "inventario",
-            label: "Inventario",
-            icon: Package,
-            color: "text-cyan-400",
-            bgColor: "bg-cyan-500/10",
-            borderColor: "border-cyan-500/20",
-            items: [
+        ...(canInventory
+            ? [
+                {
+                    id: "inventario",
+                    label: "Inventario",
+                    icon: Package,
+                    color: "text-cyan-400",
+                    bgColor: "bg-cyan-500/10",
+                    borderColor: "border-cyan-500/20",
+                    items: [
+                        {
+                            id: "suppliers",
+                            label: "Proveedores",
+                            icon: Store,
+                            description: "Gestionar proveedores",
+                        },
+                        {
+                            id: "inventory-stock", // <-- id único
+                            label: "Control de Stock",
+                            icon: Package,
+                            description: "Inventario y stock de ingredientes"
+                        },
 
-
-                //--Proximas funciones de inventario Suplidores
-                   {
-                    id: "suppliers",
-                   label: "Proveedores",
-                   icon: Store,
-                   description: "Gestionar proveedores"
-               },
-
+                    ],
+                },
             ]
-        }] : []),*/
+            : []),
+
+        ...(canInventory ? [] : []),
         {
             id: "configuracion",
             label: "Configuración",
@@ -302,13 +349,22 @@ const Admin = () => {
     ];
 
     const menuSections = useMemo(() => {
-        // Cajera: solo puede ver Reportes y Análisis
+        // Cajera: solo puede ver Reportes y Análisis → Cierre de Caja
         if (isCashier) {
-            return menuSectionsBase.filter((s) => s.id === "reportes");
+            const reportes = menuSectionsBase.find((s) => s.id === "reportes");
+            if (!reportes) return [];
+            return [
+                {
+                    ...reportes,
+                    items: (reportes.items || []).filter((i) => i.id === "cash-register"),
+                },
+            ];
         }
+
         // Owner/Admin: todo normal
         return menuSectionsBase;
-    }, [isCashier]);
+    }, [isCashier, menuSectionsBase]);
+
 
 
     const toggleMenu = (menuId) => {
@@ -455,13 +511,13 @@ const Admin = () => {
                                 <LayoutDashboard className="w-5 h-5 text-[#f6b100]" />
                                 <h3 className="text-sm font-semibold text-white">Navegación</h3>
                             </div>
-                            
+
                             <nav className="space-y-2">
                                 {menuSections.map((section) => {
                                     const SectionIcon = section.icon;
                                     const isExpanded = expandedMenu === section.id;
                                     const hasActiveItem = section.items.some(item => tab === item.id);
-                                    
+
                                     return (
                                         <div key={section.id} className="space-y-1">
                                             {/* Botón de categoría */}
@@ -485,7 +541,7 @@ const Admin = () => {
                                                     <ChevronRight className="w-4 h-4 text-gray-500" />
                                                 )}
                                             </button>
-                                            
+
                                             {/* Submenú items */}
                                             {isExpanded && (
                                                 <div className="ml-4 space-y-1 border-l border-gray-800/50 pl-3 py-1">
@@ -493,7 +549,7 @@ const Admin = () => {
                                                         const ItemIcon = item.icon;
                                                         const isActive = tab === item.id && !item.action;
                                                         const isComingSoon = item.comingSoon;
-                                                        
+
                                                         return (
                                                             <button
                                                                 key={item.id}
@@ -526,10 +582,11 @@ const Admin = () => {
                                         </div>
                                     );
                                 })}
+
                             </nav>
                         </div>
                     </div>
-                    
+
                     {/* CONTENIDO PRINCIPAL */}
                     <div className="lg:col-span-3">
                         <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-6 shadow-xl">
@@ -560,17 +617,22 @@ const Admin = () => {
                                         );
                                     })}
                             </div>
-                            
+
                             {/* CONTENIDO DINÁMICO CON ANIMACIÓN */}
                             <div className="transition-opacity duration-300">
                                 {tab === "cash-register" && <CashRegister />}
-                                {tab === "inventory" && <Inventory plan={rawPlan} />}
+                                {tab === "inventory-stock" && <Inventory plan={rawPlan} />}
                                 {tab === "reports" && <Reports />}
                                 {tab === "employees" && <Employees />}
                                 {tab === "fiscal" && <FiscalConfig />}
                                 {tab === "sales-reports" && <SalesReports />}
                                 {tab === "product-reports" && <ProductReports />}
                                 {tab === "financial-analysis" && <FinancialAnalysis />}
+                                {tab === "expenses-summary" && <FinanceSummary />}
+                                {tab === "expense-categories" && <ExpenseCategories />}
+                                {tab === "expenses" && <Expenses />}
+                                {tab === "payroll" && <PayrollRuns />}
+
                                 {tab === "menu-management" && <MenuManagement />}
                                 {tab === "tables-management" && <TablesManagement />}
                                 {tab === "suppliers" && <Suppliers />}
@@ -595,7 +657,7 @@ const Admin = () => {
                                             {menuSections.flatMap(s => s.items).find(i => i.id === tab)?.label || "Próximamente"}
                                         </h3>
                                         <p className="text-gray-400 max-w-md">
-                                            {menuSections.flatMap(s => s.items).find(i => i.id === tab)?.description || 
+                                            {menuSections.flatMap(s => s.items).find(i => i.id === tab)?.description ||
                                              "Esta funcionalidad estará disponible próximamente."}
                                         </p>
                                     </div>
@@ -608,11 +670,11 @@ const Admin = () => {
 
             {/* Modal de detalles del plan */}
             {showPlanDetails && (
-                <div 
+                <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
                     onClick={() => setShowPlanDetails(false)}
                 >
-                    <div 
+                    <div
                         className="w-full max-w-lg bg-gradient-to-br from-[#101010] to-[#0a0a0a] rounded-2xl border border-gray-800/50 p-6 shadow-2xl mx-4"
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -805,6 +867,8 @@ const Admin = () => {
             )}
         </div>
     );
+
 };
+
 
 export default Admin;

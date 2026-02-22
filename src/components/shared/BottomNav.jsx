@@ -1,5 +1,5 @@
 import React, { useState, memo, useCallback, useEffect  } from "react";
-import { Home, ListOrdered, Table2, Settings, Plus } from "lucide-react";
+import { Home, ListOrdered, Table2, Settings, Plus, Wallet   } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
 import { useDispatch, useSelector } from "react-redux";
@@ -219,11 +219,28 @@ const BottomNav = memo(() => {
         { path: "/tables", label: "Mesas", icon: Table2, id: "tables" },
     ];
 
-    const canSeeAdmin = ["Owner", "Admin", "Cajera"].includes(userData?.role);
+    const role = userData?.role;
+    const isCashier = role === "Cajera";
+    const canSeeAdminPanel = ["Owner", "Admin"].includes(role);
 
-    if (canSeeAdmin) {
-        navItems.push({ path: "/admin", label: "Admin", icon: Settings, id: "admin" });
+    if (isCashier) {
+        navItems.push({
+            path: "/admin",
+            label: "Cierre de caja",
+            icon: Wallet,
+            id: "cash-register",
+        });
+    } else if (canSeeAdminPanel) {
+        navItems.push({
+            path: "/admin",
+            label: "Admin",
+            icon: Settings,
+            id: "admin",
+        });
     }
+    const needsCenterGap = navItems.length === 3;
+
+
 
     return (
         <>
@@ -234,33 +251,39 @@ const BottomNav = memo(() => {
                 transition={{ duration: 0.3, ease: "easeOut" }}
                 className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] p-3 h-20 flex justify-between items-center z-50 border-t border-[#2a2a2a]/50 shadow-2xl transition-colors duration-300"
             >
-                {navItems.map((item) => {
+                {navItems.map((item, idx) => {
                     const active = isActive(item.path);
                     const Icon = item.icon;
+
                     return (
-                        <button
-                            key={item.id}
-                            onClick={() => navigate(item.path)}
-                            className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
-                                active
-                                    ? "text-white"
-                                    : "text-[#ababab] hover:text-white"
-                            }`}
-                        >
-                            {active && (
-                                <motion.div
-                                    layoutId="activeTab"
-                                    className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
-                                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                                />
+                        <React.Fragment key={item.id}>
+                            <button
+                                onClick={() => navigate(item.path)}
+                                className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
+                                    active ? "text-white" : "text-[#ababab] hover:text-white"
+                                }`}
+                            >
+                                {active && (
+                                    <motion.div
+                                        layoutId="activeTab"
+                                        className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
+                                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                                    />
+                                )}
+                                <Icon className={`w-5 h-5 relative z-10 ${active ? "text-blue-400" : ""}`} />
+                                <span className={`text-xs font-semibold relative z-10 ${active ? "text-blue-400" : ""}`}>
+                                  {item.label}
+                                </span>
+                            </button>
+
+                            {/* ESPACIO CENTRAL para que el "+" no tape "Ordenes" cuando hay solo 3 opciones */}
+                            {needsCenterGap && idx === 1 && (
+                                <div className="w-16 pointer-events-none" aria-hidden="true" />
                             )}
-                            <Icon className={`w-5 h-5 relative z-10 ${active ? "text-blue-400" : ""}`} />
-                            <span className={`text-xs font-semibold relative z-10 ${active ? "text-blue-400" : ""}`}>
-                                {item.label}
-                            </span>
-                        </button>
+                        </React.Fragment>
                     );
                 })}
+
 
                 {/* Botón central: crear orden - simplificado */}
                 <button

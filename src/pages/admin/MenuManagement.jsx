@@ -47,12 +47,22 @@ const MenuManagement = () => {
     const [dishForm, setDishForm] = useState({
         name: "",
         category: "",
+        inventoryCategoryId: "",
+        isInventoryItem: false,
         price: "",
         sellMode: "unit",
         weightUnit: "lb",
         pricePerLb: "",
         imageFile: null,
     });
+    const [showInvCatModal, setShowInvCatModal] = useState(false);
+    const [invCatForm, setInvCatForm] = useState({
+        name: "",
+        description: "",
+        color: "#f6b100",
+        icon: "Package",
+    });
+
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ["dishes", tenantId],
@@ -94,7 +104,8 @@ const MenuManagement = () => {
         setDishForm({
             name: "",
             category: "",
-            inventoryCategoryId: "", // <-- NUEVO
+            inventoryCategoryId: "",
+            isInventoryItem: false,
             price: "",
             sellMode: "unit",
             weightUnit: "lb",
@@ -118,6 +129,7 @@ const MenuManagement = () => {
             price: dish.price?.toString() || "",
             sellMode: dish.sellMode || "unit",
             weightUnit: dish.weightUnit || "lb",
+            isInventoryItem: Boolean(dish.isInventoryItem),
             pricePerLb: dish.pricePerLb?.toString() || "",
             imageFile: null,
         });
@@ -128,6 +140,30 @@ const MenuManagement = () => {
         setShowDishModal(false);
         resetForm();
     };
+
+    const createInvCatMutation = useMutation({
+        mutationFn: (data) => api.post("/api/admin/inventory/categories", data),
+        onSuccess: async (res) => {
+            enqueueSnackbar("Categoría creada exitosamente", { variant: "success" });
+            await reloadInvCats();
+
+            // Si el backend devuelve la categoría creada, la seleccionamos automáticamente
+            const created = res?.data?.data;
+            if (created?._id) {
+                setDishForm((f) => ({
+                    ...f,
+                    inventoryCategoryId: created._id,
+                    isInventoryItem: true,
+                }));
+            }
+
+            setShowInvCatModal(false);
+            setInvCatForm({ name: "", description: "", color: "#f6b100", icon: "Package" });
+        },
+        onError: (error) => {
+            enqueueSnackbar(error?.response?.data?.message || "Error al crear categoría", { variant: "error" });
+        },
+    });
 
     const createMutation = useMutation({
         mutationFn: (formData) => addDish(formData, tenantId),
@@ -164,57 +200,73 @@ const MenuManagement = () => {
         },
     });
     const [invCats, setInvCats] = useState([]);
+    const reloadInvCats = async () => {
+        try {
+            const res = await api.get("/api/admin/inventory/categories");
+            const list = res?.data?.data || res?.data?.data?.data || [];
+            setInvCats(Array.isArray(list) ? list : []);
+        } catch {
+            setInvCats([]);
+        }
+    };
+
 
     useEffect(() => {
-        (async () => {
-            try {
-                const res = await api.get("/api/admin/inventory/categories");
-                const list = res?.data?.data || res?.data?.data?.data || [];
-                setInvCats(Array.isArray(list) ? list : []);
-            } catch (e) {
-                // si falla, no rompas nada: solo no muestras el select
-                setInvCats([]);
-            }
-        })();
+        reloadInvCats();
     }, []);
+
+
 
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
         if (!tenantId) {
             enqueueSnackbar("TenantId no encontrado", { variant: "warning" });
             return;
         }
 
         const formData = new FormData();
-        formData.append("name", dishForm.name.trim());
-        formData.append("category", dishForm.category.trim());
-        formData.append("sellMode", dishForm.sellMode);
-        formData.append("weightUnit", dishForm.weightUnit);
 
-        if (dishForm.inventoryCategoryId !== undefined) {
-            formData.append("inventoryCategoryId", dishForm.inventoryCategoryId || "");
+        // ✅ Campos base del plato (MENÚ)
+        formData.append("name", String(dishForm.name || "").trim());
+        formData.append("category", "Menú");
+
+        // ✅ Modo de venta (default: unit)
+        const sellMode = dishForm.sellMode || "unit";
+        const weightUnit = dishForm.weightUnit || "lb";
+
+        formData.append("sellMode", sellMode);
+        formData.append("weightUnit", weightUnit);
+
+        // ✅ Precio (obligatorio)
+        const basePrice =
+            sellMode === "weight" ? Number(dishForm.pricePerLb || 0) : Number(dishForm.price || 0);
+
+        formData.append("price", String(basePrice));
+
+        // ✅ Solo si es por peso, enviamos pricePerLb
+        if (sellMode === "weight") {
+            formData.append("pricePerLb", String(basePrice));
         }
 
-        const basePrice = dishForm.sellMode === "weight"
-            ? (dishForm.pricePerLb || dishForm.price)
-            : dishForm.price;
-        formData.append("price", basePrice);
+        // ✅ IMPORTANTE: NO enviar nada de inventario desde aquí
+        // formData.append("inventoryCategoryId", ...)
+        // formData.append("isInventoryItem", ...)
 
-        if (dishForm.sellMode === "weight" && dishForm.pricePerLb) {
-            formData.append("pricePerLb", dishForm.pricePerLb);
-        }
-
+        // ✅ Imagen opcional
         if (dishForm.imageFile) {
             formData.append("image", dishForm.imageFile);
         }
 
+        // ✅ Crear / Actualizar
         if (editingDish?._id) {
             updateMutation.mutate({ id: editingDish._id, formData });
         } else {
             createMutation.mutate(formData);
         }
     };
+
 
     if (isLoading) {
         return (
@@ -391,49 +443,47 @@ const MenuManagement = () => {
                                     required
                                 />
                             </div>
-
-                            {/* Categoría */}
-
+                            {/* Categoría de inventario (para stock) */}
                             <div>
                                 <label className="text-sm text-gray-400 mb-1 block flex items-center gap-2">
-                                    <Tag className="w-4 h-4" />
-                                    Categoría *
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={dishForm.category}
-                                        onChange={(e) => setDishForm((f) => ({ ...f, category: e.target.value }))}
-                                        list="categories-list"
-                                        className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                        required
-                                    />
-                                    <datalist id="categories-list">
-                                        {categories.map((cat) => (
-                                            <option key={cat} value={cat} />
-                                        ))}
-                                    </datalist>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-sm text-gray-400 mb-1 block">
+                                    <Package className="w-4 h-4" />
                                     Categoría de inventario (para stock)
                                 </label>
-                                <select
-                                    value={dishForm.inventoryCategoryId || ""}
-                                    onChange={(e) => setDishForm((f) => ({ ...f, inventoryCategoryId: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                >
-                                    <option value="">Sin categoría</option>
-                                    {invCats.map((c) => (
-                                        <option key={c._id} value={c._id}>{c.name}</option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Esto NO es la categoría del menú; es para reportes/control de stock.
+
+                                <div className="flex gap-2">
+                                    <select
+                                        value={dishForm.inventoryCategoryId || ""}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setDishForm((f) => ({
+                                                ...f,
+                                                inventoryCategoryId: val,
+                                                isInventoryItem: Boolean(val),
+                                            }));
+                                        }}
+                                        className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    >
+                                        <option value="">Sin categoría</option>
+                                        {invCats.map((c) => (
+                                            <option key={c._id} value={c._id}>
+                                                {c.name}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowInvCatModal(true)}
+                                        className="px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                                    >
+                                        Crear
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Esta es la categoría de inventario (reportes/control de stock).
                                 </p>
                             </div>
-
 
                             {/* Modo de venta */}
                             <div>
@@ -589,6 +639,76 @@ const MenuManagement = () => {
                     </div>
                 </div>
             )}
+            {showInvCatModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-white">Crear categoría de inventario</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowInvCatModal(false)}
+                                className="p-2 rounded-lg hover:bg-white/5 text-white/70"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                if (!invCatForm.name.trim()) {
+                                    enqueueSnackbar("El nombre es requerido", { variant: "warning" });
+                                    return;
+                                }
+
+                                createInvCatMutation.mutate({
+                                    name: invCatForm.name.trim(),
+                                    description: invCatForm.description.trim(),
+                                    color: invCatForm.color,
+                                    icon: invCatForm.icon,
+                                });
+                            }}
+                            className="space-y-3"
+                        >
+                            <div>
+                                <label className="text-sm text-gray-400 mb-1 block">Nombre</label>
+                                <input
+                                    value={invCatForm.name}
+                                    onChange={(e) => setInvCatForm((f) => ({ ...f, name: e.target.value }))}
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-sm text-gray-400 mb-1 block">Descripción (opcional)</label>
+                                <input
+                                    value={invCatForm.description}
+                                    onChange={(e) => setInvCatForm((f) => ({ ...f, description: e.target.value }))}
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                />
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowInvCatModal(false)}
+                                    className="flex-1 px-4 py-2 bg-white/5 text-white rounded-lg hover:bg-white/10"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={createInvCatMutation.isPending}
+                                    className="flex-1 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
+                                >
+                                    {createInvCatMutation.isPending ? "Creando..." : "Crear"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 };

@@ -4,6 +4,14 @@ import api from "@/lib/api";
 const SuperAdminTenants = () => {
     const [tenants, setTenants] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [toast, setToast] = useState({ open: false, message: "", type: "error" });
+
+    const showToast = (message, type = "error") => {
+        setToast({ open: true, message, type });
+        window.clearTimeout(showToast._t);
+        showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
+    };
+
 
     const fetchTenants = async () => {
         try {
@@ -11,7 +19,7 @@ const SuperAdminTenants = () => {
             setTenants(res.data.data);
         } catch (err) {
             console.error(err);
-            alert("Error loading tenants");
+            showToast("Error loading tenants");
         } finally {
             setLoading(false);
         }
@@ -30,7 +38,7 @@ const SuperAdminTenants = () => {
             fetchTenants();
         } catch (err) {
             console.error(err);
-            alert("Error updating tenant status");
+            showToast("Error updating tenant status");
         }
     };
 
@@ -43,7 +51,7 @@ const SuperAdminTenants = () => {
             fetchTenants();
         } catch (err) {
             console.error(err);
-            alert("Error updating plan");
+            showToast("Error updating plan");
         }
     };
     const updateFeatures = async (tenantId, patch) => {
@@ -52,7 +60,7 @@ const SuperAdminTenants = () => {
             fetchTenants();
         } catch (err) {
             console.error(err);
-            alert("Error updating features");
+            showToast("Error updating features");
         }
     };
 
@@ -171,8 +179,32 @@ const SuperAdminTenants = () => {
                         </td>
                     </tr>
                 ))}
+
                 </tbody>
             </table>
+            {toast.open && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999]">
+                    <div
+                        className={`px-4 py-3 rounded-xl shadow-2xl border backdrop-blur
+        ${toast.type === "error"
+                            ? "bg-red-500/15 border-red-500/30 text-red-200"
+                            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                        }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="text-sm font-medium">{toast.message}</div>
+                            <button
+                                type="button"
+                                className="ml-2 text-white/70 hover:text-white"
+                                onClick={() => setToast((t) => ({ ...t, open: false }))}
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 };

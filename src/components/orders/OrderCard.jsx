@@ -80,7 +80,7 @@ const isLikelyRnc = (val) => {
 const unwrapOrder = (res) => res?.data?.data ?? res?.data?.order ?? res?.data;
 
 
-const OrderCard = ({ order, onStatusChanged }) => {
+const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const { enqueueSnackbar } = useSnackbar();
 
     // mantenemos copia local para poder refrescar la tarjeta cuando emitimos NCF
@@ -239,6 +239,67 @@ const OrderCard = ({ order, onStatusChanged }) => {
         localOrder?.ncfNumber ||
         localOrder?.fiscal?.ncfNumber
     );
+    const isFiscalOrder = Boolean(
+        localOrder?.fiscal?.requested ||
+        localOrder?.ncfNumber ||
+        localOrder?.fiscal?.ncfNumber
+    );
+
+    const canShowNormalInvoiceBtn =
+        !isFiscalOrder && String(localOrder?.orderStatus || "") === "Completado";
+    // ✅ Factura normal (NO fiscal): se muestra solo si NO hay NCF solicitado/emitido
+    const hasNormalInvoice = Boolean(localOrder?.invoiceUrl || localOrder?.invoicePath) && !existingFiscal;
+
+    const openNormalInvoice = async () => {
+        try {
+            setShowOrderDetails(false);
+
+            // refrescamos por si el invoiceUrl se generó luego de completar
+            const fresh = await fetchFreshOrder(localOrder?._id);
+            if (fresh?._id) setLocalOrder(fresh);
+
+            const url = fresh?.invoiceUrl || localOrder?.invoiceUrl;
+
+            if (!url) {
+                enqueueSnackbar("Esta orden no tiene factura disponible.", { variant: "warning" });
+                return;
+            }
+
+            window.open(url, "_blank", "noopener,noreferrer");
+        } catch (e) {
+            console.error("[OrderCard] openNormalInvoice error:", e);
+            enqueueSnackbar("No se pudo abrir la factura.", { variant: "error" });
+        }
+    };
+
+    const openOrGenerateInvoice = async () => {
+        try {
+            // 1) Si ya existe, abre
+            const existing = localOrder?.invoiceUrl;
+            if (existing && String(existing).trim()) {
+                window.open(existing, "_blank", "noopener,noreferrer");
+                return;
+            }
+
+            // 2) Si no existe, generarla on-demand
+            // tu invoiceController usa createInvoice con { orderId } y retorna invoiceUrl:contentReference[oaicite:4]{index=4}
+            const res = await api.post("/api/invoice", { orderId: localOrder?._id });
+
+            const url = res?.data?.invoiceUrl || res?.data?.url;
+            if (!url) {
+                enqueueSnackbar("No se pudo generar la factura.", { variant: "error" });
+                return;
+            }
+
+            // refresca estado local (opcional)
+            setLocalOrder((prev) => ({ ...(prev || {}), invoiceUrl: url }));
+
+            window.open(url, "_blank", "noopener,noreferrer");
+        } catch (e) {
+            console.error("[openOrGenerateInvoice]", e);
+            enqueueSnackbar("Error abriendo/generando la factura.", { variant: "error" });
+        }
+    };
 
     const [showFiscalModal, setShowFiscalModal] = useState(false);
     const [showInvoice, setShowInvoice] = useState(false);
@@ -846,7 +907,33 @@ const OrderCard = ({ order, onStatusChanged }) => {
                                             </motion.button>
                                         </div>
 
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className={`grid grid-cols-1 sm:grid-cols-${hasNormalInvoice ? "3" : "2"} gap-3`}>
+                                            {/* ✅ Ver factura normal (solo si NO es fiscal) */}
+
+                                                <motion.button
+                                                    type="button"
+                                                    onClick={openOrGenerateInvoice}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-slate-500/20 to-slate-700/20 text-slate-200 border border-slate-500/30 hover:bg-slate-500/30"
+                                                >
+                                                    <Receipt className="w-4 h-4" />
+                                                    <span>{localOrder?.invoiceUrl ? "Ver factura" : "Generar factura"}</span>
+                                                </motion.button>
+
+
+                                                <motion.button
+                                                    type="button"
+                                                    onClick={openNormalInvoice}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-slate-500/20 to-slate-700/20 text-slate-200 border border-slate-500/30 hover:bg-slate-500/30"
+                                                >
+                                                    <Receipt className="w-4 h-4" />
+                                                    <span>Ver factura</span>
+                                                </motion.button>
+
+
                                             {/* Comprobante Fiscal */}
                                             {fiscalCapable && (
                                                 <motion.button
@@ -865,7 +952,7 @@ const OrderCard = ({ order, onStatusChanged }) => {
                                                     <span>{existingFiscal ? "Ver NCF" : "Comprobante Fiscal"}</span>
                                                 </motion.button>
                                             )}
-                                            
+
                                             {/* Dividir pago */}
                                             <motion.button
                                                 type="button"

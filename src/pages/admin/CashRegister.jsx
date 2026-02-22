@@ -5,6 +5,11 @@ import { X, Search, Filter, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import api from "../../lib/api";
+const REGISTER_ID = "MAIN";
+import { useSelector } from "react-redux";
+
+
+
 
 const currency = (n) =>
     new Intl.NumberFormat("en-IN", {
@@ -91,7 +96,6 @@ function getUserFromStorage() {
 }
 
 
-
 function getRoleFromToken() {
     // Fallback: si el rol no está en localStorage (userData), lo sacamos del JWT.
     const token =
@@ -156,12 +160,21 @@ const CashRegister = () => {
     const [finalQtyInput, setFinalQtyInput] = useState("");
     const [rawQtyInput, setRawQtyInput] = useState("");
     const [mermaEditTab, setMermaEditTab] = useState("cooked"); // "cooked" | "raw"
+    const [closingCountedInput, setClosingCountedInput] = useState("");
+    const [closingNote, setClosingNote] = useState("");
+    const [adjustCloseOpen, setAdjustCloseOpen] = useState(false);
+    const [adjustCountedInput, setAdjustCountedInput] = useState("");
+    const [adjustNote, setAdjustNote] = useState("");
+    const [adjustManagerCode, setAdjustManagerCode] = useState("");
+    const [managerCodeModalOpen, setManagerCodeModalOpen] = useState(false);
+    const [managerCodeInput, setManagerCodeInput] = useState("");
+    const [closeManagerCode, setCloseManagerCode] = useState("");
 
 
 
 
 
-
+    const userData = useSelector((state) => state.auth?.userData);
 
 
     const queryClient = useQueryClient();
@@ -198,8 +211,21 @@ const CashRegister = () => {
         client: "",
     });
     const me = getUserFromStorage();
-    const role = String(me?.role || getRoleFromToken() || "").trim();
+
+
+// Usa todas las fuentes posibles (storage, redux, token)
+    const role = String(
+        me?.role ||
+        userData?.role ||
+        userData?.user?.role ||
+        getRoleFromToken() ||
+        ""
+    ).trim();
+
     const roleNorm = role.toLowerCase();
+
+
+
     // Día único seleccionado en el modal (solo si from está y to está vacío o igual a from)
     const modalDay =
         modalFilters.from && (!modalFilters.to || modalFilters.to === modalFilters.from)
@@ -243,7 +269,6 @@ const CashRegister = () => {
                 });
                 return res.data;
             } catch (e) {
-                console.log("[merma/batches] falló:", e?.response?.data || e?.message);
                 return { success: false, batches: [] };
             }
         },
@@ -271,6 +296,89 @@ const CashRegister = () => {
         () => mermaBatches.filter((b) => (b?.status || "") === "closed"),
         [mermaBatches]
     );
+    const adjustCloseCashSessionMutation = useMutation({
+        mutationFn: async ({ dateYMD, registerId, countedTotal, note, managerCode }) => {
+            const res = await api.patch("/api/admin/cash-session/close-adjust", {
+                dateYMD,
+                registerId,
+                countedTotal,
+                note,
+                managerCode,
+            });
+            return res.data;
+        },
+        onSuccess: (payload) => {
+            const sessionDoc = payload?.data ?? null;
+
+            if (sessionDoc?._id) {
+                queryClient.setQueryData(
+                    ["admin/cash-session", selectedYMD, REGISTER_ID],
+                    { success: true, data: sessionDoc }
+                );
+            }
+
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
+
+            setAdjustCloseOpen(false);
+            setAdjustManagerCode("");
+        },
+        onError: (err) => {
+
+            alert(err?.response?.data?.message || JSON.stringify(err?.response?.data) || "Error ajustando cierre");
+        },
+    });
+
+    const closeCashSessionMutation = useMutation({
+        mutationFn: async ({ fid, dateYMD, registerId, countedTotal, note }) => {
+            const res = await api.post("/api/admin/cash-session/close", {
+                fid,
+                dateYMD,
+                registerId,
+                countedTotal,
+                note,
+                managerCode: closeManagerCode.trim(),
+
+            });
+            return res.data;
+
+        },
+        onSuccess: (payload) => {
+            // backend devuelve { success: true, data: session }
+            const sessionDoc = payload?.data ?? null;
+
+            // 1) Actualiza cache inmediato
+            if (sessionDoc?._id) {
+                queryClient.setQueryData(
+                    ["admin/cash-session", selectedYMD, REGISTER_ID],
+                    { success: true, data: sessionDoc }
+                );
+            }
+
+            // 2) Refetch por seguridad
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
+
+        },
+
+        onError: (err) => {
+            const msg =
+                err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                "No se pudo cerrar la caja.";
+
+            // Mensaje amigable si el manager code está mal
+            if (msg === "INVALID_MANAGER_CODE" || msg === "MISSING_MANAGER_CODE") {
+                showToast("Código del manager incorrecto.", "error");
+                return;
+            }
+
+            showToast(msg, "error");
+        },
+
+    });
+
+
 
     const [batchesTab, setBatchesTab] = useState("open"); // "open" | "closed" | "all"
 
@@ -357,19 +465,19 @@ const CashRegister = () => {
 
         if (mermaMode === "close") {
             if (!batchToClose?._id) {
-                alert("No se encontró el lote.");
+                showToast("No se encontró el lote.");
                 return;
             }
 
-            // Si estás en CRUDO, no cierres aquí (se guarda con updateBatchMutation)
+            // Si estás en Entrada, no cierres aquí (se guarda con updateBatchMutation)
             if (mermaEditTab === "raw") {
-                alert("Estás en la pestaña Crudo. Usa “Guardar crudo” o cambia a Cocido/Final.");
+                showToast("Estás en la pestaña Entrada. Usa “Guardar Entrada” o cambia a Salida.");
                 return;
             }
 
             const finalQtyNum = Number(String(finalQtyInput || "").replace(/[^\d.-]/g, ""));
             if (Number.isNaN(finalQtyNum) || finalQtyNum < 0) {
-                alert("Cantidad final inválida.");
+                showToast("Cantidad final inválida.");
                 return;
             }
 
@@ -477,10 +585,10 @@ const CashRegister = () => {
     const safeList = Array.isArray(filteredInventoryItems) ? filteredInventoryItems : [];
 
     const { data: modalRangeSessionResp } = useQuery({
-        queryKey: ["admin/cash-session", "modal-range", modalRangeFrom, modalRangeTo, "default"],
+        queryKey: ["admin/cash-session", "modal-range", modalRangeFrom, modalRangeTo, REGISTER_ID],
         enabled: modalRangeEnabled,
         queryFn: async () => {
-            const params = { from: modalRangeFrom, to: modalRangeTo, registerId: "default" };
+            const params = { from: modalRangeFrom, to: modalRangeTo, registerId: REGISTER_ID };
             console.log("[GET cash-session/range] request", params);
 
             const res = await api.get("/api/admin/cash-session/range", { params });
@@ -520,10 +628,10 @@ const CashRegister = () => {
         isLoading: cashSessionLoading,
         isError: cashSessionIsError,
     } = useQuery({
-        queryKey: ["admin/cash-session", selectedYMD],
+        queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID],
 
         queryFn: async () => {
-            const params = { dateYMD: selectedYMD, registerId: "default" };
+            const params = { dateYMD: selectedYMD, registerId: REGISTER_ID };
 
             console.log("[GET cash-session] request", {
                 url: "/api/admin/cash-session",
@@ -534,7 +642,7 @@ const CashRegister = () => {
 
             const res = await api.get("/api/admin/cash-session", { params });
 
-            console.log("[GET cash-session] response", res?.data);
+
             return res.data;
         },
 
@@ -548,7 +656,7 @@ const CashRegister = () => {
 
         queryFn: async () => {
             const res = await api.get("/api/admin/cash-session/current", {
-                params: { dateYMD: modalDay, registerId: "default" },
+                params: { dateYMD: modalDay, registerId: REGISTER_ID },
             });
             return res.data;
         },
@@ -586,6 +694,41 @@ const CashRegister = () => {
 
     const modalMenudoActual = modalOpeningInitial + modalAddedTotal;
 
+    const cashSession = cashSessionResp?.data ?? null; // <-- ESTO ES LO QUE TE FALTA
+
+    function getUserIdFromToken() {
+        try {
+            const token = localStorage.getItem("token"); // o como lo guardes
+            if (!token) return null;
+            const payload = JSON.parse(atob(token.split(".")[1]));
+
+            // Usa el campo que tú tengas en tu JWT (revisa console.log(payload))
+            return payload.userId || payload._id || payload.id || payload.sub || null;
+        } catch {
+            return null;
+        }
+    }
+    const roleRaw =
+        me?.role ||
+        me?.user?.role ||
+        me?.profile?.role ||
+        me?.account?.role ||
+        "";
+
+    const roleUpper = String(me?.role || role || "").trim().toUpperCase();
+
+    const ADMIN_ROLES = new Set([
+        "SUPER_ADMIN",
+        "ADMIN",
+        "OWNER",
+        "MANAGER",
+        "GERENTE",
+        "ADMINISTRADOR",
+    ]);
+
+    const isAdminLike = ADMIN_ROLES.has(roleUpper);
+    const isCajera = roleUpper === "CAJERA";
+
 
     const isAdmin =
         roleNorm === "admin" ||
@@ -598,10 +741,51 @@ const CashRegister = () => {
         roleNorm === "cashier" ||
         roleNorm.includes("cajera");
 
-// (Opcional) para que veas rápido si ya lo está leyendo bien:
-    console.log("[CashRegister] me/role", { id: me?._id || me?.id, role });
+    const cashPayload = cashSessionResp?.data ?? cashSessionResp ?? null;
 
-    const session = cashSessionResp?.data ?? cashSessionResp ?? null;
+
+
+// soporta: { success:true, data:{...} }  | { found:true, session:{...} } | { session:{...} } | documento directo
+    const session =
+        cashPayload?.data ??
+        cashPayload?.session ??
+        cashPayload?.cashSession ??
+        cashPayload?.result ??
+        (cashPayload?._id ? cashPayload : null) ??
+        null;
+
+
+
+
+    const closingCountedSaved = safeNumber(session?.closing?.countedTotal);
+    const closingAlreadySet = Boolean(session?.closedAt) || closingCountedSaved > 0;
+
+    const sessionExists = !!session;
+
+    // Solo mostrar resumen si ya cerró (o si es admin)
+    const sessionClosed = cashSession?.status === "CLOSED";
+
+    const closedById = session?.closedBy?._id ?? session?.closedBy ?? null;
+
+// tu ID puede venir de redux o de storage
+    const myUserId = getUserIdFromToken();
+    const closedByMe = String(closedById) === String(myUserId);
+
+
+
+
+// Esta es la regla final:
+
+    const adminCanSeeSummary =  isAdminLike;
+
+    const cashierCanSeeSummary = isCajera && sessionClosed && closedByMe;
+
+    const isCashierLike = isCashier || isCajera || !!me?.fid; // fallback temporal
+    const showSummary = isAdminLike || (sessionClosed && (isCajera || isCashier) && closedByMe);
+
+
+
+
     const [sessionConflict, setSessionConflict] = useState(false);
 
 
@@ -609,12 +793,36 @@ const CashRegister = () => {
     const addedTotal = safeNumber(session?.addedFloatTotal);
     const menudoActual = openingInitial + addedTotal; // opening + adds
 
-    const sessionExists = Boolean(session?._id || session?.id || session?.dateYMD);
 
     // “Fondo inicial” se considera seteado SOLO si openingInitial > 0
     // (no por el hecho de que exista una sesión)
-    const openingAlreadySet = Number(openingInitial) > 0;
+    const openingAlreadySet = Number(session?.openingFloatInitial || 0) > 0;
 
+
+    const { data: managerCodeStatus } = useQuery({
+        queryKey: ["admin/manager-code/status"],
+        enabled: isAdminLike,
+        queryFn: async () => {
+            const res = await api.get("/api/admin/manager-code");
+            return res.data;
+        },
+        staleTime: 10_000,
+    });
+
+    const setManagerCodeMutation = useMutation({
+        mutationFn: async ({ managerCode }) => {
+            const res = await api.patch("/api/admin/manager-code", { managerCode });
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["admin/manager-code/status"] });
+            setManagerCodeModalOpen(false);
+            setManagerCodeInput("");
+        },
+        onError: (err) => {
+            showToast(err?.response?.data?.message || "Error guardando manager code");
+        },
+    });
 
     // Cajera: no puede editar si ya se guardó opening
     // Admin: puede editar cualquier fecha, pero SOLO cuando active el modo edición
@@ -626,6 +834,15 @@ const CashRegister = () => {
         // Admin: solo bloquea cuando EXISTE sesión y NO está editando
         (isAdmin && sessionExists && !isEditingOpening);
 
+
+    useEffect(() => {
+        if (closingAlreadySet) {
+            setClosingCountedInput(formatThousands(closingCountedSaved));
+        } else {
+            setClosingCountedInput("");
+            setClosingNote("");
+        }
+    }, [selectedYMD, closingAlreadySet, closingCountedSaved]);
 
 
     // Cajera solo puede guardar fondo inicial si:
@@ -652,16 +869,6 @@ const CashRegister = () => {
         setIsEditingOpening(false);
     }, [selectedYMD, sessionExists, openingInitial, isEditingOpening]);
 
-
-
-
-
-
-
-
-
-
-
     const openCashSessionModalMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, openingFloat }) => {
             const res = await api.post("/api/admin/cash-session/open", {
@@ -687,7 +894,6 @@ const CashRegister = () => {
                 amount,
             });
 
-            console.log("[POST add MODAL] response", res?.data);
             return res.data;
         },
         onSuccess: () => {
@@ -702,7 +908,7 @@ const CashRegister = () => {
                 payload: err?.config?.data,
                 data: err?.response?.data,
             });
-            alert("No se pudo agregar dinero (modal). Revisa consola.");
+            showToast("No se pudo agregar dinero (modal). Revisa consola.");
         },
     });
 
@@ -734,7 +940,7 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
         },
         onError: (err) => {
             const status = err?.response?.status;
@@ -747,13 +953,13 @@ const CashRegister = () => {
 
             if (status === 409) {
                 setSessionConflict(true);
-                alert("Ya existe una sesión de caja para ese día. Usa “Agregar dinero” o (Admin) “Editar fondo inicial”.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
+                showToast("Ya existe una sesión de caja para ese día. Usa “Agregar dinero” o (Admin) “Editar fondo inicial”.");
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
                 return;
             }
 
             setSessionConflict(false);
-            alert("No se pudo guardar el fondo inicial.");
+            showToast("No se pudo guardar el fondo inicial.");
         },
 
     });
@@ -773,7 +979,7 @@ const CashRegister = () => {
         },
         onSuccess: () => {
             // refrescar sesión del día
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
             setIsEditingOpening(false);
         },
         onError: (err) => {
@@ -781,7 +987,7 @@ const CashRegister = () => {
                 status: err?.response?.status,
                 data: err?.response?.data,
             });
-            alert("No se pudo editar el fondo inicial. Revisa consola.");
+            showToast("No se pudo editar el fondo inicial. Revisa consola.");
         },
     });
 
@@ -802,7 +1008,7 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
         },
         onError: (err) => {
             const status = err?.response?.status;
@@ -815,17 +1021,16 @@ const CashRegister = () => {
             });
 
             if (status === 404) {
-                alert("No se encontró la sesión (404). El backend no está encontrando la sesión para esa fecha/caja.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
+                showToast("No se encontró la sesión (404). El backend no está encontrando la sesión para esa fecha/caja.");
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
                 return;
             }
-            alert("No se pudo agregar dinero. Revisa consola.");
+            showToast("No se pudo agregar dinero. Revisa consola.");
         },
     });
 
     const adjustCashMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, openingFloat, note }) => {
-            console.log("[PATCH adjust] request", { dateYMD, registerId, openingFloat, note });
 
             const res = await api.patch("/api/admin/cash-session/adjust", {
                 dateYMD,
@@ -834,7 +1039,6 @@ const CashRegister = () => {
                 note: note || "",
             });
 
-            console.log("[PATCH adjust] response", res?.data);
             return res.data;
         },
         onSuccess: () => {
@@ -847,7 +1051,7 @@ const CashRegister = () => {
                 payload: err?.config?.data,
                 data: err?.response?.data,
             });
-            alert("No se pudo editar el fondo inicial. Revisa consola.");
+            showToast("No se pudo editar el fondo inicial. Revisa consola.");
         },
     });
 
@@ -922,6 +1126,7 @@ const CashRegister = () => {
         staleTime: 10_000,
         retry: 1,
     });
+
 
     const mermaRange = mermaRangeResp?.data || { mermaQty: 0, mermaCost: 0 };
 
@@ -1006,12 +1211,16 @@ const CashRegister = () => {
             const channel = normalizeChannel(r);
             const pmRaw = normalizeMethod(r?.paymentMethod);
 
-            if (channel.includes("pedidoya") || channel.includes("pedido") || channel.includes("pedidosya")) key = "pedidoya";
-            else if (channel.includes("ubereats") || channel.includes("uber")) key = "ubereats";
-            else if (channel.includes("delivery")) key = "delivery";
-            else if (pmRaw.includes("efect")) key = "efectivo";
+            // 1) Método de pago REAL primero (esto decide si entra a efectivo del cierre)
+            if (pmRaw.includes("efect")) key = "efectivo";
             else if (pmRaw.includes("tarj")) key = "tarjeta";
             else if (pmRaw.includes("transf")) key = "transferencia";
+
+            // 2) Si no se detecta método (casos especiales), cae por canal/origen
+            else if (channel.includes("pedidoya") || channel.includes("pedido") || channel.includes("pedidosya")) key = "pedidoya";
+            else if (channel.includes("ubereats") || channel.includes("uber")) key = "ubereats";
+            else if (channel.includes("delivery")) key = "delivery";
+
 
             buckets[key].total += total;
             buckets[key].count += 1;
@@ -1076,14 +1285,14 @@ const CashRegister = () => {
             const url = res.data?.url || res.data?.invoiceUrl;
 
             if (!res.data?.success || !url) {
-                alert("No se pudo obtener la factura");
+                showToast("No se pudo obtener la factura");
                 return;
             }
 
             window.open(url, "_blank", "noopener,noreferrer");
         } catch (error) {
             console.error("Error cargando factura:", error);
-            alert("Error al cargar la factura");
+            showToast("Error al cargar la factura");
         }
     };
 
@@ -1125,11 +1334,30 @@ const CashRegister = () => {
             saveAs(blob, `cierre_caja_${new Date().toISOString().split("T")[0]}.xlsx`);
         } catch (error) {
             console.error("Error exportando Excel:", error);
-            alert("Error al exportar el archivo. Verifica tu sesión.");
+            showToast("Error al exportar el archivo. Verifica tu sesión.");
         }
     };
 
+    const opening = Number(session?.openingFloatInitial || 0);
+    const added = Number(session?.addedFloatTotal || 0);
+
+    const expectedCashSales = Number(
+        (dayReports || [])
+            .filter((r) => (r?.paymentMethod || "").toUpperCase() === "EFECTIVO")
+            .reduce((sum, r) => sum + (Number(r?.bills?.totalWithTax) || 0), 0)
+            .toFixed(2)
+    );
+
+    const expectedInRegister = Number((opening + added + expectedCashSales).toFixed(2));
+
     const [addAmountInput, setAddAmountInput] = useState("");
+    const [toast, setToast] = useState({ open: false, message: "", type: "error" });
+
+    const showToast = (message, type = "error") => {
+        setToast({ open: true, message, type });
+        window.clearTimeout(showToast._t);
+        showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
+    };
 
     const resetModalFilters = () => {
         setModalFilters({
@@ -1155,14 +1383,15 @@ const CashRegister = () => {
         <div className={showFullView ? "pointer-events-none select-none" : ""}>
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-white">Cierre de Caja </h2>
-                <button
-                    onClick={() => setShowFullView(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
-                >
-
-                    <Search className="w-4 h-4" />
-                    Ver Registros Completos
-                </button>
+                {isAdmin && showSummary && (
+                    <button
+                        onClick={() => setShowFullView(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                    >
+                        <Search className="w-4 h-4" />
+                        Ver Registros Completos
+                    </button>
+                )}
                 <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-400">Fecha:</span>
                     <input
@@ -1175,6 +1404,7 @@ const CashRegister = () => {
             </div>
 
             {/* Fondo inicial */}
+            {showSummary && (
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                 <div className="flex items-start justify-between gap-4">
                     <div>
@@ -1222,7 +1452,7 @@ const CashRegister = () => {
 
                                             addCashMutation.mutate({
                                                 dateYMD: selectedYMD,
-                                                registerId: "default",
+                                                registerId: "MAIN",
                                                 amount,
                                             });
 
@@ -1255,7 +1485,7 @@ const CashRegister = () => {
 
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: "default",
+                                            registerId: REGISTER_ID,
                                             openingFloat,
                                         });
                                     }}
@@ -1276,7 +1506,7 @@ const CashRegister = () => {
 
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: "default",
+                                            registerId: REGISTER_ID,
                                             openingFloat,
                                         });
                                     }}
@@ -1309,7 +1539,7 @@ const CashRegister = () => {
 
                                                     adjustOpeningMutation.mutate({
                                                         dateYMD: selectedYMD,
-                                                        registerId: "default",
+                                                        registerId: REGISTER_ID,
                                                         openingFloat,
                                                         note: `Ajuste de fondo inicial por admin (${selectedYMD})`,
                                                     });
@@ -1334,6 +1564,7 @@ const CashRegister = () => {
                                 </div>
                             )}
 
+
                             {/* Mensajes */}
                             <div className="text-xs text-gray-500 mt-2">
                                 {isSelectedToday
@@ -1341,6 +1572,32 @@ const CashRegister = () => {
                                     : "Mostrando histórico del día seleccionado."}
                             </div>
                         </div>
+
+                        {isAdminLike && sessionClosed && (
+                            <div className="mb-4 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        // precargar valores actuales
+                                        setAdjustCountedInput(formatThousands(session?.closing?.countedTotal ?? ""));
+                                        setAdjustNote(session?.closing?.note || session?.notes || "");
+                                        setAdjustCloseOpen(true);
+                                    }}
+                                    className="w-full px-3 py-2 bg-[#262626] border border-gray-800/50 rounded-lg text-white font-semibold"
+                                >
+                                    Editar cierre final
+                                </button>
+                            </div>
+                        )}
+                        {isAdminLike && (
+                            <button
+                                type="button"
+                                onClick={() => setManagerCodeModalOpen(true)}
+                                className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633]"
+                            >
+                                Configurar código manager
+                            </button>
+                        )}
 
 
                         <div className="text-xs text-gray-500 mt-1">
@@ -1374,9 +1631,141 @@ const CashRegister = () => {
                     </div>
                 </div>
             </div>
+            )}
+
+            {showSummary && (
+                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+                    <h3 className="text-white font-semibold text-lg">Comparación</h3>
+
+                    {(() => {
+                        const counted = safeNumber(session?.closing?.countedTotal);
+                        const expected = safeNumber(initialCashClosure.cashInRegister);
+                        const diff = Number((counted - expected).toFixed(2));
+
+                        return (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                                <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                    <div className="text-xs text-gray-400 mb-1">Sistema (esperado en caja)</div>
+                                    <div className="text-sm font-semibold text-white">{currency(expected)}</div>
+                                </div>
+
+                                <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                    <div className="text-xs text-gray-400 mb-1">Contado (tú)</div>
+                                    <div className="text-sm font-semibold text-white">{currency(counted)}</div>
+                                </div>
+
+                                <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                    <div className="text-xs text-gray-400 mb-1">Diferencia</div>
+                                    <div className={`text-sm font-semibold ${diff === 0 ? "text-white" : diff < 0 ? "text-red-400" : "text-green-400"}`}>
+                                        {currency(diff)}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+                    {(session?.closing?.note || session?.notes) && (
+                        <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
+                            <div className="text-xs text-gray-400">Nota del cierre</div>
+                            <div className="text-sm text-white mt-1">{session?.closing?.note || session?.notes}</div>
+                        </div>
+                    )}
+                    {session?.closing?.adjustedAt && (
+                        <div className="mt-2 text-xs text-gray-500">
+                            Ajustado: {new Date(session.closing.adjustedAt).toLocaleString()} por {session?.closing?.adjustedBy?.name || "Admin"}
+                            {session?.closing?.managerCodeHint ? ` (${session.closing.managerCodeHint})` : ""}
+                        </div>
+                    )}
+                </div>
+
+            )}
+
+
+            {!showSummary && (
+                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+                    <h3 className="text-white font-semibold text-lg">Cierre final de caja</h3>
+                    <p className="text-sm text-gray-400 mt-1">
+                        Para ver el resumen, primero registra el efectivo contado al cierre.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-xs text-gray-400">Efectivo contado (lo que tú tienes en caja)</label>
+                            <input
+                                value={closingCountedInput}
+                                onChange={(e) => setClosingCountedInput(formatThousands(e.target.value))}
+                                className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                placeholder="Ej: 2,000"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-xs text-gray-400">Nota (opcional)</label>
+                            <input
+                                value={closingNote}
+                                onChange={(e) => setClosingNote(e.target.value)}
+                                className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                placeholder="Ej: faltó cambio, etc."
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-400">Código del manager</label>
+                        <input
+                            type="password"
+                            value={closeManagerCode}
+                            onChange={(e) => setCloseManagerCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                            className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                            placeholder="Ej: 1234"
+                            inputMode="numeric"
+                            autoComplete="new-password"
+                        />
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const cleaned = String(closingCountedInput ?? "").replace(/[^\d.-]/g, "");
+                            const countedTotal = Number(cleaned);
+                            if (!sessionExists) {
+                                showToast("No hay una caja abierta para esta fecha.");
+                                return;
+                            }
+
+                            if (!openingAlreadySet) {
+                                showToast("Primero debe existir un fondo inicial para poder cerrar la caja.");
+                                return;
+                            }
+
+                            if (!Number.isFinite(countedTotal) || countedTotal < 0) return;
+
+                            const fid = session?._id || session?.id;
+                            if (!fid) {
+                                showToast("No se encontró el ID de la sesión (fid). Verifica que el GET cash-session esté devolviendo data con _id.");
+                                return;
+                            }
+                            closeCashSessionMutation.mutate({
+                                fid,
+                                dateYMD: selectedYMD,
+                                registerId: REGISTER_ID,
+                                countedTotal,
+                                note: closingNote,
+                            });
+                        }}
+                        className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                    >
+                        Registrar cierre
+                    </button>
+                </div>
+            )}
+
 
             {/* Resumen (vista inicial - últimos 10) */}
-            <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+            {adminCanSeeSummary  && (
+
+
+                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-white font-semibold text-lg">Resumen</h3>
                     <div className="text-sm text-gray-300">
@@ -1419,119 +1808,12 @@ const CashRegister = () => {
                     ))}
 
                 </div>
+
             </div>
-
-            <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
-                <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="min-w-0">
-                            <div className="text-sm text-white font-semibold">Lotes abiertos</div>
-                            <div className="text-sm text-gray-400 mt-1">
-                                Abiertos: <span className="text-white font-semibold">{openBatches?.length || 0}</span> ·{" "}
-                                Cerrados: <span className="text-white font-semibold">{closedBatches?.length || 0}</span>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setBatchesModalOpen(true)}
-                                className="px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold hover:bg-[#262626]"
-                            >
-                                Ver lotes
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setMermaMode("create");
-                                    setBatchToClose(null);
-                                    setMermaSelectedDish(null);
-
-                                    setRawQtyInput("");
-                                    setFinalQtyInput("");
-                                    setUnitCostInput("");
-                                    setMermaNote("");
-                                    setMermaSearch("");
-
-                                    setMermaModalOpen(true);
-                                }}
-                                className="px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633]"
-                            >
-                                Nuevo lote
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="max-h-56 overflow-y-auto space-y-2">
-                        {openBatches?.length > 0 && (
-                            <div className="space-y-2 mt-2">
-                                {openBatches.slice(0, 3).map((b) => (
-                                    <div
-                                        key={b?._id}
-                                        className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#0f0f0f] border border-gray-800/40"
-                                    >
-                                        <div className="min-w-0">
-                                            <div className="text-white font-semibold truncate">
-                                                {getBatchProductName(b)}
-                                            </div>
-                                            <div className="text-xs text-gray-400 mt-1">
-                                                Crudo: {b?.rawQty} · Costo: {currency(b?.unitCost || 0)}
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setMermaMode("close");
-                                                setBatchToClose(b);
-                                                setMermaEditTab("cooked");
-                                                setFinalQtyInput("");
-                                                setUnitCostInput(String(b?.unitCost ?? ""));
-                                                setRawQtyInput(String(b?.rawQty ?? ""));
-                                                setMermaNote(b?.note || "");
-                                                setMermaModalOpen(true);
-                                            }}
-                                            className="px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold hover:bg-[#262626]"
-                                        >
-                                            Registrar cocido
-                                        </button>
-                                    </div>
-                                ))}
-
-                                {openBatches.length > 3 && (
-                                    <div className="text-xs text-gray-500">
-                                        Hay {openBatches.length - 3} más. Usa “Ver lotes”.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                        <div className="text-xs text-gray-400 mb-1">Merma (cantidad)</div>
-                        <div className="text-sm font-semibold text-white">{Number(mermaDay.mermaQty || 0)}</div>
-                    </div>
-
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                        <div className="text-xs text-gray-400 mb-1">Merma (costo)</div>
-                        <div className="text-sm font-semibold text-white">{currency(mermaDay.mermaCost)}</div>
-                    </div>
-
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                        <div className="text-xs text-gray-400 mb-1">Ventas netas (ventas - merma)</div>
-                        <div className="text-sm font-semibold text-[#f6b100]">
-                            {currency(safeNumber(initialCashClosure.grandTotal) - safeNumber(mermaDay.mermaCost))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
+            )}
 
             {/* Botón exportar */}
+            {showSummary && (
             <div className="flex gap-3 mb-6">
                 <button
                     onClick={() => downloadExcel(dayReports, initialCashClosure)}
@@ -1541,33 +1823,35 @@ const CashRegister = () => {
                     Exportar a Excel
                 </button>
             </div>
+        )}
 
             {/* Tabla (últimos 10) */}
-            {isLoading ? (
-                <div className="text-center py-8 text-gray-400">Cargando...</div>
-            ) : isError ? (
-                <div className="text-center py-8 text-red-400">
-                    Error al cargar registros{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
-                </div>
-            ) : (
-                <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
-                            <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {dayReports.length === 0
-                                ? (
+            {isAdmin ? (
+                isLoading ? (
+                    <div className="text-center py-8 text-gray-400">Cargando...</div>
+                ) : isError ? (
+                    <div className="text-center py-8 text-red-400">
+                        Error al cargar registros{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
+                    </div>
+                ) : (
+                    <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
+                                </tr>
+                                </thead>
+
+                                <tbody>
+                                {(dayReports?.length ?? 0) === 0 ? (
                                     <tr>
-                                        <td colSpan="6" className="text-center py-8 text-gray-500">
+                                        <td colSpan={6} className="text-center py-8 text-gray-500">
                                             No hay registros disponibles
                                         </td>
                                     </tr>
@@ -1602,19 +1886,23 @@ const CashRegister = () => {
                                         </tr>
                                     ))
                                 )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {sortedReports.length !== dayReports .length && (
-                        <div className="p-4 bg-[#1a1a1a]/50 border-t border-gray-800/50 text-center text-sm text-gray-400">
-                            Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
-
+                                </tbody>
+                            </table>
                         </div>
-                    )}
 
+                        {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
+                            <div className="p-4 bg-[#1a1a1a]/50 border-t border-gray-800/50 text-center text-sm text-gray-400">
+                                Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                            </div>
+                        )}
+                    </div>
+                )
+            ) : (
+                <div className="mt-4 text-sm text-white/60">
+                    Los registros del día solo están disponibles para administración.
                 </div>
             )}
+
 
             {/* Modal flotante */}
             {showFullView && (
@@ -1837,7 +2125,7 @@ const CashRegister = () => {
 
 
 
-                                    <div className="text-sm font-semibold text-white">{currency(modalCashClosure.openingInitial)}</div>
+                                <div className="text-sm font-semibold text-white">{currency(modalCashClosure.openingInitial)}</div>
                                 </div>
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2">
                                     <div className="text-xs text-gray-400 mb-1">Efectivo (ventas)</div>
@@ -1954,342 +2242,186 @@ const CashRegister = () => {
         </div>
     </div>
 
-            {/* Modal: Merma (Crear lote / Cerrar lote) */}
-            {mermaModalOpen && (
-                <div
-                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-                    onClick={() => setMermaModalOpen(false)}
-                >
+            {adjustCloseOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-semibold text-white">Editar cierre final</h2>
+                            <button onClick={() => setAdjustCloseOpen(false)} className="text-white/70 hover:text-white">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-white/60 mt-1">
+                            Requiere código de manager.
+                        </p>
+
+                        <div className="mt-4 space-y-3">
+                            <div>
+                                <label className="text-xs text-gray-400">Código del manager</label>
+                                <input
+                                    value={adjustManagerCode}
+                                    onChange={(e) => setAdjustManagerCode(e.target.value)}
+                                    className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                    placeholder="Ej: 1234"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-gray-400">Efectivo contado (ajuste)</label>
+                                <input
+                                    value={adjustCountedInput}
+                                    onChange={(e) => setAdjustCountedInput(formatThousands(e.target.value))}
+                                    className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                    placeholder="Ej: 2,050"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-gray-400">Nota</label>
+                                <input
+                                    value={adjustNote}
+                                    onChange={(e) => setAdjustNote(e.target.value)}
+                                    className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                    placeholder="Motivo del ajuste"
+                                />
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const cleaned = String(adjustCountedInput ?? "").replace(/[^\d.-]/g, "");
+                                const countedTotal = Number(cleaned);
+
+                                if (!Number.isFinite(countedTotal) || countedTotal < 0) {
+                                    showToast("Monto inválido.");
+                                    return;
+                                }
+                                if (!adjustManagerCode.trim()) {
+                                    showToast("Código del manager requerido.");
+                                    return;
+                                }
+
+                                adjustCloseCashSessionMutation.mutate({
+                                    dateYMD: selectedYMD,
+                                    registerId: REGISTER_ID,
+                                    countedTotal,
+                                    note: adjustNote,
+                                    managerCode: adjustManagerCode.trim(),
+                                });
+                            }}
+                            className="mt-5 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
+                            disabled={adjustCloseCashSessionMutation.isPending}
+                        >
+                            Guardar ajuste
+                        </button>
+                    </div>
+                </div>
+            )}
+            {toast.open && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999]">
                     <div
-                        className="w-full max-w-2xl bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl shadow-2xl overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
+                        className={`px-4 py-3 rounded-xl shadow-2xl border backdrop-blur
+                    ${toast.type === "error"
+                            ? "bg-red-500/15 border-red-500/30 text-red-200"
+                            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                        }`}
                     >
-                        <div className="flex items-center justify-between p-5 border-b border-gray-800/50">
-                            <h3 className="text-white font-semibold text-lg">
-                                {mermaMode === "create" ? "Nuevo lote (crudo)" : "Cerrar lote (cocido / final)"}
-                            </h3>
+                        <div className="flex items-center gap-3">
+                            <div className="text-sm font-medium">{toast.message}</div>
                             <button
                                 type="button"
-                                onClick={() => setMermaModalOpen(false)}
-                                className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors"
-                                title="Cerrar"
+                                className="ml-2 text-white/70 hover:text-white"
+                                onClick={() => setToast((t) => ({ ...t, open: false }))}
                             >
-                                <X className="w-5 h-5 text-gray-400" />
+                                ✕
                             </button>
-                        </div>
-
-                        <div className="p-5 space-y-4">
-                            {/* CREATE: seleccionar plato */}
-                            {mermaMode === "create" && (
-                                <>
-                                    <div>
-                                        <label className="text-xs text-gray-400 mb-1 block">Buscar plato (materia prima)</label>
-                                        <div className="relative">
-                                            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                                            <input
-                                                value={mermaSearch}
-                                                onChange={(e) => setMermaSearch(e.target.value)}
-                                                className="w-full pl-9 pr-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                                placeholder="Ej: chicharrón"
-                                            />
-                                        </div>
-
-                                        <div className="mt-2 max-h-44 overflow-y-auto border border-gray-800/40 rounded-lg">
-                                            {dishesLoading ? (
-                                                <div className="p-3 text-sm text-gray-500">Cargando platos...</div>
-                                            ) : filteredDishes.length === 0 ? (
-                                                <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-white/10">
-                                                    {inventoryItemsLoading ? (
-                                                        <div className="p-3 text-sm opacity-70">Cargando platos...</div>
-                                                    ) : safeList.length === 0 ? (
-                                                        <div className="p-3 text-sm opacity-70">No hay platos.</div>
-                                                    ) : (
-                                                        safeList.map((d) => (
-                                                            <button
-                                                                key={d._id}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setMermaSelectedDish(d);
-                                                                    setMermaSearch(d?.name || "");
-                                                                }}
-                                                                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/5 ${
-                                                                    mermaSelectedDish?._id === d._id ? "bg-white/10" : ""
-                                                                }`}
-                                                            >
-                                                                <div className="font-medium">{d?.name || "Sin nombre"}</div>
-                                                                <div className="text-xs opacity-60">{d?._id}</div>
-                                                            </button>
-                                                        ))
-                                                    )}
-                                                </div>
-
-                                            ) : (
-                                                filteredDishes.map((d) => (
-                                                    <button
-                                                        type="button"
-                                                        key={d._id}
-                                                        onClick={() => setMermaSelectedDish(d)}
-                                                        className={`w-full text-left p-3 border-b border-gray-800/40 hover:bg-[#1f1f1f] ${
-                                                            mermaSelectedDish?._id === d._id ? "bg-[#1a1a1a]" : ""
-                                                        }`}
-                                                    >
-                                                        <div className="text-sm text-white font-semibold">{d.name}</div>
-                                                        <div className="text-xs text-gray-500">{d._id}</div>
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        {mermaSelectedDish && (
-                                            <div className="mt-2 text-xs text-gray-400">
-                                                Seleccionado: <span className="text-white font-semibold">{mermaSelectedDish.name}</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                        <div>
-                                            <label className="text-xs text-gray-400 mb-1 block">Cantidad cruda</label>
-                                            <input
-                                                value={rawQtyInput}
-                                                onChange={(e) => setRawQtyInput(formatThousands(e.target.value))}
-                                                inputMode="decimal"
-                                                className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm"
-                                                placeholder="Ej: 10"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="text-xs text-gray-400 mb-1 block">Costo unitario (opcional)</label>
-                                            <input
-                                                value={unitCostInput}
-                                                onChange={(e) => setUnitCostInput(formatThousands(e.target.value))}
-                                                inputMode="decimal"
-                                                className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm"
-                                                placeholder="Ej: 60"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="text-xs text-gray-400 mb-1 block">Fecha</label>
-                                            <input
-                                                value={selectedYMD}
-                                                disabled
-                                                className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm opacity-70"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 mb-1 block">Nota (opcional)</label>
-                                        <textarea
-                                            value={mermaNote}
-                                            onChange={(e) => setMermaNote(e.target.value)}
-                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm min-h-[80px]"
-                                            placeholder="Ej: Se perderán 6 libras al cocinar."
-                                        />
-                                    </div>
-                                </>
-                            )}
-
-                            {/* CLOSE: cerrar lote */}
-                            {mermaMode === "close" && batchToClose && (
-                                <>
-                                    {/* Tabs Crudo / Cocido */}
-                                    <div className="flex items-center justify-between gap-2 mb-3">
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setMermaEditTab("raw")}
-                                                className={`px-3 py-2 rounded-lg border font-semibold ${
-                                                    mermaEditTab === "raw"
-                                                        ? "bg-[#F5B301] text-black border-[#F5B301]"
-                                                        : "bg-[#1a1a1a] text-white border-gray-800/50"
-                                                }`}
-                                            >
-                                                Crudo
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setMermaEditTab("cooked")}
-                                                className={`px-3 py-2 rounded-lg border font-semibold ${
-                                                    mermaEditTab === "cooked"
-                                                        ? "bg-[#F5B301] text-black border-[#F5B301]"
-                                                        : "bg-[#1a1a1a] text-white border-gray-800/50"
-                                                }`}
-                                            >
-                                                Cocido / Final
-                                            </button>
-                                        </div>
-
-                                        <div className="text-xs text-gray-400">
-                                            Estado:{" "}
-                                            <span className={(batchToClose?.status === "closed") ? "text-green-400" : "text-yellow-300"}>
-          {batchToClose?.status === "closed" ? "Cerrado" : "Abierto"}
-        </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Info del lote */}
-                                    <div className="mb-3 p-3 rounded-xl bg-[#0f0f0f] border border-gray-800/40">
-                                        <div className="text-white font-semibold truncate">
-                                            Lote: {getBatchProductName(batchToClose)}
-                                        </div>
-                                        <div className="text-xs text-gray-400 mt-1">
-                                            Crudo registrado: {batchToClose?.rawQty ?? 0} · Final: {batchToClose?.finalQty ?? 0} · Merma:{" "}
-                                            {(safeNumber(batchToClose?.rawQty) - safeNumber(batchToClose?.finalQty))}
-                                        </div>
-                                    </div>
-
-                                    {/* FORM CRUDO */}
-                                    {mermaEditTab === "raw" && (
-                                        <>
-                                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                                <div>
-                                                    <div className="text-xs text-gray-400 mb-1">Cantidad crudo</div>
-                                                    <input
-                                                        value={rawQtyInput}
-                                                        onChange={(e) => setRawQtyInput(e.target.value)}
-                                                        className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                        placeholder="Ej: 10"
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <div className="text-xs text-gray-400 mb-1">Costo unitario (referencia)</div>
-                                                    <input
-                                                        value={unitCostInput}
-                                                        onChange={(e) => setUnitCostInput(e.target.value)}
-                                                        className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                        placeholder="Ej: 350"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="mb-3">
-                                                <div className="text-xs text-gray-400 mb-1">Nota (opcional)</div>
-                                                <textarea
-                                                    value={mermaNote}
-                                                    onChange={(e) => setMermaNote(e.target.value)}
-                                                    className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                    placeholder="Ej: Ajuste de crudo."
-                                                    rows={3}
-                                                />
-                                            </div>
-
-                                            <div className="flex items-center justify-between gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setMermaEditTab("cooked")}
-                                                    className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gray-800/50 text-white font-semibold"
-                                                >
-                                                    Ir a cocido
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (!batchToClose?._id) return;
-                                                        updateBatchMutation.mutate({
-                                                            id: batchToClose._id,
-                                                            body: {
-                                                                rawQty: Number(String(rawQtyInput || "0").replace(/[^\d.-]/g, "")),
-                                                                unitCost: Number(String(unitCostInput || "0").replace(/[^\d.-]/g, "")),
-                                                                note: mermaNote || "",
-                                                            },
-                                                        });
-                                                    }}
-                                                    className="px-4 py-2 rounded-lg bg-[#F5B301] text-black font-semibold"
-                                                >
-                                                    Guardar crudo
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* FORM COCIDO */}
-                                    {mermaEditTab === "cooked" && (
-                                        <>
-                                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                                <div>
-                                                    <div className="text-xs text-gray-400 mb-1">Cantidad final (cocido)</div>
-                                                    <input
-                                                        value={finalQtyInput}
-                                                        onChange={(e) => setFinalQtyInput(e.target.value)}
-                                                        className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                        placeholder="Ej: 4"
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <div className="text-xs text-gray-400 mb-1">Costo unitario (solo referencia)</div>
-                                                    <input
-                                                        value={unitCostInput}
-                                                        onChange={(e) => setUnitCostInput(e.target.value)}
-                                                        className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                        placeholder="Ej: 350"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="mb-3">
-                                                <div className="text-xs text-gray-400 mb-1">Nota (opcional)</div>
-                                                <textarea
-                                                    value={mermaNote}
-                                                    onChange={(e) => setMermaNote(e.target.value)}
-                                                    className="w-full px-3 py-2 rounded-lg bg-[#101010] border border-gray-800/50 text-white"
-                                                    placeholder="Ej: Se perdió X libras al cocinar."
-                                                    rows={3}
-                                                />
-                                            </div>
-
-                                            <div className="flex items-center justify-between gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setMermaEditTab("raw")}
-                                                    className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gray-800/50 text-white font-semibold"
-                                                >
-                                                    Volver a crudo
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleSaveBatch()} // sigue usando tu función, pero ver cambio abajo
-                                                    className="px-4 py-2 rounded-lg bg-[#F5B301] text-black font-semibold"
-                                                >
-                                                    Guardar cierre
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </>
-                            )}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-800/50">
-                            <button
-                                type="button"
-                                onClick={() => setMermaModalOpen(false)}
-                                className="px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
-                            >
-                                Cerrar
-                            </button>
-
-                            {mermaMode === "create" && (
-                                <button
-                                    type="button"
-                                    onClick={handleSaveBatch}
-                                    disabled={createBatchMutation.isPending}
-                                    className="px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
-                                >
-                                    Guardar lote
-                                </button>
-                            )}
                         </div>
                     </div>
                 </div>
             )}
+
+            {managerCodeModalOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-semibold text-white">Configurar código manager</h2>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setManagerCodeModalOpen(false);
+                                    setManagerCodeInput("");
+                                }}
+                                className="text-white/70 hover:text-white"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
+                            <div className="text-xs text-gray-400">Estado</div>
+
+                            <div className="text-sm text-white mt-1">
+                                {managerCodeStatus?.data?.enabled ? "Activado" : "Desactivado"}
+                                {managerCodeStatus?.data?.hint ? ` (${managerCodeStatus.data.hint})` : ""}
+                            </div>
+
+                            {managerCodeStatus?.data?.updatedAt && (
+                                <div className="text-[11px] text-gray-500 mt-1">
+                                    Última actualización: {new Date(managerCodeStatus.data.updatedAt).toLocaleString()}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="mt-4">
+                            <label className="text-xs text-gray-400">
+                                Nuevo código (4–8 dígitos)
+                            </label>
+                            <input
+                                value={managerCodeInput}
+                                onChange={(e) => setManagerCodeInput(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                                className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
+                                placeholder="Ej: 1234"
+                                inputMode="numeric"
+                            />
+                            <div className="text-[11px] text-gray-500 mt-1">
+                                Solo se guarda el hash en el servidor. El sistema muestra un hint tipo ***12.
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const code = managerCodeInput.trim();
+                                if (!/^\d{4,8}$/.test(code)) {
+                                    showToast("Código inválido. Debe tener 4 a 8 dígitos.");
+                                    return;
+                                }
+                                setManagerCodeMutation.mutate({ managerCode: code });
+                            }}
+                            disabled={setManagerCodeMutation.isPending}
+                            className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
+                        >
+                            Guardar / Actualizar
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                // Desactivar: backend acepta managerCode = ""
+                                setManagerCodeMutation.mutate({ managerCode: "" });
+                            }}
+                            disabled={setManagerCodeMutation.isPending}
+                            className="mt-2 w-full px-3 py-2 bg-[#262626] border border-gray-800/50 text-white rounded-lg font-semibold disabled:opacity-60"
+                        >
+                            Desactivar código
+                        </button>
+                    </div>
+                </div>
+            )}
+
+
             {batchesModalOpen && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
                     <div className="w-full max-w-2xl rounded-2xl bg-[#0b0b0b] border border-gray-800/50 shadow-2xl">
@@ -2369,7 +2501,7 @@ const CashRegister = () => {
 
 
                                                         <div className="text-xs text-gray-400 mt-1">
-                                                            Crudo: {b?.rawQty} {b?.unit || ""} · Costo: {currency(b?.unitCost || 0)}
+                                                            Entrada: {b?.rawQty} {b?.unit || ""} · Costo: {currency(b?.unitCost || 0)}
                                                         </div>
 
                                                         <div className="text-xs text-gray-500 mt-1">
@@ -2405,7 +2537,7 @@ const CashRegister = () => {
                                                             }}
                                                             className="px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold hover:bg-[#262626]"
                                                         >
-                                                            Registrar cocido
+                                                            Registrar salida
                                                         </button>
                                                     ) : (
                                                         <button
