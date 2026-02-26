@@ -1,14 +1,19 @@
 import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
-    orderId: "",
-    customerId: null,        // NUEVO
+    // Draft context (NO es el orderId de backend)
+    draftOrderId: "",
+    customerId: null,
     customerName: "",
     customerPhone: "",
-    customerAddress: "",     // NUEVO
+    customerAddress: "",
     guests: 0,
-    table: null
-}
+
+    table: null,
+    isVirtual: false,
+    virtualType: null,      // QUICK / PEDIDOSYA / UBEREATS / DELIVERY
+    orderSource: "DINE_IN", // DINE_IN / TAKEOUT / PEDIDOSYA / UBEREATS / DELIVERY / QUICK
+};
 
 
 const customerSlice = createSlice({
@@ -41,6 +46,20 @@ const customerSlice = createSlice({
             state.customerAddress = String(address).trim();        // NUEVO
             state.guests = guests;
         },
+        setDraftContext: (state, action) => {
+            state.table = action.payload?.table ?? null;
+            state.isVirtual = !!action.payload?.isVirtual;
+            state.virtualType = action.payload?.virtualType ?? null;
+            state.orderSource = action.payload?.orderSource ?? "DINE_IN";
+        },
+
+        clearDraftContext: (state) => {
+            state.draftOrderId = "";
+            state.table = null;
+            state.isVirtual = false;
+            state.virtualType = null;
+            state.orderSource = "DINE_IN";
+        },
 
         removeCustomer: (state) => {
             state.orderId = "";
@@ -58,5 +77,5 @@ const customerSlice = createSlice({
     },
 });
 
-export const { setCustomer, removeCustomer, updateTable } = customerSlice.actions;
+export const { setCustomer, removeCustomer, updateTable, setDraftContext, clearDraftContext } = customerSlice.actions;
 export default customerSlice.reducer;

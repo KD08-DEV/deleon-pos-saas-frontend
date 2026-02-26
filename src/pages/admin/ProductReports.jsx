@@ -43,6 +43,17 @@ const ProductReports = () => {
         d.setDate(d.getDate() + days);
         return d.toISOString().slice(0, 19) + ".000";
     };
+    const getItemCategory = (item) => {
+        const cat =
+            item?.inventoryCategory?.name ??
+            item?.inventoryCategory?.title ??
+            item?.inventoryCategoryName ??
+            item?.inventoryCategory ??
+            item?.category;
+
+        const out = (cat || "Sin Categoría").toString().trim();
+        return out || "Sin Categoría";
+    };
 
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
@@ -83,6 +94,39 @@ const ProductReports = () => {
         keepPreviousData: true,
         staleTime: 30_000,
     });
+    async function fetchProductDetail({ from, to }) {
+        const params = new URLSearchParams();
+        params.append("from", from);
+        params.append("to", to);
+
+        const res = await api.get(`/api/order/report/sales-by-product?${params.toString()}`);
+        return res.data?.data || [];
+    }
+
+    const productReportQuery = useQuery({
+        queryKey: ["sales-by-product-report", filters.from, filters.to],
+        queryFn: async () => {
+            return fetchProductDetail({
+                from: filters.from,
+                to: filters.to,
+            });
+        },
+        enabled: true,
+        keepPreviousData: true,
+        staleTime: 30_000,
+    });
+
+    const detailRows = productReportQuery.data || [];
+
+    const categoryByProductName = useMemo(() => {
+        const m = new Map();
+        for (const r of detailRows) {
+            const name = (r?.name || "").toString().trim();   // en SalesReports el campo es r.name
+            const cat = (r?.category || "Sin Categoría").toString().trim();
+            if (name) m.set(name, cat);
+        }
+        return m;
+    }, [detailRows]);
 
     const orders = data?.data || [];
 
@@ -95,7 +139,9 @@ const ProductReports = () => {
             const items = order.items || [];
             items.forEach((item) => {
                 const productName = item.name || "Producto Desconocido";
-                const category = item.category || "Sin Categoría";
+                const category =
+                    categoryByProductName.get((item.name || "").toString().trim()) ||
+                    getItemCategory(item);
                 const quantity = Number(item.quantity || 0);
                 const price = Number(item.price || 0);
                 const total = quantity * price;

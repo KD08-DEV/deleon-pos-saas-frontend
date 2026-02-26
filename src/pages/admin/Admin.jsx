@@ -248,27 +248,9 @@ const Admin = () => {
                 },
                 {
                     id: "categories-inv",
-                    label: "Categorías de Inventario",
+                    label: "Categorías",
                     icon: ShoppingBag,
                     description: "Organizar categorías"
-                },
-                {
-                    id: "expense-categories",
-                    label: "Categorías de Gastos",
-                    icon: FileText,
-                    description: "Crear/editar categorías"
-                },
-                {
-                    id: "expenses",
-                    label: "Gastos Varios",
-                    icon: Receipt,
-                    description: "Registrar gastos del día a día"
-                },
-                {
-                    id: "expenses-summary",
-                    label: "Resumen de gastos",
-                    icon: Receipt,
-                    description: "Registrar gastos del día a día"
                 },
             ]
         },
@@ -324,6 +306,34 @@ const Admin = () => {
             : []),
 
         ...(canInventory ? [] : []),
+        {
+            id: "gestion-financiera",
+            label: "Gestión Financiera",
+            icon: Wallet,
+            color: "text-emerald-400",
+            bgColor: "bg-emerald-500/10",
+            borderColor: "border-emerald-500/20",
+            items: [
+                {
+                    id: "expense-categories",
+                    label: "Categorías de gasto",
+                    icon: FileText,
+                    description: "Crear/editar categorías de gasto"
+                },
+                {
+                    id: "expenses",
+                    label: "Registro de gastos",
+                    icon: Receipt,
+                    description: "Registrar gastos operativos"
+                },
+                {
+                    id: "expenses-summary",
+                    label: "Reporte de gastos",
+                    icon: TrendingUp,
+                    description: "Resumen y análisis de gastos"
+                },
+            ]
+        },
         {
             id: "configuracion",
             label: "Configuración",

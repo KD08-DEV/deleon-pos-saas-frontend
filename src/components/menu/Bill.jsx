@@ -2,16 +2,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
-import { updateOrder } from "../../https";
+import { updateOrder, addOrder } from "../../https";
 import Invoice from "../invoice/Invoice";
 
 import useTenant from "../../hooks/useTenant";
 import api from "../../lib/api";
-import { QK } from "../../queryKeys";
-import { getSocket } from "../../realtime/socket";
+
 
 const num = (v) => {
     if (v === null || v === undefined) return 0;
@@ -29,6 +28,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const dispatch = useDispatch();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    const draft = useSelector((state) => state.customer);
+    const draftTable = draft?.table || null;
+    const draftOrderSource = draft?.orderSource || "DINE_IN";
 
     const cart = useSelector((state) => state.cart);
     const subtotalFromStore = useSelector(getTotalPrice);
@@ -396,9 +398,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const orderMutation = useMutation({
-        mutationFn: (payload) => updateOrder(orderId, payload),
+        mutationFn: async (payload) => {
+            if (orderId) return updateOrder(orderId, payload);
+
+            // Crear solo aquí (cuando el usuario presiona actualizar)
+            return addOrder({
+                ...payload,
+                table: payload?.table ?? draftTable ?? null,
+                orderSource: payload?.orderSource ?? draftOrderSource,
+            });
+        },
         onSuccess: async (res) => {
-            // 1) Intenta sacar el order desde la respuesta
+            // 0) Extrae el ID creado (si fue creación)
+            const createdId =
+                res?.data?.data?._id ||
+                res?.data?.data?.order?._id ||
+                res?.data?._id ||
+                res?.data?.order?._id ||
+                null;
+
+            // 1) Order “server” desde respuesta (si viene)
             let server =
                 res?.data?.data?.order ??
                 res?.data?.order ??
@@ -406,30 +425,40 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 res?.data ??
                 {};
 
-            // 2) Si la respuesta no trae el order completo, lo buscamos por GET
-            // (asumiendo que existe GET /api/order/:id, porque ya usas PUT /api/order/:id)
-            try {
-                const fresh = await api.get(`/api/order/${orderId}`);
-                const freshOrder =
-                    fresh?.data?.data?.order ??
-                    fresh?.data?.order ??
-                    fresh?.data?.data ??
-                    fresh?.data ??
-                    null;
+            // 2) ID efectivo para todo el flujo (update o create)
+            const effectiveId = orderId || createdId;
 
-                if (freshOrder && freshOrder._id) {
-                    server = freshOrder;
+            // 3) Si la respuesta no trae el order completo, lo buscamos por GET usando effectiveId
+            try {
+                if (effectiveId) {
+                    const fresh = await api.get(`/api/order/${effectiveId}`);
+                    const freshOrder =
+                        fresh?.data?.data?.order ??
+                        fresh?.data?.order ??
+                        fresh?.data?.data ??
+                        fresh?.data ??
+                        null;
+
+                    if (freshOrder && freshOrder._id) {
+                        server = freshOrder;
+                    }
                 }
             } catch (e) {
                 console.log("[BILL] No pude refrescar el order por GET:", e?.message);
             }
 
-            console.log("[BILL] server order used for invoice:", server);
+            // 4) Si fue creación, cambia la URL para que el resto del flujo funcione como siempre
+            if (!orderId && createdId) {
+                navigate(`/menu?orderId=${createdId}`, { replace: true });
+            }
 
             const fallback = buildOrderPayload();
 
+            // 5) Refrescar cache con el ID correcto
             try {
-                queryClient.invalidateQueries(["order", orderId]);
+                if (effectiveId) {
+                    queryClient.invalidateQueries(["order", effectiveId]);
+                }
             } catch (_) {}
 
             // Items
@@ -448,8 +477,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 const line = num(it.price ?? unit * q);
 
                 return {
-                    name:
-                        it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
+                    name: it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
                     quantity: q,
                     unitPrice: unit,
                     price: line,
@@ -467,16 +495,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 taxEnabled: server.bills?.taxEnabled ?? fallback.bills?.taxEnabled ?? true,
                 tipEnabled: server.bills?.tipEnabled ?? fallback.bills?.tipEnabled ?? true,
                 deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
-
             };
 
-            // Fiscal (prioriza siempre lo del server)
+            // Fiscal
             const fiscal = server.fiscal ?? null;
-            const ncfNumber =
-                server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
+            const ncfNumber = server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
 
             const invoice = {
-                _id: server._id ?? orderId,
+                _id: server._id ?? effectiveId, // ✅ usa effectiveId
                 createdAt: server.createdAt ?? new Date().toISOString(),
                 orderSource: server.orderSource,
                 commissionRate: server.commissionRate,
@@ -490,7 +516,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     phone: server.customerDetails?.phone ?? fallback.customerDetails?.phone ?? "",
                     address: server.customerDetails?.address ?? fallback.customerDetails?.address ?? "",
                 },
-
 
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
@@ -554,12 +579,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const handlePlaceOrder = () => {
-        if (!orderId) {
-            enqueueSnackbar("No hay orden seleccionada.", { variant: "warning" });
-            return;
-        }
-
-        // si quiere fiscal, recomendamos RNC/Cédula
+        // ✅ Fiscal: si quiere factura fiscal, pedimos RNC/Cédula
         if (wantsFiscal && fiscalCapable) {
             const doc = String(customerRnc || "").replace(/[^\d]/g, "");
             if (!doc) {
@@ -571,10 +591,18 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         }
 
         const payload = buildOrderPayload();
+
+        // ✅ No se permite guardar si no hay items (esto evita EMPTY_ORDER_NOT_ALLOWED)
         if (!payload.items?.length) {
-            enqueueSnackbar("No hay items en el carrito para actualizar la orden.", { variant: "warning" });
+            enqueueSnackbar("No hay items en el carrito para guardar la orden.", {
+                variant: "warning",
+            });
             return;
         }
+
+        // ✅ Aquí sí se crea o actualiza:
+        // - si hay orderId => updateOrder
+        // - si NO hay orderId => addOrder (draft)
         orderMutation.mutate(payload);
     };
 
@@ -754,6 +782,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             type="button"
                             onClick={() => {
                                 setPaymentMethod("Efectivo");
+
+                                if (!orderId) {
+                                    enqueueSnackbar("Guarda la orden primero para cambiar el método de pago.", {
+                                        variant: "warning",
+                                    });
+                                    return;
+                                }
+
                                 paymentMethodMutation.mutate("Efectivo");
                             }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
@@ -768,8 +804,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         <button
                             type="button"
                             onClick={() => {
+                                // ✅ siempre cambia en UI (draft o orden real)
                                 setPaymentMethod("Tarjeta");
-                                paymentMethodMutation.mutate("Tarjeta");
+
+                                // ✅ solo persiste si ya existe orderId
+                                if (orderId) {
+                                    paymentMethodMutation.mutate("Tarjeta");
+                                }
                             }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
                                 paymentMethod === "Tarjeta"
@@ -783,8 +824,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         <button
                             type="button"
                             onClick={() => {
+                                // ✅ siempre cambia en UI (draft o orden real)
                                 setPaymentMethod("Transferencia");
-                                paymentMethodMutation.mutate("Transferencia");
+
+                                // ✅ solo persiste si ya existe orderId
+                                if (orderId) {
+                                    paymentMethodMutation.mutate("Transferencia");
+                                }
                             }}
                             className={`px-4 py-3 w-full rounded-lg font-semibold ${
                                 paymentMethod === "Transferencia"

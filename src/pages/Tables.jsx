@@ -1,16 +1,16 @@
 import React, { useEffect } from "react";
-
+import { setDraftContext, clearDraftContext } from "../redux/slices/customerSlice";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTables, updateTable, updateOrder,  addOrder } from "@https";
 import TableCard from "@components/tables/TableCard";
 import { enqueueSnackbar } from "notistack";
-import { useDispatch } from "react-redux";
 import { setUser } from "../redux/slices/userSlice";
 import { QK } from "../queryKeys";
 import { getSocket } from "../realtime/socket";
 import { useTablesRealtime } from "../realtime/useTablesRealtime";
+
 
 
 export default function Tables() {
@@ -100,59 +100,30 @@ export default function Tables() {
         (currentUser?.role || currentUser?.user?.role || "").toString().toLowerCase();
 
 
-    const handlePickTable = async (table) => {
+    const handlePickTable = (table) => {
         const tableId = table?._id;
         const status = table?.status || "Disponible";
 
-
-        /// CANALES (Quick / Delivery)
+        // 1) CANALES VIRTUALES
         if (table?.isVirtual) {
-            try {
-                let effectiveOrderId = orderId;
+            const vtRaw = (table?.virtualType || "QUICK").toString().trim().toUpperCase();
+            const allowed = new Set(["PEDIDOSYA", "UBEREATS", "DELIVERY", "QUICK"]);
+            const vt = allowed.has(vtRaw) ? vtRaw : "QUICK";
 
-                // ✅ Si NO hay orderId, crear orden automática (sin nombre)
-                if (!effectiveOrderId) {
-                    const created = await mCreateOrder.mutateAsync({
-                        customerId: null,
-                        customerDetails: {
-                            name: "",      // <- sin nombre (como pediste)
-                            phone: "",
-                            address: "",
-                            guests: 0,
-                        },
-                        user: currentUser?._id || null,
-                    });
+            dispatch(
+                setDraftContext({
+                    table: null,
+                    isVirtual: true,
+                    virtualType: vt,
+                    orderSource: vt, // IMPORTANTE: mismo string que antes mandabas al backend
+                })
+            );
 
-                    effectiveOrderId = created?.data?.data?._id;
-
-                    if (!effectiveOrderId) {
-                        enqueueSnackbar("No se pudo crear la orden.", { variant: "error" });
-                        return;
-                    }
-                }
-
-                // Si es canal delivery/pedidosya/ubereats, seteamos orderSource antes de ir al menú
-                if (
-                    table?.virtualType === "PEDIDOSYA" ||
-                    table?.virtualType === "UBEREATS" ||
-                    table?.virtualType === "DELIVERY"
-                ) {
-                    await mUpdateOrder.mutateAsync({
-                        id: effectiveOrderId,
-                        body: { orderSource: table.virtualType },
-                    });
-                }
-                navigate(`/menu?orderId=${effectiveOrderId}`);
-                return;
-            } catch (e) {
-                enqueueSnackbar("No se pudo acceder al canal.", { variant: "error" });
-                return;
-            }
+            navigate("/menu"); // sin orderId => draft local
+            return;
         }
 
-
-
-        // Mesa Ocupada => abrir orden existente (si tienes permiso)
+        // 2) MESA OCUPADA => abrir orden existente (si tienes permiso)
         if (status === "Ocupada") {
             const existingOrderId =
                 table?.currentOrder?._id ||
@@ -161,10 +132,9 @@ export default function Tables() {
                 null;
 
             const canEditBooked =
-                normalizedRole === "admin" || normalizedRole === "camarero" || normalizedRole === "cajera";
-
-            // Debug rápido (puedes borrarlo luego)
-            console.log("ROLE:", normalizedRole, "existingOrderId:", existingOrderId);
+                normalizedRole === "admin" ||
+                normalizedRole === "camarero" ||
+                normalizedRole === "cajera";
 
             if (canEditBooked && existingOrderId) {
                 navigate(`/menu?orderId=${existingOrderId}`);
@@ -185,45 +155,17 @@ export default function Tables() {
             return;
         }
 
-        // Mesa Disponible + orderId => asignar mesa a la orden
-        // Mesa Disponible => si no hay orderId, crear una orden vacía y asignarla a la mesa
-        try {
-            let effectiveOrderId = orderId;
+        // 3) MESA DISPONIBLE => draft local
+        dispatch(
+            setDraftContext({
+                table: tableId,
+                isVirtual: false,
+                virtualType: null,
+                orderSource: "DINE_IN",
+            })
+        );
 
-            // 1) Si NO hay orderId, crear orden con cliente vacío y con mesa asignada
-            if (!effectiveOrderId) {
-                const created = await mCreateOrder.mutateAsync({
-                    customerId: null,
-                    customerDetails: {
-                        name: "",      // sin nombre
-                        phone: "",
-                        address: "",
-                        guests: 0,
-                    },
-                    table: tableId,              // clave: asigna mesa desde el inicio
-                    orderSource: "DINE_IN",      // opcional, pero recomendado
-                    user: currentUser?._id || null,
-                });
-
-                effectiveOrderId = created?.data?.data?._id;
-
-                if (!effectiveOrderId) {
-                    enqueueSnackbar("No se pudo crear la orden para esta mesa.", { variant: "error" });
-                    return;
-                }
-            } else {
-                // 2) Si ya hay orderId, solo asignar la mesa a esa orden
-                await mUpdateOrder.mutateAsync({
-                    id: effectiveOrderId,
-                    body: { table: tableId },
-                });
-            }
-
-            // 3) Navegar al menú con la orden creada/asignada
-            navigate(`/menu?orderId=${effectiveOrderId}`);
-        } catch (error) {
-            enqueueSnackbar("No se pudo asignar la mesa.", { variant: "error" });
-        }
+        navigate("/menu"); // sin orderId => draft local
     };
 
 

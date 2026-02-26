@@ -162,7 +162,7 @@ const InventoryCategories = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                         <Tag className="w-6 h-6 text-[#f6b100]" />
-                        Categorías de Inventario
+                        Categorías
                     </h2>
                     <p className="text-sm text-gray-400 mt-1">Organiza tus productos por categorías</p>
                 </div>

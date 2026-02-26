@@ -52,6 +52,8 @@ const MenuManagement = () => {
         price: "",
         sellMode: "unit",
         weightUnit: "lb",
+        avgCost: "",
+        lastCost: "",
         pricePerLb: "",
         imageFile: null,
     });
@@ -110,6 +112,8 @@ const MenuManagement = () => {
             sellMode: "unit",
             weightUnit: "lb",
             pricePerLb: "",
+            avgCost: "",
+            lastCost: "",
             imageFile: null,
         });
         setEditingDish(null);
@@ -125,12 +129,15 @@ const MenuManagement = () => {
         setDishForm({
             name: dish.name || "",
             category: dish.category || "",
+
             inventoryCategoryId: dish?.inventoryCategoryId?._id || dish?.inventoryCategoryId || "",
             price: dish.price?.toString() || "",
             sellMode: dish.sellMode || "unit",
             weightUnit: dish.weightUnit || "lb",
             isInventoryItem: Boolean(dish.isInventoryItem),
             pricePerLb: dish.pricePerLb?.toString() || "",
+            avgCost: dish.avgCost != null ? String(dish.avgCost) : "",
+            lastCost: dish.lastCost != null ? String(dish.lastCost) : "",
             imageFile: null,
         });
         setShowDishModal(true);
@@ -215,8 +222,20 @@ const MenuManagement = () => {
         reloadInvCats();
     }, []);
 
+    const getDishCategoryLabel = (dish) => {
+        // si viene poblado (objeto)
+        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
 
+        // si viene como string ObjectId
+        const id = dish?.inventoryCategoryId;
+        if (id) {
+            const found = invCats.find((c) => String(c._id) === String(id));
+            if (found?.name) return found.name;
+        }
 
+        // fallback
+        return dish?.category || "Sin categoría";
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -230,7 +249,7 @@ const MenuManagement = () => {
 
         // ✅ Campos base del plato (MENÚ)
         formData.append("name", String(dishForm.name || "").trim());
-        formData.append("category", "Menú");
+        formData.append("category",dishForm.inventoryCategoryId || "");
 
         // ✅ Modo de venta (default: unit)
         const sellMode = dishForm.sellMode || "unit";
@@ -239,27 +258,24 @@ const MenuManagement = () => {
         formData.append("sellMode", sellMode);
         formData.append("weightUnit", weightUnit);
 
-        // ✅ Precio (obligatorio)
+        formData.append("inventoryCategoryId", dishForm.inventoryCategoryId || "");
+
         const basePrice =
             sellMode === "weight" ? Number(dishForm.pricePerLb || 0) : Number(dishForm.price || 0);
 
         formData.append("price", String(basePrice));
 
-        // ✅ Solo si es por peso, enviamos pricePerLb
         if (sellMode === "weight") {
             formData.append("pricePerLb", String(basePrice));
         }
 
-        // ✅ IMPORTANTE: NO enviar nada de inventario desde aquí
-        // formData.append("inventoryCategoryId", ...)
-        // formData.append("isInventoryItem", ...)
+        formData.append("avgCost", dishForm.avgCost ?? "");
+        formData.append("lastCost", dishForm.lastCost ?? "");
 
-        // ✅ Imagen opcional
         if (dishForm.imageFile) {
             formData.append("image", dishForm.imageFile);
         }
 
-        // ✅ Crear / Actualizar
         if (editingDish?._id) {
             updateMutation.mutate({ id: editingDish._id, formData });
         } else {
@@ -377,7 +393,7 @@ const MenuManagement = () => {
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="text-lg font-semibold text-white">{dish.name}</h3>
                                 <span className="px-2 py-1 bg-[#f6b100]/20 text-[#f6b100] text-xs rounded-full border border-[#f6b100]/40">
-                                    {dish.category}
+                                     {getDishCategoryLabel(dish)}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between">
@@ -458,7 +474,6 @@ const MenuManagement = () => {
                                             setDishForm((f) => ({
                                                 ...f,
                                                 inventoryCategoryId: val,
-                                                isInventoryItem: Boolean(val),
                                             }));
                                         }}
                                         className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
@@ -544,6 +559,35 @@ const MenuManagement = () => {
                                     />
                                 </div>
                             )}
+
+                            {/* Costos (opcionales) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Costo promedio (opcional)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={dishForm.avgCost}
+                                        onChange={(e) => setDishForm((f) => ({ ...f, avgCost: e.target.value }))}
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        placeholder="Ej: 150"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Último costo (opcional)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={dishForm.lastCost}
+                                        onChange={(e) => setDishForm((f) => ({ ...f, lastCost: e.target.value }))}
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        placeholder="Ej: 160"
+                                    />
+                                </div>
+                            </div>
 
                             {/* Imagen */}
                             <div>

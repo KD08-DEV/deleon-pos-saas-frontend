@@ -3,11 +3,13 @@ import { Home, ListOrdered, Table2, Settings, Plus, Wallet   } from "lucide-reac
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
 import { useDispatch, useSelector } from "react-redux";
-import { setCustomer } from "../../redux/slices/customerSlice";
+import { setCustomer, setDraftContext } from "../../redux/slices/customerSlice";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
 import { addOrder, getCustomers, createCustomer } from "../../https";
 import { motion, AnimatePresence } from "framer-motion";
+
+
 
 const BottomNav = memo(() => {
     const navigate = useNavigate();
@@ -158,7 +160,38 @@ const BottomNav = memo(() => {
                 user: userData?._id || null,
             };
 
-            createOrder.mutate(payload);
+            dispatch(
+                setCustomer({
+                    customerId: customerIdToSend || null,
+                    name: finalName,
+                    phone: cleanPhone,
+                    address: cleanAddress,
+                    guests,
+                })
+            );
+
+// Draft rápido por defecto para entrar al menú (sin BD)
+            dispatch(
+                setDraftContext({
+                    table: null,
+                    isVirtual: true,
+                    virtualType: "QUICK",
+                    orderSource: "QUICK",
+                })
+            );
+
+// limpiar modal
+            setName("");
+            setPhone("");
+            setGuestCount(0);
+            setAddress("");
+            setSearch("");
+            setSelectedCustomerId(null);
+            setShowResults(false);
+            closeModal();
+
+// ir al menú para agregar items y guardar solo con "Actualizar orden"
+            navigate("/menu");
         } catch (e) {
             const status = e?.response?.status;
             const code = e?.response?.data?.code;

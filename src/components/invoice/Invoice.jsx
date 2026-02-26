@@ -60,6 +60,11 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
     // ===== Fiscal =====
     const isFiscal = Boolean(order?.fiscal?.requested || order?.ncfNumber || order?.fiscal?.ncfNumber);
+    const tenantPreInvoiceEnabled = !!tenantInfo?.features?.preInvoice?.enabled;
+
+// si existe una prefactura en la orden, tiene prioridad; si no, usa el tenant default
+    const isPreInvoice =
+        !!order?.fiscal?.preInvoice || tenantPreInvoiceEnabled;
 
     const ncfNumber =
         order?.ncfNumber ||
@@ -187,14 +192,16 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
     const handlePrint = useReactToPrint({
         contentRef: receiptRef,
-        documentTitle: isFiscal ? "Factura NCF" : "Factura",
-    });
+        documentTitle: isFiscal ? "Factura NCF" : (isPreInvoice ? "PreFactura" : "Factura"),    });
 
     const backdropVariants = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
     const modalVariants = { hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } };
 
-    const headerTitle = invoiceTitle || "Factura";
-    const typeLabel = isFiscal ? "Factura con Comprobante Fiscal" : "Factura para Consumidor Final";
+    const headerTitle =
+        invoiceTitle ??
+        (isFiscal
+            ? "Factura con Comprobante Fiscal"
+            : (isPreInvoice ? "PreFactura" : "Factura para Consumidor Final"));
 
     return (
         <motion.div
@@ -222,7 +229,12 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                     {/* Título + tipo */}
                     <div className="text-center mb-1">
                         <h2 className="text-lg font-bold text-center mb-1">
-                            {invoiceTitle ? invoiceTitle : isFiscal ? "Factura con Comprobante Fiscal" : "Factura para Consumidor Final"}
+                            {invoiceTitle
+                                ? invoiceTitle
+                                : isFiscal
+                                    ? "Factura con Comprobante Fiscal"
+                                    : (isPreInvoice ? "PreFactura" : "Factura para Consumidor Final")
+                            }
                         </h2>
                     </div>
 

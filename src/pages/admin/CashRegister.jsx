@@ -169,6 +169,7 @@ const CashRegister = () => {
     const [managerCodeModalOpen, setManagerCodeModalOpen] = useState(false);
     const [managerCodeInput, setManagerCodeInput] = useState("");
     const [closeManagerCode, setCloseManagerCode] = useState("");
+    const [forceSummary, setForceSummary] = useState(false);
 
 
 
@@ -319,8 +320,8 @@ const CashRegister = () => {
 
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
             queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
-
             setAdjustCloseOpen(false);
+
             setAdjustManagerCode("");
         },
         onError: (err) => {
@@ -344,10 +345,8 @@ const CashRegister = () => {
 
         },
         onSuccess: (payload) => {
-            // backend devuelve { success: true, data: session }
             const sessionDoc = payload?.data ?? null;
 
-            // 1) Actualiza cache inmediato
             if (sessionDoc?._id) {
                 queryClient.setQueryData(
                     ["admin/cash-session", selectedYMD, REGISTER_ID],
@@ -355,10 +354,21 @@ const CashRegister = () => {
                 );
             }
 
-            // 2) Refetch por seguridad
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
             queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
 
+            // ✅ UX: limpiar campos
+            setClosingCountedInput("");
+            setClosingNote("");
+            setCloseManagerCode("");
+
+            // ✅ UX: feedback
+            showToast("Cierre registrado correctamente.", "success");
+
+            // ✅ UX: llevar al usuario al resumen (opcional pero recomendado)
+            setTimeout(() => {
+                document.getElementById("cash-summary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 150);
         },
 
         onError: (err) => {
@@ -763,28 +773,39 @@ const CashRegister = () => {
     const sessionExists = !!session;
 
     // Solo mostrar resumen si ya cerró (o si es admin)
-    const sessionClosed = cashSession?.status === "CLOSED";
+// ✅ Session closed: acepta status o closedAt
+    const sessionClosed =
+        String(session?.status || cashSession?.status || "").toUpperCase() === "CLOSED" ||
+        Boolean(session?.closedAt) ||
+        Boolean(session?.closing?.countedTotal);
 
-    const closedById = session?.closedBy?._id ?? session?.closedBy ?? null;
+// ✅ ClosedBy: soporta varias estructuras
+    const closedById =
+        session?.closing?.closedBy?._id ??
+        session?.closing?.closedBy ??
+        session?.closedBy?._id ??
+        session?.closedBy ??
+        null;
 
-// tu ID puede venir de redux o de storage
-    const myUserId = getUserIdFromToken();
-    const closedByMe = String(closedById) === String(myUserId);
+// ✅ My user id: usa storage/redux primero (más confiable que token)
+    const myUserId =
+        me?._id ||
+        me?.id ||
+        userData?._id ||
+        userData?.id ||
+        userData?.user?._id ||
+        userData?.user?.id ||
+        getUserIdFromToken();
+
+    const closedByMe = closedById && myUserId ? String(closedById) === String(myUserId) : false;
+
+// ✅ Regla final
 
 
-
-
-// Esta es la regla final:
-
-    const adminCanSeeSummary =  isAdminLike;
-
-    const cashierCanSeeSummary = isCajera && sessionClosed && closedByMe;
-
-    const isCashierLike = isCashier || isCajera || !!me?.fid; // fallback temporal
-    const showSummary = isAdminLike || (sessionClosed && (isCajera || isCashier) && closedByMe);
-
-
-
+    const adminCanSeeSummary = Boolean(isAdminLike);
+    const showSummary =
+        adminCanSeeSummary ||
+        (sessionClosed && (isCajera || isCashier)); // <- sin closedByMe
 
     const [sessionConflict, setSessionConflict] = useState(false);
 
@@ -808,6 +829,10 @@ const CashRegister = () => {
         },
         staleTime: 10_000,
     });
+    console.log("session:", session);
+    console.log("sessionClosed:", sessionClosed);
+    console.log("closedById:", closedById, "myUserId:", myUserId, "closedByMe:", closedByMe);
+    console.log("adminCanSeeSummary:", adminCanSeeSummary, "forceSummary:", forceSummary, "showSummary:", showSummary);
 
     const setManagerCodeMutation = useMutation({
         mutationFn: async ({ managerCode }) => {
@@ -1353,6 +1378,7 @@ const CashRegister = () => {
     const [addAmountInput, setAddAmountInput] = useState("");
     const [toast, setToast] = useState({ open: false, message: "", type: "error" });
 
+
     const showToast = (message, type = "error") => {
         setToast({ open: true, message, type });
         window.clearTimeout(showToast._t);
@@ -1406,16 +1432,40 @@ const CashRegister = () => {
             {/* Fondo inicial */}
             {showSummary && (
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <h3 className="text-white font-semibold text-lg">Fondo inicial de caja (menudo)</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Columna izquierda: texto + cards (esto elimina el espacio vacío) */}
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="text-white font-semibold text-lg">Fondo inicial de caja (menudo)</h3>
+                            <p className="text-sm text-gray-400 mt-1">
+                                Este monto no es venta: es el efectivo con el que se inicia la caja para dar cambio.
+                            </p>
+                        </div>
 
-                        <p className="text-sm text-gray-400 mt-1">
-                            Este monto no es venta: es el efectivo con el que se inicia la caja para dar cambio.
-                        </p>
+                        {/* Cards pasan aquí */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                <div className="text-xs text-gray-400 mb-1">Menudo (fondo inicial + agregado)</div>
+                                <div className="text-sm font-semibold text-white">{currency(menudoActual)}</div>
+                                <div className="text-[11px] text-gray-500 mt-1">
+                                    Inicial: {currency(openingInitial)} · Agregado: {currency(addedTotal)}
+                                </div>
+                            </div>
+
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                <div className="text-xs text-gray-400 mb-1">Efectivo (ventas)</div>
+                                <div className="text-sm font-semibold text-white">{currency(initialCashClosure.cashSales)}</div>
+                            </div>
+
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors">
+                                <div className="text-xs text-gray-400 mb-1">Efectivo en caja (fondo + ventas)</div>
+                                <div className="text-sm font-semibold text-[#f6b100]">{currency(initialCashClosure.cashInRegister)}</div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="w-full max-w-sm">
+                    {/* Columna derecha: formulario */}
+                    <div className="w-full max-w-sm justify-self-end">
                         <label className="text-xs text-gray-400 mb-1 block">Monto (ej. 2000)</label>
                         <input
                             value={openingCashInput}
@@ -1609,33 +1659,12 @@ const CashRegister = () => {
                         </div>
                     </div>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                        <div className="text-xs text-gray-400 mb-1">Menudo (fondo inicial + agregado)</div>
-                        <div className="text-sm font-semibold text-white">{currency(menudoActual)}</div>
-
-                        {/* opcional: desglose */}
-                        <div className="text-[11px] text-gray-500 mt-1">
-                            Inicial: {currency(openingInitial)} · Agregado: {currency(addedTotal)}
-                        </div>
-
-                    </div>
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                        <div className="text-xs text-gray-400 mb-1">Efectivo (ventas)</div>
-                        <div className="text-sm font-semibold text-white">{currency(initialCashClosure.cashSales)}</div>
-                    </div>
-                    <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors">
-                        <div className="text-xs text-gray-400 mb-1">Efectivo en caja (fondo + ventas)</div>
-                        <div className="text-sm font-semibold text-[#f6b100]">{currency(initialCashClosure.cashInRegister)}</div>
-                    </div>
-                </div>
             </div>
             )}
 
             {showSummary && (
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
-                    <h3 className="text-white font-semibold text-lg">Comparación</h3>
+                    <h3 className="text-white font-semibold text-lg">Comparación (Reporte de Cierre de Caja)</h3>
 
                     {(() => {
                         const counted = safeNumber(session?.closing?.countedTotal);
@@ -1762,12 +1791,11 @@ const CashRegister = () => {
 
 
             {/* Resumen (vista inicial - últimos 10) */}
-            {adminCanSeeSummary  && (
-
+            {showSummary  &&  (
 
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-semibold text-lg">Resumen</h3>
+                    <h3  id="cash-summary"  className="text-white font-semibold text-lg">Resumen</h3>
                     <div className="text-sm text-gray-300">
                         Total:{" "}
                         <span className="font-semibold text-[#f6b100] text-lg">
@@ -1783,14 +1811,11 @@ const CashRegister = () => {
                         ["efectivo", initialCashClosure.buckets.efectivo],
                         ["tarjeta", initialCashClosure.buckets.tarjeta],
                         ["transferencia", initialCashClosure.buckets.transferencia],
-                        ["delivery", initialCashClosure.buckets.delivery],
                         ["pedidoya", initialCashClosure.buckets.pedidoya],
                         ["ubereats", initialCashClosure.buckets.ubereats],
 
                         // 👇 Sustituye "Otros" por "Menudo"
                         ["menudo", { label: "Menudo (fondo inicial + agregado)", total: (initialCashClosure.openingInitial + initialCashClosure.addedTotal), count: 0 }],
-                        ["merma", { label: "Merma (inventario)", total: -mermaCost, count: 0 }],
-                        ["netSales", { label: "Ventas netas (ventas - merma)", total: netSales, count: 0 }],
 
                         // (Opcional) si “Otros” tiene algo, lo mostramos al final
                         ...(safeNumber(initialCashClosure.buckets?.otros?.total) > 0 || safeNumber(initialCashClosure.buckets?.otros?.count) > 0
@@ -1813,7 +1838,7 @@ const CashRegister = () => {
             )}
 
             {/* Botón exportar */}
-            {showSummary && (
+            {adminCanSeeSummary && (
             <div className="flex gap-3 mb-6">
                 <button
                     onClick={() => downloadExcel(dayReports, initialCashClosure)}
@@ -2142,7 +2167,7 @@ const CashRegister = () => {
                                     ["efectivo", modalCashClosure.buckets.efectivo],
                                     ["tarjeta", modalCashClosure.buckets.tarjeta],
                                     ["transferencia", modalCashClosure.buckets.transferencia],
-                                    ["delivery", modalCashClosure.buckets.delivery],
+
                                     ["pedidoya", modalCashClosure.buckets.pedidoya],
                                     ["ubereats", modalCashClosure.buckets.ubereats],
 

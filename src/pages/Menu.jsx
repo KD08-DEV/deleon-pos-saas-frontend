@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getOrderById } from "@https";
 import { setCart, removeAllItems } from "../redux/slices/cartSlice";
 import { useDispatch, useSelector } from "react-redux";
-import { deleteOrder } from "../https/index";
+import { clearDraftContext, removeCustomer } from "../redux/slices/customerSlice";
 
 const Menu = () => {
     const [isOrderOpen, setIsOrderModalOpen] = useState(true);
@@ -19,6 +19,8 @@ const Menu = () => {
     const [searchParams] = useSearchParams();
     const orderId = searchParams.get("orderId");
     const dispatch = useDispatch();
+    const draft = useSelector((state) => state.customer);
+    const hasDraftContext = !!draft?.table || !!draft?.isVirtual || !!draft?.orderSource;
 
     const { data: orderRes } = useQuery({
         queryKey: ["order", orderId],
@@ -33,95 +35,22 @@ const Menu = () => {
     }, []);
 
     useEffect(() => {
-        if (!isOrderOpen) navigate("/tables");
-    }, [isOrderOpen, navigate]);
+        if (!isOrderOpen) {
+            // limpia draft y carrito al salir SIN importar si era draft o order real
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+            dispatch(removeCustomer());
+            navigate("/tables");
+        }
+    }, [isOrderOpen, dispatch, navigate]);
 
     // --- Hidratar carrito desde la orden ---
     useEffect(() => {
+        if (!orderId) return; // ✅ draft local: no tocar carrito
         dispatch(removeAllItems());
 
         const items = order?.items || [];
-        if (items.length > 0) {
-            const mapped = items.map((it) => {
-                const quantity = Number(it.quantity ?? it.qty ?? it.count ?? 1);
-                const dishId = it.dishId ?? it.dish?._id ?? it.dish ?? it.id ?? it._id;
-
-                const name =
-                    it.name ||
-                    it.dishName ||
-                    it.itemName ||
-                    it?.dishInfo?.name ||
-                    it?.dish?.name ||
-                    "Producto";
-
-                const qtyType =
-                    it.qtyType ||
-                    (it?.dish?.sellMode === "weight" ? "weight" : "unit") ||
-                    "unit";
-
-                const weightUnit = it.weightUnit || it?.dish?.weightUnit || "lb";
-
-                // unitPrice o pricePerLb según aplique
-                const unitPrice = Number(
-                    it.unitPrice ??
-                    it.pricePerQuantity ??
-                    it.pricePerLb ??
-                    it?.dish?.pricePerLb ??
-                    it?.dish?.price ??
-                    it.price ??
-                    0
-                );
-
-                return {
-                    id: dishId,
-                    dishId,
-                    name,
-                    qtyType,
-                    weightUnit,
-                    quantity,
-                    price: unitPrice,
-                };
-            });
-
-            dispatch(setCart(mapped));
-        }
-    }, [orderId, order, dispatch]);
-
-
-    // --- Lógica mejorada para borrar orden vacía ---
-    const cart = useSelector((state) => state.cart);
-    const cartLenRef = useRef(0);
-    useEffect(() => {
-        cartLenRef.current = Array.isArray(cart?.items)
-            ? cart.items.length
-            : Array.isArray(cart)
-                ? cart.length
-                : 0;
-    }, [cart]);
-
-    const orderItemsLenRef = useRef(0);
-    useEffect(() => {
-        orderItemsLenRef.current = Array.isArray(order?.items)
-            ? order.items.length
-            : 0;
-    }, [order]);
-
-    const strictGuardRef = useRef(false);
-    const orderFinalizedRef = useRef(false);
-    const handleOrderFinalized = () => {
-        orderFinalizedRef.current = true;
-    };
-
-    const hydratedRef = useRef(false);
-    const lastOrderIdRef = useRef(null);
-
-    useEffect(() => {
-        // Si aún no hay order, NO toques el carrito
-        if (!orderId) return;
-        if (!order) return;
-
-        const items = Array.isArray(order.items) ? order.items : [];
-        if (items.length === 0) return; // importante: no vaciar mientras carga/refresca
+        if (items.length === 0) return;
 
         const mapped = items.map((it) => {
             const quantity = Number(it.quantity ?? it.qty ?? it.count ?? 1);
@@ -159,22 +88,47 @@ const Menu = () => {
                 qtyType,
                 weightUnit,
                 quantity,
-                unitPrice,                               // <-- clave
-                price: Number((unitPrice * quantity).toFixed(2)), // <-- lineTotal
+                price: unitPrice,
             };
         });
 
         dispatch(setCart(mapped));
-    }, [orderId, order?.items, dispatch]);
+    }, [orderId, order, dispatch]);
 
 
-    // --- Fin de cambios ---
+    // --- Lógica mejorada para borrar orden vacía ---
+    const cart = useSelector((state) => state.cart);
+    const cartLenRef = useRef(0);
+    useEffect(() => {
+        cartLenRef.current = Array.isArray(cart?.items)
+            ? cart.items.length
+            : Array.isArray(cart)
+                ? cart.length
+                : 0;
+    }, [cart]);
 
-    if (!orderId) {
-        navigate("/tables");
-        return null;
-    }
+    const orderItemsLenRef = useRef(0);
+    useEffect(() => {
+        orderItemsLenRef.current = Array.isArray(order?.items)
+            ? order.items.length
+            : 0;
+    }, [order]);
 
+    const strictGuardRef = useRef(false);
+    const orderFinalizedRef = useRef(false);
+    const handleOrderFinalized = () => {
+        orderFinalizedRef.current = true;
+    };
+
+    const hydratedRef = useRef(false);
+    const lastOrderIdRef = useRef(null);
+
+    useEffect(() => {
+        // Si NO hay orderId y tampoco hay contexto draft, vuelve a mesas
+        if (!orderId && !hasDraftContext) {
+            navigate("/tables", { replace: true });
+        }
+    }, [orderId, hasDraftContext, navigate]);
 
     return (
         <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col pb-24">

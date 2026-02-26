@@ -1,11 +1,38 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
 import api from "../../lib/api";
-import { useQuery } from "@tanstack/react-query";
-import { useSelector } from "react-redux";
+import { useQuery, } from "@tanstack/react-query";
+import { useSelector, } from "react-redux";
 import { motion } from "framer-motion";
 import { Trophy, ChefHat } from "lucide-react";
 
 const PopularDishItem = memo(({ dish, index }) => {
+    const [invCats, setInvCats] = useState([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await api.get("/api/admin/inventory/categories");
+                const list = res.data?.data ?? [];
+                setInvCats(list);
+            } catch (e) {
+                console.error("Error cargando categorías:", e);
+            }
+        })();
+    }, []);
+    const getDishCategoryLabel = (dish) => {
+        // Caso 1: viene poblado
+        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
+
+        // Caso 2: viene como string id
+        const id = dish?.inventoryCategoryId;
+        if (id) {
+            const found = invCats?.find((c) => String(c._id) === String(id));
+            if (found?.name) return found.name;
+        }
+
+        // fallback (por si no tiene inventoryCategoryId)
+        return dish?.category || "Sin categoría";
+    };
     const rankClass = index === 0
         ? "bg-gradient-to-br from-yellow-400 to-amber-500 text-black"
         : index === 1
@@ -49,7 +76,7 @@ const PopularDishItem = memo(({ dish, index }) => {
                 </div>
                 <p className="text-[#ababab] text-xs sm:text-sm font-medium truncate">
                     <span className="text-[#666]">Categoria: </span>
-                    {dish.category || "N/A"}
+                    {getDishCategoryLabel(dish) || "N/A"}
                 </p>
                 <p className="text-yellow-400 text-xs sm:text-sm font-bold mt-1">
                     ${dish.price}

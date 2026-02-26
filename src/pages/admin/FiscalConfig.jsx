@@ -5,6 +5,7 @@ import { Save, Receipt, CreditCard, Percent, Calendar, AlertCircle, CheckCircle2
 import { enqueueSnackbar } from "notistack";
 import api from "../../lib/api";
 
+
 const inputCls =
     "w-full p-3 border border-gray-800/50 rounded-xl bg-[#1a1a1a] text-white text-sm " +
     "focus:outline-none focus:border-[#f6b100]/50 transition-colors";
@@ -111,6 +112,8 @@ export default function FiscalConfig() {
                 pedidosYaCommissionPct: Math.round((Number(data?.features?.orderSources?.pedidosYa?.commissionRate ?? 0.26)) * 100),
                 uberEatsCommissionPct: Math.round((Number(data?.features?.orderSources?.uberEats?.commissionRate ?? 0.22)) * 100),
                 deliveryEnabled: !!data?.features?.orderSources?.delivery?.enabled,
+                preInvoiceEnabled: !!data?.features?.preInvoice?.enabled,
+
 
             },
             fiscalEnabled: !!data?.fiscal?.enabled,
@@ -180,6 +183,7 @@ export default function FiscalConfig() {
                     tax: { enabled: !!form.features.taxEnabled },
                     tip: { enabled: !!form.features.tipEnabled },
                     discount: { enabled: !!form.features.discountEnabled },
+                    preInvoice: { enabled: !!form.features.preInvoiceEnabled },
                     orderSources: {
                         pedidosYa: {
                             enabled: !!form.features.pedidosYaEnabled,
@@ -415,6 +419,31 @@ export default function FiscalConfig() {
                         </div>
                     </div>
                 </Section>
+            </div>
+            {/* PreFactura */}
+            <div className="rounded-lg border border-gray-800/30 bg-[#1a1a1a]/50 p-4 mb-6">
+                <ToggleRow
+                    label="PreFactura"
+                    desc='Si está activo, las facturas NO fiscales mostrarán "PreFactura" en vez de "Factura para Consumidor Final".'
+                    checked={!!form.features.preInvoiceEnabled}
+                    onChange={(v) =>
+                        setForm((f) => ({
+                            ...f,
+                            features: { ...f.features, preInvoiceEnabled: v },
+                        }))
+                    }
+                />
+
+                {form.features.preInvoiceEnabled && (
+                    <div className="mt-4 pt-4 border-t border-gray-800/30">
+                        <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                            <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-gray-400">
+                                Nota: “PreFactura” solo aplica a facturas NO fiscales (sin NCF). Si una orden es fiscal, seguirá saliendo “Factura con Comprobante Fiscal”.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Configuración NCF */}
