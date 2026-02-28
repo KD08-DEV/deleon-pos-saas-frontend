@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
@@ -136,6 +137,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     useEffect(() => {
         setDeliveryFee(num(order?.bills?.deliveryFee ?? 0));
     }, [order?._id]); // cuando cambias de orden
+
+
+
+    const [orderNote, setOrderNote] = useState("");
+    const [draftOrderNote, setDraftOrderNote] = useState("");
+    const [isNoteOpen, setIsNoteOpen] = useState(false);
 
 
     const [showInvoice, setShowInvoice] = useState(false);
@@ -353,6 +360,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             discount: num(discount),      // usa tu cálculo actual
             tax: num(tax),
             tip: num(tip),
+
             totalWithTax: num(total),
             taxEnabled,
             tipEnabled,
@@ -367,6 +375,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 : paymentMethod,
             discount: { type: discountType, value: num(discountValue) || 0 },
             bills,
+            orderNote: String(orderNote || "").trim(),
         };
 
         // customerDetails (si hay data)
@@ -622,6 +631,80 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     ${num(subtotal).toFixed(2)}
                 </h1>
             </div>
+            {/* Nota de la orden */}
+            <div className="mt-3 rounded-lg border border-gray-800/50 bg-[#111111] p-3">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-white">Nota</span>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setDraftOrderNote(orderNote || "");
+                            setIsNoteOpen(true);
+                        }}
+                        className="px-3 py-2 rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab] hover:bg-[#2b2b2b] hover:text-white"
+                    >
+                        {orderNote?.trim() ? "Editar" : "Agregar"}
+                    </button>
+                </div>
+
+                {orderNote?.trim() ? (
+                    <p className="text-xs text-gray-400 mt-2 line-clamp-2">{orderNote}</p>
+                ) : (
+                    <p className="text-xs text-gray-500 mt-2">Sin nota</p>
+                )}
+            </div>
+            <AnimatePresence>
+                {isNoteOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
+                        onClick={() => setIsNoteOpen(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-md rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h3 className="text-white text-lg font-semibold">Nota de la orden</h3>
+
+                            <textarea
+                                value={draftOrderNote}
+                                onChange={(e) => setDraftOrderNote(e.target.value)}
+                                rows={4}
+                                className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                placeholder="Ej: Sin cebolla, poco picante, entregar en recepción..."
+                                autoFocus
+                            />
+
+                            <div className="flex gap-3 mt-5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsNoteOpen(false)}
+                                    className="px-4 py-3 w-full rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab]"
+                                >
+                                    Cancelar
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setOrderNote(draftOrderNote);
+                                        setIsNoteOpen(false);
+                                    }}
+                                    className="px-4 py-3 w-full rounded-lg font-semibold bg-[#2b2b2b] text-white"
+                                >
+                                    Guardar
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Descuento + Propina */}
             <div className="px-5 mt-3">

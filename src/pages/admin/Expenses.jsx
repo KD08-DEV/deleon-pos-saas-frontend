@@ -200,9 +200,6 @@ export default function Expenses() {
                 {!rows.length ? <div className="px-3 py-4 text-white/60">No hay gastos en este rango.</div> : null}
             </div>
 
-            <div className="mt-8">
-                <MermaPanel />
-            </div>
         </section>
     );
 }

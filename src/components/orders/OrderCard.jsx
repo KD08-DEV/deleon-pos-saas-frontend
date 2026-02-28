@@ -9,7 +9,7 @@ import Invoice from "../invoice/Invoice";
 import SplitBillModal from "./SplitBillModal";
 import SplitInvoicesModal from "./SplitInvoicesModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, X, Circle, ArrowLeft, ArrowRight, Receipt, CreditCard, Clock, User, Hash, MoreVertical, Table2, Users, Package, Calendar } from "lucide-react";
+import { CheckCircle2, X, Circle, ArrowLeft, ArrowRight, Receipt, CreditCard, Clock, User, Hash, MoreVertical, Table2, Users, Package, Calendar, MessageSquareText  } from "lucide-react";
 
 
 
@@ -645,6 +645,20 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                         </div>
                     </div>
 
+                    {/* Nota de la orden */}
+                    {String(localOrder?.orderNote || "").trim() && (
+                        <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/5 rounded-lg p-3 border border-amber-500/20">
+                            <div className="flex items-center gap-2 mb-1">
+                                <MessageSquareText className="w-4 h-4 text-amber-300 shrink-0" />
+                                <span className="uppercase tracking-wide text-xs text-amber-300 font-semibold">
+                                Nota
+                              </span>
+                            </div>
+                            <p className="text-sm text-[#f5f5f5] whitespace-pre-line leading-snug">
+                                {localOrder?.orderNote}
+                            </p>
+                        </div>
+                    )}
                     {/* Created date */}
                     <div className="flex items-center gap-2 text-xs text-[#ababab]">
                         <Clock className="w-3.5 h-3.5" />

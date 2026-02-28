@@ -51,6 +51,8 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
     const dishes = Array.isArray(data) ? data : [];
     const [search, setSearch] = useState("");
+    const [customPriceDish, setCustomPriceDish] = useState(null);
+    const [customPriceValue, setCustomPriceValue] = useState("");
     const searchTrim = search.trim().toLowerCase();
     const invCategories = Array.isArray(invCatsData) ? invCatsData : [];
 
@@ -177,6 +179,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
 
 
+
     // Agregar al carrito
     const addToCart = (dish) => {
         const sellMode = String(dish?.sellMode || "unit").toLowerCase();
@@ -189,14 +192,23 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                 return;
             }
 
+            // Si es precio manual, abre modal y no agregues aún
+            if (dish?.allowCustomPrice) {
+                setCustomPriceDish(dish);
+                setCustomPriceValue(""); // limpio
+                return;
+            }
+
+            const unitPrice = Number(dish.price) || 0;
+
             const item = {
                 id: dish._id,
                 dishId: dish._id,
                 name: dish.name,
                 qtyType: "unit",
                 quantity,
-                unitPrice: Number(dish.price) || 0,
-                price: (Number(dish.price) || 0) * quantity,
+                unitPrice,
+                price: unitPrice * quantity,
                 imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
             };
 
@@ -255,6 +267,96 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                focus:ring-1 focus:ring-[#f6b100] focus:border-[#f6b100]"
                 />
             </div>
+            <AnimatePresence>
+                {customPriceDish && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
+                        onClick={() => setCustomPriceDish(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="w-full max-w-md rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h3 className="text-white text-lg font-semibold">
+                                Precio manual
+                            </h3>
+                            <p className="text-sm text-gray-400 mt-1">
+                                {customPriceDish?.name}
+                            </p>
+
+                            <div className="mt-4">
+                                <label className="text-sm text-gray-400 mb-1 block">
+                                    Escribe el precio
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={customPriceValue}
+                                    onChange={(e) => setCustomPriceValue(e.target.value)}
+                                    className="w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    placeholder="Ej: 350"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="flex gap-3 mt-5">
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomPriceDish(null)}
+                                    className="px-4 py-3 w-full rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab]"
+                                >
+                                    Cancelar
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const quantity = getQty(customPriceDish._id);
+                                        const manual = Number(String(customPriceValue ?? "").replace(",", "."));
+
+                                        if (!Number.isFinite(manual) || manual < 0) {
+                                            enqueueSnackbar?.("Precio manual inválido.", { variant: "warning" });
+                                            return;
+                                        }
+
+                                        const unitPrice = manual;
+                                        const item = {
+                                            id: customPriceDish._id,
+                                            dishId: customPriceDish._id,
+                                            name: customPriceDish.name,
+                                            qtyType: "unit",
+                                            quantity,
+                                            unitPrice,
+                                            price: unitPrice * quantity,
+                                            imageUrl: customPriceDish.imageUrl ? `http://localhost:8000${customPriceDish.imageUrl}` : "",
+                                            allowCustomPrice: true,
+                                        };
+
+                                        if (typeof onAddToCart === "function") {
+                                            onAddToCart(item);
+                                        } else {
+                                            dispatch(addItems(item));
+                                        }
+
+                                        enqueueSnackbar?.(`${item.name} x${item.quantity} agregado`, { variant: "success" });
+                                        setCustomPriceDish(null);
+                                    }}
+                                    className="px-4 py-3 w-full rounded-lg font-semibold bg-[#2b2b2b] text-white"
+                                >
+                                    Agregar
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {isLoading && (
                 <p className="text-[#ababab] text-center py-10">Loading menu...</p>

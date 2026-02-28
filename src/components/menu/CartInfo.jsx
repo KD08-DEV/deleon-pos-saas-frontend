@@ -1,13 +1,14 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+
 import { RiDeleteBin2Fill } from "react-icons/ri";
 import { FaNotesMedical } from "react-icons/fa6";
 import { useDispatch, useSelector } from "react-redux";
 import { removeItem } from "../../redux/slices/cartSlice";
 
 const CartInfo = () => {
-  const cartData = useSelector((state) => state.cart);
-  const scrolLRef = useRef();
-  const dispatch = useDispatch();
+    const cartData = useSelector((state) => state.cart);
+    const scrolLRef = useRef();
+    const dispatch = useDispatch();
 
   useEffect(() => {
     if(scrolLRef.current){

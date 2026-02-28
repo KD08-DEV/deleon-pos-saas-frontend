@@ -117,15 +117,7 @@ const Header = memo(() => {
             </div>
 
             <div className="flex items-center gap-3">
-                {userData?.role === "Admin" && (
-                    <button
-                        onClick={handleDashboard}
-                        className="relative bg-gradient-to-br from-[#1f1f1f] to-[#252525] rounded-xl p-3 cursor-pointer border border-[#2a2a2a]/50 hover:border-blue-500/50 hover:scale-105 active:scale-95 transition-all duration-200 group"
-                        title="Dashboard"
-                    >
-                        <LayoutDashboard className="text-[#f5f5f5] text-xl group-hover:text-blue-400 transition-colors" />
-                    </button>
-                )}
+
 
                 {/* Campana */}
                 <div className="relative" ref={notifRef}>
@@ -203,8 +195,8 @@ const Header = memo(() => {
                                                         </p>
                                                     </div>
                                                     <span className="text-xs font-semibold text-yellow-400 whitespace-nowrap">
-                            Bajo stock
-                          </span>
+                                                    Bajo stock
+                                                  </span>
                                                 </div>
                                             </button>
                                         ))

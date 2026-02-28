@@ -49,6 +49,7 @@ const MenuManagement = () => {
         category: "",
         inventoryCategoryId: "",
         isInventoryItem: false,
+        allowCustomPrice: false,
         price: "",
         sellMode: "unit",
         weightUnit: "lb",
@@ -82,25 +83,50 @@ const MenuManagement = () => {
             [];
         return Array.isArray(raw) ? raw : [];
     }, [data]);
+    const [invCats, setInvCats] = useState([]);
+    const getDishCategoryLabel = (dish) => {
+        // si viene poblado (objeto)
+        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
+
+        // si viene como string ObjectId
+        const id = dish?.inventoryCategoryId;
+        if (id) {
+            const found = invCats.find((c) => String(c._id) === String(id));
+            if (found?.name) return found.name;
+        }
+
+        // fallback
+        return dish?.category || "Sin categoría";
+    };
 
     // Obtener categorías únicas
+// ✅ Categorías únicas (usando la misma lógica del badge)
     const categories = useMemo(() => {
-        const cats = new Set();
-        dishes.forEach((dish) => {
-            if (dish.category) cats.add(dish.category);
-        });
-        return Array.from(cats).sort();
-    }, [dishes]);
+        const set = new Set();
+        for (const dish of dishes) {
+            const label = getDishCategoryLabel(dish);
+            if (label && label.trim()) set.add(label.trim());
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [dishes, invCats]); // 👈 importante: invCats afecta el label
 
     // Filtrar platos
     const filteredDishes = useMemo(() => {
+        const q = searchTerm.toLowerCase();
+
         return dishes.filter((dish) => {
-            const matchesSearch = dish.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                 dish.category?.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesCategory = !selectedCategory || dish.category === selectedCategory;
+            const label = getDishCategoryLabel(dish);
+
+            const matchesSearch =
+                dish.name?.toLowerCase().includes(q) ||
+                label?.toLowerCase().includes(q);
+
+            const matchesCategory =
+                !selectedCategory || label === selectedCategory;
+
             return matchesSearch && matchesCategory;
         });
-    }, [dishes, searchTerm, selectedCategory]);
+    }, [dishes, searchTerm, selectedCategory, invCats]);
 
     const resetForm = () => {
         setDishForm({
@@ -108,6 +134,7 @@ const MenuManagement = () => {
             category: "",
             inventoryCategoryId: "",
             isInventoryItem: false,
+            allowCustomPrice: false,
             price: "",
             sellMode: "unit",
             weightUnit: "lb",
@@ -125,12 +152,18 @@ const MenuManagement = () => {
     };
 
     const openEditModal = (dish) => {
+        const invId = dish?.inventoryCategoryId?._id || dish?.inventoryCategoryId || "";
+        const invObj = invCats.find((c) => String(c._id) === String(invId));
+        const invName = invObj?.name ? String(invObj.name).trim() : "";
+
         setEditingDish(dish);
         setDishForm({
             name: dish.name || "",
-            category: dish.category || "",
+            // ✅ category siempre será la del inventario si existe
+            category: invName || dish.category || "",
 
-            inventoryCategoryId: dish?.inventoryCategoryId?._id || dish?.inventoryCategoryId || "",
+            allowCustomPrice: Boolean(dish.allowCustomPrice),
+            inventoryCategoryId: invId,
             price: dish.price?.toString() || "",
             sellMode: dish.sellMode || "unit",
             weightUnit: dish.weightUnit || "lb",
@@ -140,6 +173,7 @@ const MenuManagement = () => {
             lastCost: dish.lastCost != null ? String(dish.lastCost) : "",
             imageFile: null,
         });
+
         setShowDishModal(true);
     };
 
@@ -160,7 +194,8 @@ const MenuManagement = () => {
                 setDishForm((f) => ({
                     ...f,
                     inventoryCategoryId: created._id,
-                    isInventoryItem: true,
+                    category: String(created.name || "").trim(), // ✅ copiar
+                    isInventoryItem: false,
                 }));
             }
 
@@ -206,7 +241,7 @@ const MenuManagement = () => {
             enqueueSnackbar(error?.response?.data?.message || "Error al eliminar plato", { variant: "error" });
         },
     });
-    const [invCats, setInvCats] = useState([]);
+
     const reloadInvCats = async () => {
         try {
             const res = await api.get("/api/admin/inventory/categories");
@@ -222,20 +257,7 @@ const MenuManagement = () => {
         reloadInvCats();
     }, []);
 
-    const getDishCategoryLabel = (dish) => {
-        // si viene poblado (objeto)
-        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
 
-        // si viene como string ObjectId
-        const id = dish?.inventoryCategoryId;
-        if (id) {
-            const found = invCats.find((c) => String(c._id) === String(id));
-            if (found?.name) return found.name;
-        }
-
-        // fallback
-        return dish?.category || "Sin categoría";
-    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -247,18 +269,23 @@ const MenuManagement = () => {
 
         const formData = new FormData();
 
-        // ✅ Campos base del plato (MENÚ)
         formData.append("name", String(dishForm.name || "").trim());
-        formData.append("category",dishForm.inventoryCategoryId || "");
+        formData.append("category", String(dishForm.category || "").trim());
 
-        // ✅ Modo de venta (default: unit)
         const sellMode = dishForm.sellMode || "unit";
         const weightUnit = dishForm.weightUnit || "lb";
 
         formData.append("sellMode", sellMode);
         formData.append("weightUnit", weightUnit);
+        formData.append("allowCustomPrice", dishForm.allowCustomPrice ? "true" : "false");
 
-        formData.append("inventoryCategoryId", dishForm.inventoryCategoryId || "");
+        // ✅ Recomendado: explícito
+        formData.append("isInventoryItem", dishForm.isInventoryItem ? "true" : "false");
+
+        // ✅ NO mandar vacío
+        if (dishForm.inventoryCategoryId && String(dishForm.inventoryCategoryId).trim() !== "") {
+            formData.append("inventoryCategoryId", String(dishForm.inventoryCategoryId).trim());
+        }
 
         const basePrice =
             sellMode === "weight" ? Number(dishForm.pricePerLb || 0) : Number(dishForm.price || 0);
@@ -335,9 +362,22 @@ const MenuManagement = () => {
                     </div>
                     <select
                         value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        onChange={(e) => {
+                            const invId = e.target.value;
+
+                            const invObj = invCats.find((c) => String(c._id) === String(invId));
+                            const invName = invObj?.name ? String(invObj.name).trim() : "";
+
+                            setDishForm((f) => ({
+                                ...f,
+                                inventoryCategoryId: invId,
+                                // ✅ Copia la misma categoría al plato
+                                category: invName || f.category,
+                            }));
+                        }}
                         className="p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                     >
+
                         <option value="">Todas las categorías</option>
                         {categories.map((cat) => (
                             <option key={cat} value={cat}>{cat}</option>
@@ -426,14 +466,13 @@ const MenuManagement = () => {
             {/* Modal de crear/editar plato */}
             {showDishModal && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-                    onClick={closeModal}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-3 sm:px-4 pt-6 pb-[calc(env(safe-area-inset-bottom)+5.5rem)]"                    onClick={closeModal}
                 >
                     <div
-                        className="w-full max-w-2xl bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+                        className="w-full sm:max-w-2xl bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100dvh-7.5rem)] sm:max-h-[90vh] flex flex-col"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="p-6 border-b border-gray-800/50">
+                        <div className="p-4 sm:p-6 border-b border-gray-800/50 shrink-0">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-xl font-bold text-white">
                                     {editingDish ? "Editar Plato" : "Agregar Nuevo Plato"}
@@ -447,7 +486,10 @@ const MenuManagement = () => {
                             </div>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        <form
+                            onSubmit={handleSubmit}
+                            className="flex-1 modern-scroll overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+                        >
                             {/* Nombre */}
                             <div>
                                 <label className="text-sm text-gray-400 mb-1 block">Nombre del Plato *</label>
@@ -471,9 +513,26 @@ const MenuManagement = () => {
                                         value={dishForm.inventoryCategoryId || ""}
                                         onChange={(e) => {
                                             const val = e.target.value;
+
+                                            // si selecciona "Sin categoría"
+                                            if (!val) {
+                                                setDishForm((f) => ({
+                                                    ...f,
+                                                    inventoryCategoryId: "",
+                                                    // si quieres limpiar también la category del plato, descomenta:
+                                                    // category: "",
+                                                }));
+                                                return;
+                                            }
+
+                                            const invObj = invCats.find((c) => String(c._id) === String(val));
+                                            const invName = invObj?.name ? String(invObj.name).trim() : "";
+
                                             setDishForm((f) => ({
                                                 ...f,
                                                 inventoryCategoryId: val,
+                                                category: invName || f.category, // ✅ aquí se copia el nombre
+                                                isInventoryItem: false,          // ✅ importante: no convertirlo en inventario directo
                                             }));
                                         }}
                                         className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
@@ -499,8 +558,63 @@ const MenuManagement = () => {
                                     Esta es la categoría de inventario (reportes/control de stock).
                                 </p>
                             </div>
+                            {/* Precio Manual (estilo UberEats / botones tipo método de pago) */}
+                            {!dishForm.isInventoryItem && (
+                                <div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Tipo de Precio</label>
+
+                                    <div className="flex items-center justify-between gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setDishForm((f) => ({
+                                                    ...f,
+                                                    allowCustomPrice: false,
+                                                }));
+                                            }}
+                                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                                                !dishForm.allowCustomPrice
+                                                    ? "bg-[#2b2b2b] text-white"
+                                                    : "bg-[#1f1f1f] text-[#ababab]"
+                                            }`}
+                                        >
+                                            Precio fijo
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setDishForm((f) => ({
+                                                    ...f,
+                                                    allowCustomPrice: true,
+
+                                                    // fuerza modo unit y limpia precios fijos
+                                                    sellMode: "unit",
+                                                    price: "",
+                                                    pricePerLb: "",
+                                                    weightUnit: "lb",
+                                                }));
+                                            }}
+                                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                                                dishForm.allowCustomPrice
+                                                    ? "bg-[#2b2b2b] text-white"
+                                                    : "bg-[#1f1f1f] text-[#ababab]"
+                                            }`}
+                                        >
+                                            Precio manual
+                                        </button>
+                                    </div>
+
+                                    {dishForm.allowCustomPrice && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            El precio se definirá al momento de facturar.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Modo de venta */}
+                            {!dishForm.allowCustomPrice && (
                             <div>
                                 <label className="text-sm text-gray-400 mb-1 block">Modo de Venta *</label>
                                 <select
@@ -512,55 +626,59 @@ const MenuManagement = () => {
                                     <option value="weight">Por Peso</option>
                                 </select>
                             </div>
-
+                            )}
                             {/* Precio según modo */}
-                            {dishForm.sellMode === "weight" ? (
-                                <>
+                            {!dishForm.allowCustomPrice && (
+                                dishForm.sellMode === "weight" ? (
+                                    <>
+                                        <div>
+                                            <label className="text-sm text-gray-400 mb-1 block">Unidad de Peso *</label>
+                                            <select
+                                                value={dishForm.weightUnit}
+                                                onChange={(e) => setDishForm((f) => ({ ...f, weightUnit: e.target.value }))}
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            >
+                                                <option value="lb">Libra (lb)</option>
+                                                <option value="kg">Kilogramo (kg)</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-sm text-gray-400 mb-1 block">
+                                                Precio por {dishForm.weightUnit} *
+                                            </label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={dishForm.pricePerLb}
+                                                onChange={(e) => setDishForm((f) => ({ ...f, pricePerLb: e.target.value }))}
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                required
+                                            />
+                                        </div>
+                                    </>
+                                ) : (
                                     <div>
-                                        <label className="text-sm text-gray-400 mb-1 block">Unidad de Peso *</label>
-                                        <select
-                                            value={dishForm.weightUnit}
-                                            onChange={(e) => setDishForm((f) => ({ ...f, weightUnit: e.target.value }))}
-                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                        >
-                                            <option value="lb">Libra (lb)</option>
-                                            <option value="kg">Kilogramo (kg)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-sm text-gray-400 mb-1 block">
-                                            Precio por {dishForm.weightUnit} *
+                                        <label className="text-sm text-gray-400 mb-1 block flex items-center gap-2">
+                                            <DollarSign className="w-4 h-4" />
+                                            Precio (por unidad) *
                                         </label>
                                         <input
                                             type="number"
                                             step="0.01"
                                             min="0"
-                                            value={dishForm.pricePerLb}
-                                            onChange={(e) => setDishForm((f) => ({ ...f, pricePerLb: e.target.value }))}
+                                            value={dishForm.price}
+                                            onChange={(e) => setDishForm((f) => ({ ...f, price: e.target.value }))}
                                             className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                             required
                                         />
                                     </div>
-                                </>
-                            ) : (
-                                <div>
-                                    <label className="text-sm text-gray-400 mb-1 block flex items-center gap-2">
-                                        <DollarSign className="w-4 h-4" />
-                                        Precio (por unidad) *
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={dishForm.price}
-                                        onChange={(e) => setDishForm((f) => ({ ...f, price: e.target.value }))}
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                        required
-                                    />
-                                </div>
+                                )
                             )}
 
                             {/* Costos (opcionales) */}
+                            {!dishForm.allowCustomPrice && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-sm text-gray-400 mb-1 block">Costo promedio (opcional)</label>
@@ -588,6 +706,7 @@ const MenuManagement = () => {
                                     />
                                 </div>
                             </div>
+                            )}
 
                             {/* Imagen */}
                             <div>

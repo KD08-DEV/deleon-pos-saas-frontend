@@ -1407,25 +1407,29 @@ const CashRegister = () => {
             <div className={showFullView ? "pointer-events-none select-none" : ""}>
                 {/* TODO tu contenido actual de la página (header, cards, tabla, etc.) */}
         <div className={showFullView ? "pointer-events-none select-none" : ""}>
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Cierre de Caja </h2>
-                {isAdmin && showSummary && (
-                    <button
-                        onClick={() => setShowFullView(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
-                    >
-                        <Search className="w-4 h-4" />
-                        Ver Registros Completos
-                    </button>
-                )}
-                <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-400">Fecha:</span>
-                    <input
-                        type="date"
-                        value={selectedYMD}
-                        onChange={(e) => setSelectedYMD(e.target.value)}
-                        className="bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
-                    />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <h2 className="text-2xl font-bold text-white">Cierre de Caja</h2>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <span className="text-sm text-gray-400 whitespace-nowrap">Fecha:</span>
+                        <input
+                            type="date"
+                            value={selectedYMD}
+                            onChange={(e) => setSelectedYMD(e.target.value)}
+                            className="w-full sm:w-auto bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
+                        />
+                    </div>
+
+                    {isAdmin && showSummary && (
+                        <button
+                            onClick={() => setShowFullView(true)}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                        >
+                            <Search className="w-4 h-4" />
+                            Ver Registros Completos
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1850,6 +1854,87 @@ const CashRegister = () => {
             </div>
         )}
 
+            {/* Vista móvil (cards) - últimos 10 */}
+            <div className="sm:hidden">
+                <div className="space-y-3">
+                    {(dayReports?.length ?? 0) === 0 ? (
+                        <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-6 text-center text-gray-500">
+                            No hay registros disponibles
+                        </div>
+                    ) : (
+                        dayReports.map((r) => (
+                            <div
+                                key={r._id}
+                                className="rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4"
+                            >
+                                {/* Header */}
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-sm text-gray-400">Usuario</div>
+                                        <div className="text-white font-semibold truncate">
+                                            {r?.user?.name || "—"}
+                                        </div>
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                        <div className="text-sm text-gray-400">Fecha</div>
+                                        <div className="text-white text-sm">
+                                            {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Body */}
+                                <div className="mt-3 grid grid-cols-2 gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-xs text-gray-400">Cliente</div>
+                                        <div className="text-sm text-white truncate">{getClientName(r)}</div>
+                                    </div>
+
+                                    <div className="min-w-0">
+                                        <div className="text-xs text-gray-400">Método</div>
+                                        <div className="text-sm text-white truncate">
+                                            {r?.paymentMethod || "Efectivo"}
+                                        </div>
+                                    </div>
+
+                                    <div className="col-span-2">
+                                        <div className="text-xs text-gray-400">Total</div>
+                                        <div className="text-lg font-bold text-[#f6b100]">
+                                            {currency(r?.bills?.totalWithTax)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="mt-4 flex items-center justify-between">
+                                    <div className="text-xs text-gray-500">
+                                        {r?._id ? `ID: ${String(r._id).slice(-6)}` : "—"}
+                                    </div>
+
+                                    {r?._id ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => verFactura(r._id)}
+                                            className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gray-800/50 text-sm text-white hover:bg-[#222] transition-colors"
+                                        >
+                                            Ver factura
+                                        </button>
+                                    ) : (
+                                        <span className="text-xs text-gray-500">No disponible</span>
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
+                    <div className="mt-3 rounded-lg border border-gray-800/50 bg-[#1a1a1a]/50 p-3 text-center text-xs text-gray-400">
+                        Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                    </div>
+                )}
+            </div>
             {/* Tabla (últimos 10) */}
             {isAdmin ? (
                 isLoading ? (
@@ -1859,74 +1944,80 @@ const CashRegister = () => {
                         Error al cargar registros{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
                     </div>
                 ) : (
-                    <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
-                                <tr>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
-                                </tr>
-                                </thead>
 
-                                <tbody>
-                                {(dayReports?.length ?? 0) === 0 ? (
+
+                    <div className="hidden sm:block">
+                        <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                     <tr>
-                                        <td colSpan={6} className="text-center py-8 text-gray-500">
-                                            No hay registros disponibles
-                                        </td>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
                                     </tr>
-                                ) : (
-                                    dayReports.map((r) => (
-                                        <tr
-                                            key={r._id}
-                                            className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
-                                        >
-                                            <td className="p-3 text-sm text-gray-300">
-                                                {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
-                                            </td>
-                                            <td className="p-3 text-sm text-gray-300">{r?.user?.name || "—"}</td>
-                                            <td className="p-3 text-sm text-gray-300">{getClientName(r)}</td>
-                                            <td className="p-3 text-sm text-gray-300">{r?.paymentMethod || "Efectivo"}</td>
-                                            <td className="p-3 text-sm font-bold text-[#f6b100]">
-                                                {currency(r?.bills?.totalWithTax)}
-                                            </td>
-                                            <td className="p-3">
-                                                {r?._id ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => verFactura(r._id)}
-                                                        className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
-                                                    >
-                                                        Ver
-                                                    </button>
-                                                ) : (
-                                                    <span className="text-xs text-gray-500">No disponible</span>
-                                                )}
+                                    </thead>
+
+                                    <tbody>
+                                    {(dayReports?.length ?? 0) === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} className="text-center py-8 text-gray-500">
+                                                No hay registros disponibles
                                             </td>
                                         </tr>
-                                    ))
-                                )}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
-                            <div className="p-4 bg-[#1a1a1a]/50 border-t border-gray-800/50 text-center text-sm text-gray-400">
-                                Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                                    ) : (
+                                        dayReports.map((r) => (
+                                            <tr
+                                                key={r._id}
+                                                className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
+                                            >
+                                                <td className="p-3 text-sm text-gray-300">
+                                                    {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                                                </td>
+                                                <td className="p-3 text-sm text-gray-300">{r?.user?.name || "—"}</td>
+                                                <td className="p-3 text-sm text-gray-300">{getClientName(r)}</td>
+                                                <td className="p-3 text-sm text-gray-300">{r?.paymentMethod || "Efectivo"}</td>
+                                                <td className="p-3 text-sm font-bold text-[#f6b100]">
+                                                    {currency(r?.bills?.totalWithTax)}
+                                                </td>
+                                                <td className="p-3">
+                                                    {r?._id ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => verFactura(r._id)}
+                                                            className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
+                                                        >
+                                                            Ver
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-500">No disponible</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                    </tbody>
+                                </table>
                             </div>
-                        )}
+
+                            {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
+                                <div className="p-4 bg-[#1a1a1a]/50 border-t border-gray-800/50 text-center text-sm text-gray-400">
+                                    Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                                </div>
+                            )}
+                        </div>
                     </div>
+
                 )
             ) : (
                 <div className="mt-4 text-sm text-white/60">
                     Los registros del día solo están disponibles para administración.
                 </div>
             )}
+
 
 
             {/* Modal flotante */}

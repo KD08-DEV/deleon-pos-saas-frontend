@@ -69,7 +69,24 @@ export default function Tables() {
 
 
     const tables = data || [];
+    const [selectedArea, setSelectedArea] = React.useState("all");
 
+    const areas = React.useMemo(() => {
+        const set = new Set();
+        for (const t of tables) {
+            if (t?.isVirtual) continue;
+            set.add((t?.area || "General").trim());
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [tables]);
+
+    const filteredTables = React.useMemo(() => {
+        const onlyReal = tables.filter((t) => !t?.isVirtual);
+
+        if (selectedArea === "all") return onlyReal;
+
+        return onlyReal.filter((t) => (t?.area || "General").trim() === selectedArea);
+    }, [tables, selectedArea]);
     const mUpdateOrder = useMutation({
         mutationFn: ({ id, body }) => updateOrder(id, body),
         onSuccess: (_res, vars) => {
@@ -209,6 +226,19 @@ export default function Tables() {
 
     return (
         <section className="bg-[#111] min-h-screen px-6 pt-6 pb-24">
+            <div className="mb-4 flex items-center gap-3">
+                <label className="text-gray-300 text-sm">Área:</label>
+                <select
+                    value={selectedArea}
+                    onChange={(e) => setSelectedArea(e.target.value)}
+                    className="bg-[#1f1f1f] text-white text-sm rounded-lg px-3 py-2 border border-white/10"
+                >
+                    <option value="all">Todas</option>
+                    {areas.map((a) => (
+                        <option key={a} value={a}>{a}</option>
+                    ))}
+                </select>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <TableCard table={quickCard} onPick={() => handlePickTable(quickCard)} />
                 {pedidosYaEnabled && (
@@ -224,7 +254,7 @@ export default function Tables() {
                 {isLoading ? (
                     <div className="text-gray-400">Cargando mesas…</div>
                 ) : (
-                    tables.map((t) => (
+                    filteredTables.map((t) => (
                         <TableCard
                             key={t._id || t.id}
                             table={t}

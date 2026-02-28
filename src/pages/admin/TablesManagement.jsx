@@ -14,6 +14,7 @@ const TablesManagement = () => {
     const [tableForm, setTableForm] = useState({
         tableNo: "",
         seats: "",
+        area: "General",
     });
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
@@ -30,24 +31,50 @@ const TablesManagement = () => {
     });
 
     const tables = data || [];
+    const getAreaCode = (areaRaw) => {
+        const area = String(areaRaw || "General").trim().toLowerCase();
+
+        if (area === "terraza") return "TER";
+        if (area === "vip") return "VIP";
+        if (area === "salón" || area === "salon") return "SAL";
+        if (area === "barra") return "BAR";
+        return "GEN";
+    };
+    const getTableLabel = (table) => {
+        const code = getAreaCode(table?.area);
+        const no = table?.tableNo ?? "—";
+        return `${code}-${no}`;
+    };
 
     // Filtrar mesas
     const filteredTables = useMemo(() => {
+
         return tables
             .filter((table) => !table.isVirtual) // Excluir mesas virtuales
             .filter((table) => {
                 const tableNo = String(table.tableNo || "").toLowerCase();
                 const status = String(table.status || "").toLowerCase();
                 const search = searchTerm.toLowerCase();
-                return tableNo.includes(search) || status.includes(search);
-            })
-            .sort((a, b) => (a.tableNo || 0) - (b.tableNo || 0));
-    }, [tables, searchTerm]);
+                const area = String(table.area || "General").toLowerCase();
+                const label = getTableLabel(table).toLowerCase();
+
+                return (
+                    tableNo.includes(search) ||
+                    status.includes(search) ||
+                    area.includes(search) ||
+                    label.includes(search)
+                );            })
+            .sort((a, b) => {
+                const aa = String(a.area || "General").localeCompare(String(b.area || "General"));
+                if (aa !== 0) return aa;
+                return (a.tableNo || 0) - (b.tableNo || 0);
+            });    }, [tables, searchTerm]);
 
     const resetForm = () => {
         setTableForm({
             tableNo: "",
             seats: "",
+            area: "General",
         });
         setEditingTable(null);
     };
@@ -62,6 +89,7 @@ const TablesManagement = () => {
         setTableForm({
             tableNo: table.tableNo?.toString() || "",
             seats: table.seats?.toString() || "",
+            area: (table.area || "General").toString(),
         });
         setShowTableModal(true);
     };
@@ -110,16 +138,19 @@ const TablesManagement = () => {
         e.preventDefault();
         const tableNo = parseInt(tableForm.tableNo);
         const seats = parseInt(tableForm.seats);
+        const area = (tableForm.area || "General").trim();
 
         if (editingTable?._id) {
             updateMutation.mutate({
                 id: editingTable._id,
-                body: { tableNo, seats },
+                body: { tableNo, seats, area },
             });
         } else {
-            createMutation.mutate({ tableNo, seats });
+            createMutation.mutate({ tableNo, seats, area });
         }
     };
+
+
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -215,8 +246,8 @@ const TablesManagement = () => {
                                     <Table2 className="w-5 h-5 text-[#f6b100]" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">Mesa {table.tableNo}</h3>
-                                    <p className="text-xs text-gray-400">ID: {table._id?.slice(-6)}</p>
+                                    <h3 className="text-lg font-bold text-white">{getTableLabel(table)}</h3>
+                                    <p className="text-xs text-gray-400">{(table.area || "General").trim()} • ID: {table._id?.slice(-6)}</p>                                    <p className="text-xs text-gray-400">ID: {table._id?.slice(-6)}</p>
                                 </div>
                             </div>
                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -230,7 +261,7 @@ const TablesManagement = () => {
                                 {table.status === "Disponible" && (
                                     <button
                                         onClick={() => {
-                                            setDeleteTarget({ id: table._id, name: `Mesa ${table.tableNo}` });
+                                            setDeleteTarget({ id: table._id, name: getTableLabel(table) });
                                             setDeleteConfirmOpen(true);
                                         }}
                                         className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-red-500 transition-colors"
@@ -343,6 +374,25 @@ const TablesManagement = () => {
                                     className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                     required
                                 />
+                            </div>
+
+                            <div>
+                                <label className="text-sm text-gray-400 mb-1 block">
+                                    Área *
+                                </label>
+
+                                <select
+                                    value={tableForm.area}
+                                    onChange={(e) => setTableForm((f) => ({ ...f, area: e.target.value }))}
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    required
+                                >
+                                    <option value="General">General</option>
+                                    <option value="Terraza">Terraza</option>
+                                    <option value="VIP">VIP</option>
+                                    <option value="Barra">Barra</option>
+                                    <option value="Salon">Salón</option>
+                                </select>
                             </div>
 
                             {/* Botones */}
