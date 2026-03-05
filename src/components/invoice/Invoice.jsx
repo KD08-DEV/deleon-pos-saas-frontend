@@ -123,6 +123,34 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         order?.customerDetails?.address ||
         order?.customerAddress ||
         "";
+    const tableObj = order?.table && typeof order.table === "object" ? order.table : null;
+
+// Mesa como texto: "Mesa 1"
+    const tableName =
+        order?.tableName ||
+        order?.table?.name ||
+        (tableObj?.tableNo ? `Mesa ${tableObj.tableNo}` : "") ||
+        (typeof order?.table === "string" ? order.table : "") ||
+        "";
+
+// Mesero/usuario
+    const waiterName =
+        order?.waiterName ||
+        order?.serverName ||
+        order?.mesero ||
+        order?.waiter?.name ||
+        order?.user?.name ||
+        order?.createdBy?.name ||
+        "";
+
+// Sala/Área (Terraza suele venir en table.area)
+    const salaArea =
+        order?.roomName ||
+        order?.sala ||
+        order?.area ||
+        order?.section ||
+        tableObj?.area ||
+        "";
     // ===== Pago =====
     const paymentMethod = order?.paymentMethod || "Efectivo";
 
@@ -258,6 +286,23 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         )}
 
                         {/* ✅ Sucursal / Punto emisión */}
+                        {tableName && (
+                            <p>
+                                <span className="font-semibold">Mesa:</span> {tableName}
+                            </p>
+                        )}
+
+                        {waiterName && (
+                            <p>
+                                <span className="font-semibold">Mesero:</span> {waiterName}
+                            </p>
+                        )}
+
+                        {salaArea && (
+                            <p>
+                                <span className="font-semibold">Sala/Área:</span> {salaArea}
+                            </p>
+                        )}
                         {(branchName || emissionPoint) && (
                             <p>
                                 <span className="font-semibold">Sucursal:</span> {branchName}{" "}

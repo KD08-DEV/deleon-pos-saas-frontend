@@ -1,45 +1,20 @@
-import React, { memo, useEffect, useState } from "react";
-import api from "../../lib/api";
-import { useQuery, } from "@tanstack/react-query";
-import { useSelector, } from "react-redux";
+import React, { memo, useMemo, useRef } from "react";
+import api from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { useSelector } from "react-redux";
 import { motion } from "framer-motion";
 import { Trophy, ChefHat } from "lucide-react";
+import { enqueueSnackbar } from "notistack";
 
-const PopularDishItem = memo(({ dish, index }) => {
-    const [invCats, setInvCats] = useState([]);
-
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await api.get("/api/admin/inventory/categories");
-                const list = res.data?.data ?? [];
-                setInvCats(list);
-            } catch (e) {
-                console.error("Error cargando categorías:", e);
-            }
-        })();
-    }, []);
-    const getDishCategoryLabel = (dish) => {
-        // Caso 1: viene poblado
-        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
-
-        // Caso 2: viene como string id
-        const id = dish?.inventoryCategoryId;
-        if (id) {
-            const found = invCats?.find((c) => String(c._id) === String(id));
-            if (found?.name) return found.name;
-        }
-
-        // fallback (por si no tiene inventoryCategoryId)
-        return dish?.category || "Sin categoría";
-    };
-    const rankClass = index === 0
-        ? "bg-gradient-to-br from-yellow-400 to-amber-500 text-black"
-        : index === 1
-        ? "bg-gradient-to-br from-gray-400 to-gray-500 text-black"
-        : index === 2
-        ? "bg-gradient-to-br from-orange-400 to-orange-600 text-black"
-        : "bg-gradient-to-br from-[#2a2a2a] to-[#333] text-[#ababab]";
+const PopularDishItem = memo(({ dish, index, getDishCategoryLabel }) => {
+    const rankClass =
+        index === 0
+            ? "bg-gradient-to-br from-yellow-400 to-amber-500 text-black"
+            : index === 1
+                ? "bg-gradient-to-br from-gray-400 to-gray-500 text-black"
+                : index === 2
+                    ? "bg-gradient-to-br from-orange-400 to-orange-600 text-black"
+                    : "bg-gradient-to-br from-[#2a2a2a] to-[#333] text-[#ababab]";
 
     return (
         <motion.div
@@ -50,7 +25,9 @@ const PopularDishItem = memo(({ dish, index }) => {
             className="group relative flex items-center gap-4 bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-xl px-4 sm:px-6 py-4 hover:from-[#252525] hover:to-[#2a2a2a] transition-all duration-200 border border-[#2a2a2a]/50 hover:border-yellow-500/30 cursor-pointer"
         >
             <div className="relative flex-shrink-0">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-xl font-bold text-sm ${rankClass} group-hover:scale-110 transition-transform duration-200`}>
+                <div
+                    className={`flex items-center justify-center w-10 h-10 rounded-xl font-bold text-sm ${rankClass} group-hover:scale-110 transition-transform duration-200`}
+                >
                     {index + 1 < 10 ? `0${index + 1}` : index + 1}
                 </div>
                 {index < 3 && (
@@ -74,10 +51,12 @@ const PopularDishItem = memo(({ dish, index }) => {
                         {dish.name}
                     </h1>
                 </div>
+
                 <p className="text-[#ababab] text-xs sm:text-sm font-medium truncate">
                     <span className="text-[#666]">Categoria: </span>
                     {getDishCategoryLabel(dish) || "N/A"}
                 </p>
+
                 <p className="text-yellow-400 text-xs sm:text-sm font-bold mt-1">
                     ${dish.price}
                 </p>
@@ -86,26 +65,70 @@ const PopularDishItem = memo(({ dish, index }) => {
     );
 });
 
-PopularDishItem.displayName = 'PopularDishItem';
+PopularDishItem.displayName = "PopularDishItem";
 
 const PopularDishes = memo(({ fill = false }) => {
-
     const { userData } = useSelector((state) => state.user);
-    // 🔹 Llamamos a tu API con React Query (ya configurado en App.jsx)
+
+    // ✅ Para evitar spam de snackbar en 401
+    const warned401Ref = useRef(false);
+
+    // ✅ 1) Categorías (1 sola vez, no por item)
+    const { data: invCatsData = [], isError: invCatsError } = useQuery({
+        queryKey: ["inventoryCategories", userData?.tenantId],
+        enabled: Boolean(localStorage.getItem("token")), // evita request si no hay sesión
+        queryFn: async () => {
+            const res = await api.get("/api/admin/inventory/categories");
+            return res.data?.data ?? [];
+        },
+        retry: (failureCount, err) => {
+            const status = err?.response?.status;
+            if (status === 401) return false;
+            return failureCount < 2;
+        },
+        onError: (err) => {
+            const status = err?.response?.status;
+            if (status === 401 && !warned401Ref.current) {
+                warned401Ref.current = true;
+                enqueueSnackbar("Tu sesión expiró. Inicia sesión nuevamente.", { variant: "warning" });
+            }
+        },
+        staleTime: 60_000,
+    });
+
+    const invCatsMap = useMemo(() => {
+        const map = new Map();
+        (Array.isArray(invCatsData) ? invCatsData : []).forEach((c) => {
+            map.set(String(c._id), c?.name);
+        });
+        return map;
+    }, [invCatsData]);
+
+    const getDishCategoryLabel = (dish) => {
+        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
+        const id = dish?.inventoryCategoryId;
+        if (id) {
+            const name = invCatsMap.get(String(id));
+            if (name) return name;
+        }
+        return dish?.category || "Sin categoría";
+    };
+
+    // ✅ 2) Platos
     const { data, isLoading, isError } = useQuery({
         queryKey: ["dishes", userData?.tenantId],
+        enabled: true,
         queryFn: async () => {
             const url = userData?.tenantId
                 ? `/api/dishes?tenantId=${userData.tenantId}`
-                : "/api/dishes"; // fallback si es SuperAdmin
+                : "/api/dishes";
 
             const response = await api.get(url);
-            return Array.isArray(response.data.data)
-                ? response.data.data
-                : response.data;
+            return Array.isArray(response.data?.data) ? response.data.data : response.data;
         },
-        enabled:true,
+        staleTime: 20_000,
     });
+
     const dishes = Array.isArray(data) ? data : [];
 
     return (
@@ -116,7 +139,6 @@ const PopularDishes = memo(({ fill = false }) => {
             className={`${fill ? "h-full" : ""} w-full`}
         >
             <div className="bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] w-full rounded-xl shadow-lg flex flex-col h-full min-h-0 border border-[#2a2a2a]/50 overflow-hidden">
-                {/* Header mejorado */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 sm:px-6 py-4 gap-2 sm:gap-0 bg-gradient-to-r from-yellow-500/5 to-amber-500/5 border-b border-yellow-500/10">
                     <div className="flex items-center gap-2">
                         <motion.div
@@ -129,36 +151,28 @@ const PopularDishes = memo(({ fill = false }) => {
                             Platos Populares
                         </h1>
                     </div>
+
+                    {invCatsError && (
+                        <p className="text-xs text-yellow-300">
+                            No se pudieron cargar categorías (verifica sesión).
+                        </p>
+                    )}
                 </div>
 
-                {/* Scroll interno con scrollbar visible */}
                 <div
-                    className="
-            flex-1 min-h-0 overflow-y-auto px-2 sm:px-0 pb-3
-            max-h-[55vh] md:max-h-[60vh] xl:max-h-[65vh] 2xl:max-h-[70vh]
-          "
-                    style={{
-                        scrollbarWidth: "thin", // Firefox
-                        scrollbarColor: "#3a3a3a #151515", // Firefox
-                    }}
+                    className="flex-1 min-h-0 overflow-y-auto px-2 sm:px-0 pb-3 max-h-[55vh] md:max-h-[60vh] xl:max-h-[65vh] 2xl:max-h-[70vh]"
+                    style={{ scrollbarWidth: "thin", scrollbarColor: "#3a3a3a #151515" }}
                 >
-                    {/* Estilo inline del scrollbar para Chrome/Edge/Safari */}
                     <style>
                         {`
-              div::-webkit-scrollbar {
-                width: 10px;
-              }
-              div::-webkit-scrollbar-track {
-                background: #151515;
-              }
-          div::-webkit-scrollbar-thumb {
+              div::-webkit-scrollbar { width: 10px; }
+              div::-webkit-scrollbar-track { background: #151515; }
+              div::-webkit-scrollbar-thumb {
                 background-color: #3a3a3a;
                 border-radius: 10px;
                 border: 2px solid #1a1a1a;
               }
-              div::-webkit-scrollbar-thumb:hover {
-                background-color: #f6b100;
-              }
+              div::-webkit-scrollbar-thumb:hover { background-color: #f6b100; }
             `}
                     </style>
 
@@ -177,7 +191,12 @@ const PopularDishes = memo(({ fill = false }) => {
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
                             {dishes.map((dish, index) => (
-                                <PopularDishItem key={dish._id} dish={dish} index={index} />
+                                <PopularDishItem
+                                    key={dish._id}
+                                    dish={dish}
+                                    index={index}
+                                    getDishCategoryLabel={getDishCategoryLabel}
+                                />
                             ))}
                         </div>
                     )}
@@ -187,6 +206,5 @@ const PopularDishes = memo(({ fill = false }) => {
     );
 });
 
-PopularDishes.displayName = 'PopularDishes';
-
+PopularDishes.displayName = "PopularDishes";
 export default PopularDishes;

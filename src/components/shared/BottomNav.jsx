@@ -26,6 +26,7 @@ const BottomNav = memo(() => {
     const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
     const [selectedCustomerId, setSelectedCustomerId] = useState(null);
     const [showResults, setShowResults] = useState(false);
+    const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
 
 
     const openModal = useCallback(() => setIsModalOpen(true), []);
@@ -47,7 +48,90 @@ const BottomNav = memo(() => {
                     <Settings className="w-5 h-5" />
                     SuperAdmin Panel
                 </motion.button>
+                <AnimatePresence>
+                    {isTablePickerOpen && (
+                        <motion.div
+                            className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsTablePickerOpen(false)}
+                        >
+                            <motion.div
+                                className="w-full max-w-md rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
+                                initial={{ scale: 0.95, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.95, opacity: 0 }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h3 className="text-white text-lg font-semibold">Seleccionar mesa</h3>
+                                <p className="text-xs text-[#ababab] mt-1">
+                                    Elige la mesa antes de ir al menú.
+                                </p>
+
+                                {/* Aquí tú pones tu grid/lista de mesas */}
+                                <div className="mt-4 grid grid-cols-2 gap-3">
+                                    {/* EJEMPLO: Mesa 1 */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            // TODO: aquí debes pasar la mesa real seleccionada
+                                            const selectedTable = { tableNo: 1, area: "General" };
+
+                                            dispatch(
+                                                setDraftContext({
+                                                    table: selectedTable,
+                                                    isVirtual: false,
+                                                    virtualType: null,
+                                                    orderSource: "DINE_IN",
+                                                })
+                                            );
+
+                                            setIsTablePickerOpen(false);
+                                            navigate("/menu");
+                                        }}
+                                        className="p-3 rounded-xl bg-[#1f1f1f] border border-gray-800/50 text-white hover:bg-[#2b2b2b]"
+                                    >
+                                        <div className="font-semibold">Mesa 1</div>
+                                        <div className="text-xs text-gray-400">General</div>
+                                    </button>
+                                </div>
+
+                                <div className="flex gap-3 mt-5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTablePickerOpen(false)}
+                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab]"
+                                    >
+                                        Cancelar
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            // Si quieres permitir “sin mesa”
+                                            dispatch(
+                                                setDraftContext({
+                                                    table: null,
+                                                    isVirtual: true,
+                                                    virtualType: "QUICK",
+                                                    orderSource: "QUICK",
+                                                })
+                                            );
+                                            setIsTablePickerOpen(false);
+                                            navigate("/menu");
+                                        }}
+                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#f6b100] text-[#1f1f1f]"
+                                    >
+                                        Continuar sin mesa
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
+
         );
     }
     const customersQuery = useQuery({
@@ -114,8 +198,8 @@ const BottomNav = memo(() => {
             setSelectedCustomerId(null);
             setShowResults(false);
 
-            navigate(`/tables?orderId=${orderId}`);
-        },
+            navigate(`/menu?orderId=${orderId}`);
+            },
         onError: (err) => {
             enqueueSnackbar(err?.response?.data?.message || "Error al crear la orden.", {
                 variant: "error",
@@ -189,9 +273,7 @@ const BottomNav = memo(() => {
             setSelectedCustomerId(null);
             setShowResults(false);
             closeModal();
-
-// ir al menú para agregar items y guardar solo con "Actualizar orden"
-            navigate("/menu");
+            setIsTablePickerOpen(true);
         } catch (e) {
             const status = e?.response?.status;
             const code = e?.response?.data?.code;

@@ -40,7 +40,7 @@ const MenuManagement = () => {
     const [selectedCategory, setSelectedCategory] = useState("");
     const [confirmDelete, setConfirmDelete] = useState({
         open: false,
-        category: null,
+        dish: null,
     });
     const [showDishModal, setShowDishModal] = useState(false);
     const [editingDish, setEditingDish] = useState(null);
@@ -362,25 +362,14 @@ const MenuManagement = () => {
                     </div>
                     <select
                         value={selectedCategory}
-                        onChange={(e) => {
-                            const invId = e.target.value;
-
-                            const invObj = invCats.find((c) => String(c._id) === String(invId));
-                            const invName = invObj?.name ? String(invObj.name).trim() : "";
-
-                            setDishForm((f) => ({
-                                ...f,
-                                inventoryCategoryId: invId,
-                                // ✅ Copia la misma categoría al plato
-                                category: invName || f.category,
-                            }));
-                        }}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
                         className="p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                     >
-
                         <option value="">Todas las categorías</option>
                         {categories.map((cat) => (
-                            <option key={cat} value={cat}>{cat}</option>
+                            <option key={cat} value={cat}>
+                                {cat}
+                            </option>
                         ))}
                     </select>
                 </div>
@@ -418,8 +407,7 @@ const MenuManagement = () => {
                                     <Edit className="w-4 h-4 text-white" />
                                 </button>
                                 <button
-                                    onClick={() => setConfirmDelete({ open: true, dish })}
-
+                                    onClick={() => setConfirmDelete({ open: false, dish: null })}
                                     className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-red-500 transition-colors"
                                     title="Eliminar"
                                 >
@@ -770,10 +758,10 @@ const MenuManagement = () => {
 
                         <div className="p-6">
                             <p className="text-sm text-gray-300">
-                                Vas a eliminar la categoría{" "}
+                                Vas a eliminar el plato{" "}
                                 <span className="font-semibold text-white">
-            {confirmDelete.category?.name}
-          </span>
+        {confirmDelete.dish?.name || "—"}
+    </span>
                                 . Esta acción no se puede deshacer.
                             </p>
 

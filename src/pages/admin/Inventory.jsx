@@ -163,6 +163,7 @@ function markYieldProcessed(itemId) {
 
 
 export default function Inventory({ plan }) {
+    const queryClient = useQueryClient();
     function getTodayYMDLocal() {
         const d = new Date();
         const y = d.getFullYear();
@@ -228,6 +229,7 @@ export default function Inventory({ plan }) {
         staleTime: 60_000,
     });
 
+// Plantillas: platos existentes para modo "Basado en plato"
     const { data: dishTemplates = [] } = useQuery({
         queryKey: ["dish-templates", tenantId],
         queryFn: fetchDishTemplates,
@@ -235,63 +237,97 @@ export default function Inventory({ plan }) {
         staleTime: 60_000,
     });
 
-    // STOCK: items
+// ✅ INGREDIENTES (deben vivir en el padre para evitar ReferenceError y evitar doble fetch)
+    const { data: ingredientsResp } = useQuery({
+        queryKey: ["ingredients", tenantId],
+        enabled: canUseInventory && Boolean(tenantId),
+        queryFn: async () => {
+            const res = await api.get("/api/dishes/ingredients");
+            return res.data;
+        },
+        staleTime: 60_000,
+    });
+
+    const ingredientsList = useMemo(() => {
+        const raw = ingredientsResp?.data ?? ingredientsResp;
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        return [];
+    }, [ingredientsResp]);
+
+// ✅ ITEMS (esto faltaba en tu archivo, pero itemsResp se usa abajo)
     const { data: itemsResp, isLoading: itemsLoading } = useQuery({
         queryKey: ["inventory/items", tenantId, stockFilters, page],
         enabled: canUseInventory && Boolean(tenantId),
         queryFn: async () => {
-            const skip = (page - 1) * PAGE_SIZE;
-            const res = await api.get("/api/inventory/items", {
-                params: {
-                    q: stockFilters.q || undefined,
-                    inventoryCategoryId: stockFilters.inventoryCategoryId || undefined,
-                    supplierId: stockFilters.supplierId || undefined,
-                    includeArchived: stockFilters.includeArchived ? "true" : "false",
-                    limit: PAGE_SIZE,
-                    skip,
-                },
-            });
+            const params = {
+                q: stockFilters?.q || "",
+                inventoryCategoryId: stockFilters?.inventoryCategoryId || "",
+                supplierId: stockFilters?.supplierId || "",
+                includeArchived: Boolean(stockFilters?.includeArchived),
+                page,
+                limit: PAGE_SIZE,
+            };
+
+            const res = await api.get("/api/inventory/items", { params });
             return res.data;
         },
         staleTime: 10_000,
     });
-
     // Si el backend todavía no pagina y devuelve todo, hacemos fallback client-side
-    const rawItems = useMemo(() => (Array.isArray(itemsResp?.items) ? itemsResp.items : []), [itemsResp]);
-
     const totalFromBackend = useMemo(() => {
         const t = Number(itemsResp?.total ?? itemsResp?.count);
         return Number.isFinite(t) ? t : null;
     }, [itemsResp]);
 
+    const availableIngredients = useMemo(() => {
+        return (ingredientsList || [])
+            .map((x) => ({ _id: String(x._id), name: x.name }))
+            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }, [ingredientsList]);
+
+    const rawItems = useMemo(() => (Array.isArray(itemsResp?.items) ? itemsResp.items : []), [itemsResp]);
+
+// ✅ Solo artículos reales de inventario (evita platos de menú con stock null)
+    const inventoryOnly = useMemo(() => {
+        return (rawItems || []).filter((it) => {
+            const cat = String(it?.category || "").trim().toLowerCase();
+            const isIngredient = it?.isInventoryItem === true || cat === "inventario";
+            const isMenuStockItem = it?.inventoryCategoryId != null; // ✅ plato del menú habilitado como stock propio
+            return isIngredient || isMenuStockItem;
+        });
+    }, [rawItems]);
+
     const items = useMemo(() => {
         // Caso ideal: backend ya devolvió items paginados
-        if (totalFromBackend !== null) return rawItems;
+        if (totalFromBackend !== null) return inventoryOnly;
 
         // Fallback: backend devuelve TODO, hacemos slice
         const start = (page - 1) * PAGE_SIZE;
         const end = start + PAGE_SIZE;
-        return rawItems.slice(start, end);
-    }, [rawItems, page, totalFromBackend]);
+        return inventoryOnly.slice(start, end);
+    }, [inventoryOnly, page, totalFromBackend]);
 
     const totalItems = useMemo(() => {
-        if (totalFromBackend !== null) return totalFromBackend;
-        return rawItems.length;
-    }, [rawItems.length, totalFromBackend]);
+        if (totalFromBackend !== null) return inventoryOnly.length;
+        return inventoryOnly.length;
+    }, [inventoryOnly.length, totalFromBackend]);
 
     const pageCount = useMemo(() => Math.max(1, Math.ceil(totalItems / PAGE_SIZE)), [totalItems]);
 
     const metrics = useMemo(() => {
-        // métricas sobre el total (rawItems) si backend no pagina, o sobre la data actual si sí pagina
-        const base = totalFromBackend !== null ? rawItems : rawItems;
+        const base = inventoryOnly;
         const total = base.length;
+
         const low = base.filter((x) => num(x.stockCurrent) <= num(x.stockMin)).length;
+
         const value = base.reduce(
             (acc, x) => acc + num(x.stockCurrent) * (num(x.avgCost) || num(x.lastCost) || 0),
             0
         );
+
         return { total, low, value };
-    }, [rawItems, totalFromBackend]);
+    }, [inventoryOnly]);
 
     // CRUD modals
     const [itemModal, setItemModal] = useState({ open: false, mode: "create", item: null });
@@ -763,8 +799,12 @@ export default function Inventory({ plan }) {
                                                 <div className="text-white/30 text-xs">{it._id}</div>
                                             </td>
                                             <td className="py-4 pr-4 text-white/80">{it.unit || "unidad"}</td>
-                                            <td className="py-4 pr-4 text-white/80">{num(it.stockCurrent)}</td>
-                                            <td className="py-4 pr-4 text-white/80">{num(it.stockMin)}</td>
+                                            <td className="py-4 pr-4 text-white/80">
+                                                {it.stockCurrent === null || it.stockCurrent === undefined ? "—" : num(it.stockCurrent)}
+                                            </td>
+                                            <td className="py-4 pr-4 text-white/80">
+                                                {it.stockMin === null || it.stockMin === undefined ? "—" : num(it.stockMin)}
+                                            </td>
                                             <td className="py-4 pr-4 text-white/80">
                                                 {moneyRD(num(it.avgCost) || num(it.lastCost) || 0)}
                                             </td>
@@ -1133,8 +1173,11 @@ export default function Inventory({ plan }) {
                 categories={categories}
                 suppliers={suppliers}
                 dishTemplates={dishTemplates}
-                onClose={() => setItemModal({ open: false, mode: "create", item: null })}
-                onSave={(payload) => {
+                ingredients={ingredientsList}
+                tenantId={tenantId}
+                queryClient={queryClient}
+                onClose={() => setItemModal({ open: false, mode: "new", item: null })}
+                onSave={async (payload) => {
                     const mode = itemModal.mode;
                     if (mode === "create") return saveItemMutation.mutate({ mode: "create", payload });
                     return saveItemMutation.mutate({ mode: "edit", id: itemModal.item?._id, payload });
@@ -1459,11 +1502,28 @@ function YieldMermaDashboard({ tenantId, canUseInventory, ymd, setYmd, moneyRD }
         </div>
     );
 }
-function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, onClose, onSave }) {
+function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ingredients, tenantId, queryClient, onClose, onSave }) {
     const isEdit = mode === "edit";
+    const { enqueueSnackbar } = useSnackbar();
 
     const [createMode, setCreateMode] = useState("new"); // new | fromDish
     const [selectedDishId, setSelectedDishId] = useState("");
+
+    const selectedDish = useMemo(() => {
+        return (dishTemplates || []).find((d) => String(d._id) === String(selectedDishId)) || null;
+    }, [dishTemplates, selectedDishId]);
+
+// ✅ Ingredientes vienen del padre (Inventory). Evita doble fetch y mantiene consistencia.
+    // ✅ Ingredientes vienen del padre (Inventory). Evita doble fetch y mantiene consistencia.
+    const ingredientsList = Array.isArray(ingredients) ? ingredients : [];
+
+// ✅ Lista “limpia” para UI (id y name asegurados, ordenada)
+    const availableIngredients = useMemo(() => {
+        return (ingredientsList || [])
+            .map((x) => ({ _id: String(x._id), name: x.name }))
+            .filter((x) => x._id && x.name)
+            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }, [ingredientsList]);
 
     const [form, setForm] = useState({
         name: "",
@@ -1474,6 +1534,26 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, onC
         inventoryCategoryId: "",
         supplierId: "",
     });
+
+// -----------------------------
+// Receta (opcional) cuando creas desde plato existente
+    const [recipeLines, setRecipeLines] = useState([]); // [{ ingredientId, qty }]
+    const [pickedIngredientId, setPickedIngredientId] = useState("");
+    const [pickedQty, setPickedQty] = useState("1");
+
+// Crear ingrediente inline
+    const [newIngName, setNewIngName] = useState("");
+    const [newIngCategoryId, setNewIngCategoryId] = useState("");
+
+// Loading states
+    const [savingRecipe, setSavingRecipe] = useState(false);
+    const [creatingIngredient, setCreatingIngredient] = useState(false);
+
+    const normalizeQty = (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return Number(n.toFixed(6));
+    };
 
 
     React.useEffect(() => {
@@ -1491,10 +1571,32 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, onC
         });
     }, [open, item]);
 
-    const selectedDish = useMemo(
-        () => dishTemplates.find((d) => d._id === selectedDishId),
-        [dishTemplates, selectedDishId]
-    );
+// Cargar receta existente del plato (si viene en /api/dishes)
+    React.useEffect(() => {
+        if (!open) return;
+        if (!selectedDishId) {
+            setRecipeLines([]);
+            return;
+        }
+
+        const raw = selectedDish?.recipe;
+        if (Array.isArray(raw)) {
+            const mapped = raw
+                .map((r) => {
+                    const ingredientId = r?.ingredientId || r?.dishId || r?._id || null;
+                    const qty = r?.qty ?? r?.quantity ?? null;
+                    if (!ingredientId || qty == null) return null;
+                    const q = normalizeQty(qty);
+                    if (!q) return null;
+                    return { ingredientId: String(ingredientId), qty: q };
+                })
+                .filter(Boolean);
+
+            setRecipeLines(mapped);
+        } else {
+            setRecipeLines([]);
+        }
+    }, [open, selectedDishId, selectedDish]);
 
     React.useEffect(() => {
         if (!open) return;
@@ -1523,12 +1625,58 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, onC
         };
 
         // Si es "basado en plato existente", NO creamos otro Dish.
-        // Actualizamos el MISMO dish usando existingDishId
+// Actualizamos el MISMO dish usando existingDishId
         if (!isEdit && createMode === "fromDish") {
             if (!selectedDishId) {
-                setWarn("Selecciona un plato primero.");
+                enqueueSnackbar("Selecciona un plato primero.", { variant: "warning" });
                 return;
             }
+
+            // 1) Guardar receta si existe (opcional)
+            if (recipeLines.length > 0) {
+                try {
+                    setSavingRecipe(true);
+
+                    // Normaliza receta al formato esperado por backend: [{ ingredientId, qty }]
+                    const recipePayload = (recipeLines || [])
+                        .map((r) => {
+                            const id =
+                                r?.dishId ||
+                                r?.ingredientId ||
+                                r?.ingredientDishId ||
+                                r?.inventoryItemId ||
+                                null;
+
+                            const qty = normalizeQty(r?.qty);
+
+                            if (!id || !qty || qty <= 0) return null;
+
+                            return {
+                                dishId: String(id),     // ✅ backend espera dishId (y lo mapea a ingredientDishId)
+                                qty,
+                                unit: r?.unit || "unidad",
+                            };
+                        })
+                        .filter(Boolean);
+
+                    await api.put(`/api/dishes/${selectedDishId}/recipe`, {
+                        recipe: recipePayload,
+                    });
+
+                    enqueueSnackbar("Receta guardada.", { variant: "success" });
+                } catch (e) {
+                    const msg =
+                        e?.response?.data?.message ||
+                        e?.message ||
+                        "No se pudo guardar la receta.";
+                    enqueueSnackbar(msg, { variant: "error" });
+                    return; // no seguimos si la receta falló
+                } finally {
+                    setSavingRecipe(false);
+                }
+            }
+
+            // 2) Guardar habilitación inventario del plato (tu flujo actual)
             payload.existingDishId = selectedDishId;
         }
 
@@ -1575,11 +1723,229 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, onC
                             </option>
                         ))}
                     </select>
+
                     <div className="text-white/40 text-[11px] mt-1">
                         Esto habilita el MISMO plato para inventario (sin duplicar).
                         <br />
                         El stock se maneja con movimientos: usa el botón “Entrada” luego de guardar.
                     </div>
+
+                    {/* ----------------------------- */}
+                    {/* Receta (Opcional) */}
+                    {selectedDishId && (
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-white/80 text-sm font-semibold">Receta (opcional)</div>
+                                <div className="text-white/40 text-[11px]">
+                                    Se descuenta al vender si el backend usa receta.
+                                </div>
+                            </div>
+
+                            {/* Agregar ingrediente existente */}
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+                                <div className="md:col-span-7">
+                                    <div className="text-white/60 text-xs mb-1">Ingrediente</div>
+                                    <select
+                                        className={selectCls}
+                                        value={pickedIngredientId}
+                                        onChange={(e) => setPickedIngredientId(e.target.value)}
+                                    >
+                                        <option value="">— Selecciona ingrediente —</option>
+                                        {availableIngredients.map((ing) => (
+                                            <option key={ing._id} value={ing._id}>
+                                                {ing.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="md:col-span-3">
+                                    <div className="text-white/60 text-xs mb-1">Cantidad</div>
+                                    <input
+                                        className={inputCls}
+                                        value={pickedQty}
+                                        onChange={(e) => setPickedQty(e.target.value)}
+                                        placeholder="Ej: 1, 0.5"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-2 flex items-end">
+                                    <button
+                                        type="button"
+                                        className="w-full px-3 py-2 rounded-xl border border-yellow-500/30 bg-yellow-500/15 text-yellow-200 text-sm"
+                                        onClick={() => {
+                                            if (!pickedIngredientId) {
+                                                enqueueSnackbar("Selecciona un ingrediente.", { variant: "warning" });
+                                                return;
+                                            }
+                                            const q = normalizeQty(pickedQty);
+                                            if (!q) {
+                                                enqueueSnackbar("Cantidad inválida (debe ser > 0).", { variant: "warning" });
+                                                return;
+                                            }
+
+                                            setRecipeLines((prev) => {
+                                                const exists = prev.find((x) => String(x.ingredientId) === String(pickedIngredientId));
+                                                if (exists) {
+                                                    // suma qty si ya existe
+                                                    return prev.map((x) =>
+                                                        String(x.ingredientId) === String(pickedIngredientId)
+                                                            ? { ...x, qty: normalizeQty(Number(x.qty) + q) || x.qty }
+                                                            : x
+                                                    );
+                                                }
+                                                return [...prev, { ingredientId: String(pickedIngredientId), qty: q }];
+                                            });
+
+                                            setPickedIngredientId("");
+                                            setPickedQty("1");
+                                        }}
+                                    >
+                                        Agregar
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Crear ingrediente inline */}
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+                                <div className="md:col-span-7">
+                                    <div className="text-white/60 text-xs mb-1">Crear ingrediente</div>
+                                    <input
+                                        className={inputCls}
+                                        value={newIngName}
+                                        onChange={(e) => setNewIngName(e.target.value)}
+                                        placeholder="Ej: Queso mozzarella"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-3">
+                                    <div className="text-white/60 text-xs mb-1">Categoría inventario (opcional)</div>
+                                    <select
+                                        className={selectCls}
+                                        value={newIngCategoryId}
+                                        onChange={(e) => setNewIngCategoryId(e.target.value)}
+                                    >
+                                        <option value="">—</option>
+                                        {(categories || []).map((c) => (
+                                            <option key={c._id} value={c._id}>
+                                                {c.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="md:col-span-2 flex items-end">
+                                    <button
+                                        type="button"
+                                        disabled={creatingIngredient}
+                                        className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm disabled:opacity-50"
+                                        onClick={async () => {
+                                            const nm = String(newIngName || "").trim();
+                                            if (!nm) {
+                                                enqueueSnackbar("Escribe el nombre del ingrediente.", { variant: "warning" });
+                                                return;
+                                            }
+
+                                            try {
+                                                setCreatingIngredient(true);
+
+                                                const res = await api.post("/api/dishes/ingredients", {
+                                                    name: nm,
+                                                    inventoryCategoryId: newIngCategoryId || null,
+                                                    sellMode: "unit",
+                                                    weightUnit: "lb",
+                                                });
+
+                                                const created = res?.data?.data || res?.data;
+                                                enqueueSnackbar("Ingrediente creado.", { variant: "success" });
+
+                                                // refrescar ingredientes disponibles (viene de dishTemplates)
+                                                // Nota: esta queryKey existe arriba en Inventory.jsx
+                                                // y usa tenantId
+                                                // eslint-disable-next-line no-undef
+                                                // (no hace falta, solo invalida)
+                                                // queryClient.invalidateQueries({ queryKey: ["dish-templates", tenantId] });
+
+                                                setNewIngName("");
+                                                setNewIngCategoryId("");
+
+                                                // Si el backend devuelve el _id, lo agregamos automáticamente a la receta
+                                                if (created?._id) {
+                                                    setRecipeLines((prev) => [...prev, { ingredientId: String(created._id), qty: 1 }]);
+                                                }
+
+                                                // Invalida templates para que el nuevo ingrediente salga en el select
+                                                // (Esto requiere access a queryClient y tenantId; lo hacemos abajo en CAMBIO 5)
+                                            } catch (e) {
+                                                const msg =
+                                                    e?.response?.data?.message ||
+                                                    e?.message ||
+                                                    "No se pudo crear el ingrediente.";
+                                                enqueueSnackbar(msg, { variant: "error" });
+                                            } finally {
+                                                setCreatingIngredient(false);
+                                            }
+                                        }}
+                                    >
+                                        {creatingIngredient ? "Creando..." : "Crear"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Lista de receta */}
+                            <div className="mt-3">
+                                <div className="text-white/60 text-xs mb-2">Ingredientes agregados</div>
+
+                                {recipeLines.length === 0 ? (
+                                    <div className="text-white/40 text-[12px]">Aún no has agregado ingredientes.</div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {recipeLines.map((r) => {
+                                            const ingName =
+                                                availableIngredients.find((x) => String(x._id) === String(r.ingredientId))?.name ||
+                                                "Ingrediente";
+                                            return (
+                                                <div
+                                                    key={r.ingredientId}
+                                                    className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="text-white/80 text-sm truncate">{ingName}</div>
+                                                        <div className="text-white/40 text-[11px]">ID: {r.ingredientId}</div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            className={inputCls}
+                                                            style={{ width: 110 }}
+                                                            value={String(r.qty)}
+                                                            onChange={(e) => {
+                                                                const q = normalizeQty(e.target.value);
+                                                                setRecipeLines((prev) =>
+                                                                    prev.map((x) =>
+                                                                        x.ingredientId === r.ingredientId
+                                                                            ? { ...x, qty: q || x.qty }
+                                                                            : x
+                                                                    )
+                                                                );
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm"
+                                                            onClick={() => setRecipeLines((prev) => prev.filter((x) => x.ingredientId !== r.ingredientId))}
+                                                        >
+                                                            Quitar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -8,6 +8,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
 import { updateOrder, addOrder } from "../../https";
 import Invoice from "../invoice/Invoice";
+import Ticket from "../ticket/Ticket";
 
 import useTenant from "../../hooks/useTenant";
 import api from "../../lib/api";
@@ -22,6 +23,28 @@ const isLikelyRncOrCedula = (value) => {
     const cleaned = String(value || "").replace(/[^\d]/g, "");
     return cleaned.length === 9 || cleaned.length === 11; // RNC (9) o Cédula (11)
 };
+function Switch({ checked, onChange, disabled }) {
+    return (
+        <button
+            type="button"
+            disabled={disabled}
+            onClick={() => !disabled && onChange(!checked)}
+            className={[
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200",
+                disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+                checked ? "bg-[#f6b100]" : "bg-gray-700",
+            ].join(" ")}
+            aria-pressed={checked}
+        >
+            <span
+                className={[
+                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
+                    checked ? "translate-x-6" : "translate-x-1",
+                ].join(" ")}
+            />
+        </button>
+    );
+}
 
 
 
@@ -122,6 +145,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         ].filter(Boolean);
         return list;
     }, [tenantInfo]);
+
+    const [printTarget, setPrintTarget] = useState("invoice"); // "invoice" | "ticket" | "update"
+    //    const [showTicket, setShowTicket] = useState(false);
+    const [submitAction, setSubmitAction] = useState("invoice");
+    const [showTicket, setShowTicket] = useState(false);
 
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
@@ -301,10 +329,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             } else {
                 setDgiiStatus("NOT_FOUND");
                 setDgiiFound(null);
+
+                // ✅ Aviso claro si no se autocompleta
+                if (wantsFiscal && fiscalCapable && !String(customerName || "").trim()) {
+                    enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
+                        variant: "warning",
+                    });
+                }
             }
         } catch (e) {
             setDgiiStatus("ERROR");
             setDgiiFound(null);
+
+            if (wantsFiscal && fiscalCapable && !String(customerName || "").trim()) {
+                enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
+                    variant: "warning",
+                });
+            }
         } finally {
             setDgiiLoading(false);
         }
@@ -513,10 +554,38 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             const invoice = {
                 _id: server._id ?? effectiveId, // ✅ usa effectiveId
                 createdAt: server.createdAt ?? new Date().toISOString(),
+                table: server.table ?? order?.table ?? draftTable ?? null,
+                tableName:
+                    server.table?.name ??
+                    server.tableName ??
+                    order?.table?.name ??
+                    order?.tableName ??
+                    draftTable?.name ??
+                    "",
+
+                roomName:
+                    server.roomName ??
+                    server.sala ??
+                    server.area ??
+                    server.section ??
+                    order?.roomName ??
+                    order?.sala ??
+                    order?.area ??
+                    draftTable?.areaName ??
+                    draftTable?.section ??
+                    "",
+                waiterName:
+                    server.waiterName ??
+                    server.serverName ??
+                    server.mesero ??
+                    server.user?.name ??
+                    server.createdBy?.name ??
+                    "",
                 orderSource: server.orderSource,
                 commissionRate: server.commissionRate,
                 commissionAmount: server.commissionAmount,
                 netTotal: server.netTotal,
+
 
                 customerDetails: {
                     name: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
@@ -545,11 +614,53 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ncfNumber,
             };
 
+
             setOrderInfo(invoice);
+            if (submitAction === "update") {
+                setIsOrderModalOpen(false);
+                navigate("/orders");
+                return;
+            }
+
+            if (submitAction === "ticket") {
+                setShowTicket(true);
+                return;
+            }
+
+            // invoice
             enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
 
-            dispatch(removeAllItems());
+            // ✅ si solo era actualizar
+            if (submitAction === "update") {
+                setIsOrderModalOpen(false);
+                navigate("/orders");
+                return;
+            }
+
+                // ✅ ticket
+            if (submitAction === "ticket") {
+                setShowTicket(true);
+                return;
+            }
+
+            // ✅ invoice (facturar)
             setShowInvoice(true);
+
+            dispatch(removeAllItems());
+
+            if (printTarget === "update") {
+                setIsOrderModalOpen(false);
+                navigate("/orders");
+                return;
+            }
+
+            if (wantsFiscal && fiscalCapable) {
+                setShowInvoice(true);
+            } else if (printTarget === "ticket") {
+                setShowTicket(true);
+            } else {
+                setShowInvoice(true);
+            }
         },
         onError: (err) => {
             enqueueSnackbar(
@@ -587,7 +698,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
 
-    const handlePlaceOrder = () => {
+    const handlePlaceOrder = (target = "invoice") => {
         // ✅ Fiscal: si quiere factura fiscal, pedimos RNC/Cédula
         if (wantsFiscal && fiscalCapable) {
             const doc = String(customerRnc || "").replace(/[^\d]/g, "");
@@ -598,6 +709,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }
         }
+        const handleUpdateOnly = () => {
+            const payload = buildOrderPayload();
+
+            if (!payload.items?.length) {
+                enqueueSnackbar("No hay items para actualizar la orden.", { variant: "warning" });
+                return;
+            }
+
+            setPrintTarget("update");
+            orderMutation.mutate(payload);
+        };
 
         const payload = buildOrderPayload();
 
@@ -609,9 +731,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             return;
         }
 
-        // ✅ Aquí sí se crea o actualiza:
-        // - si hay orderId => updateOrder
-        // - si NO hay orderId => addOrder (draft)
+        // Si es fiscal, forzamos factura
+        if (wantsFiscal && fiscalCapable) {
+            setPrintTarget("invoice");
+        } else {
+            setPrintTarget(target);
+        }
+
         orderMutation.mutate(payload);
     };
 
@@ -930,24 +1056,22 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             {/* Datos del cliente + Fiscal */}
             <div className="px-5 mt-4">
-                {/* ✅ FACTURA FISCAL (solo si el tenant lo permite) */}
+                {/* FACTURA FISCAL (solo si el tenant lo permite) */}
                 {fiscalEnabledByTenant && (
                     <div className="mt-4 border-t border-[#2b2b2b] pt-3">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-[#f5f5f5] font-semibold">
-                                    Factura fiscal (NCF)
-                                </p>
+                                <p className="text-sm text-[#f5f5f5] font-semibold">Factura fiscal (NCF)</p>
                                 <p className="text-xs text-[#ababab]">
                                     Solo si el cliente lo solicita y tu empresa tiene NCF configurado.
                                 </p>
                             </div>
 
-                            <input
-                                type="checkbox"
+                            {/* ✅ Switch estilo Uber Eats */}
+                            <Switch
                                 checked={wantsFiscal}
                                 disabled={!fiscalCapable}
-                                onChange={(e) => setWantsFiscal(e.target.checked)}
+                                onChange={(v) => setWantsFiscal(v)}
                             />
                         </div>
 
@@ -957,70 +1081,131 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             </p>
                         )}
 
+                        {/* ✅ SOLO mostrar campos cuando el switch está activo */}
                         {wantsFiscal && fiscalCapable && (
-                            <div className="mt-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs text-[#ababab]">Tipo NCF</span>
-                                    <select
-                                        value={ncfType}
-                                        onChange={(e) => setNcfType(e.target.value)}
-                                        className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                    >
-                                        {allowedNcfTypes.map((t) => (
-                                            <option key={t} value={t}>
-                                                {t === "B01"
-                                                    ? "B01 - Crédito Fiscal"
-                                                    : "B02 - Consumidor Final"}
-                                            </option>
-                                        ))}
-                                    </select>
+                            <>
+                                <div className="mt-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-[#ababab]">Tipo NCF</span>
+                                        <select
+                                            value={ncfType}
+                                            onChange={(e) => setNcfType(e.target.value)}
+                                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                        >
+                                            {allowedNcfTypes.map((t) => (
+                                                <option key={t} value={t}>
+                                                    {t === "B01" ? "B01 - Crédito Fiscal" : "B02 - Consumidor Final"}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <p className="text-xs text-[#ababab] mt-2">
+                                        Recomendación: agrega RNC/Cédula para completar los datos.
+                                        {dgiiLoading ? " Buscando en DGII..." : ""}
+                                        {!dgiiLoading && dgiiStatus === "FOUND" ? " Encontrado." : ""}
+                                        {!dgiiLoading && dgiiStatus === "NOT_FOUND" ? " No encontrado." : ""}
+                                        {!dgiiLoading && dgiiStatus === "ERROR" ? " Error consultando." : ""}
+                                    </p>
+
+                                    {/* ✅ Mensaje claro cuando no autocompleta */}
+                                    {!dgiiLoading && (dgiiStatus === "NOT_FOUND" || dgiiStatus === "ERROR") && (
+                                        <p className="text-xs text-yellow-300 mt-1">
+                                            No se pudo autocompletar, introduzca el nombre manualmente.
+                                        </p>
+                                    )}
                                 </div>
 
-                                <p className="text-xs text-[#ababab] mt-2">
-                                    Recomendación: para factura fiscal, agrega RNC/Cédula para completar los datos.
-                                    {dgiiLoading ? " Buscando en DGII..." : ""}
-                                    {!dgiiLoading && dgiiStatus === "FOUND" ? " Encontrado." : ""}
-                                    {!dgiiLoading && dgiiStatus === "NOT_FOUND" ? " No encontrado." : ""}
-                                    {!dgiiLoading && dgiiStatus === "ERROR" ? " Error consultando." : ""}
-                                </p>
-                            </div>
+                                <p className="text-xs text-[#ababab] mb-2 mt-3">Datos del cliente</p>
 
+                                <div className="space-y-2">
+                                    <input
+                                        type="text"
+                                        value={customerRnc}
+                                        onChange={(e) => setCustomerRnc(e.target.value)}
+                                        onBlur={() => lookupDgii(customerRnc)}
+                                        className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                        placeholder="RNC / Cédula"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={customerName}
+                                        onChange={(e) => setCustomerName(e.target.value)}
+                                        className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                        placeholder="Nombre / Razón Social"
+                                    />
+                                </div>
+                            </>
                         )}
-                        <p className="text-xs text-[#ababab] mb-2">Datos del cliente </p>
-
-                        <div className="space-y-2">
-                            <input
-                                type="text"
-                                value={customerRnc}
-                                onChange={(e) => setCustomerRnc(e.target.value)}
-                                onBlur={() => {
-                                    if (wantsFiscal && fiscalCapable) lookupDgii(customerRnc);
-                                }}
-                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                placeholder="RNC / Cédula "
-                            />
-                            <input
-                                type="text"
-                                value={customerName}
-                                onChange={(e) => setCustomerName(e.target.value)}
-                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                placeholder="Nombre / Razón Social"
-                            />
-                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Botón actualizar */}
             <div className="flex items-center gap-3 px-5 mt-4">
+                {/* 1) Ticket (NO tocar lógica; solo setear submitAction antes) */}
                 <button
                     type="button"
-                    onClick={handlePlaceOrder}
+                    onClick={() => {
+                        setSubmitAction("ticket");
+                        handlePlaceOrder("ticket");
+                    }}
+                    disabled={orderMutation.isPending || (wantsFiscal && fiscalCapable)}
+                    className={`px-4 py-3 w-full rounded-lg font-semibold text-lg border border-gray-800/50
+      ${
+                        wantsFiscal && fiscalCapable
+                            ? "bg-[#1f1f1f] text-[#666] cursor-not-allowed"
+                            : "bg-[#1f1f1f] text-white hover:bg-[#2b2b2b]"
+                    }`}
+                    title={wantsFiscal && fiscalCapable ? "Con NCF se imprime factura, no ticket." : "Imprimir ticket"}
+                >
+                    Ticket
+                </button>
+
+                {/* 2) Facturar (abre invoice sí o sí) */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        setSubmitAction("invoice");
+                        handlePlaceOrder("invoice");
+                    }}
+                    disabled={orderMutation.isPending}
                     className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
                 >
-                    Actualizar Orden
+                    Facturar
+                </button>
+
+                {/* 3) Actualizar (solo actualizar y enviar a /orders) */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        setSubmitAction("update");
+
+                        const payload = buildOrderPayload(); // ⚠️ si tu función se llama distinto, reemplaza el nombre
+
+                        if (!payload.items?.length) {
+                            enqueueSnackbar("No hay items para actualizar la orden.", { variant: "warning" });
+                            return;
+                        }
+
+                        orderMutation.mutate(payload);
+                    }}
+                    disabled={orderMutation.isPending}
+                    className="px-4 py-3 w-full rounded-lg bg-[#1f1f1f] text-white font-semibold text-lg border border-gray-800/50 hover:bg-[#2b2b2b]"
+                >
+                    Actualizar
                 </button>
             </div>
+
+            {showTicket && orderInfo && (
+                <Ticket
+                    order={orderInfo}
+                    onClose={() => {
+                        setShowTicket(false);
+                        setIsOrderModalOpen(false);
+                        navigate("/orders");
+                    }}
+                />
+            )}
 
             {showInvoice && orderInfo && (
                 <Invoice
