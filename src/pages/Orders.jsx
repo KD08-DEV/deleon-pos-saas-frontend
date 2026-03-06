@@ -24,6 +24,7 @@ const Orders = () => {
         audioRef.current = new Audio("/sounds/new-order.mp3");
     }, []);
 
+
     const { data: resData, isError } = useQuery({
         queryKey: ["orders"],
         queryFn: getOrders,

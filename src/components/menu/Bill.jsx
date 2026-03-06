@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -45,7 +45,134 @@ function Switch({ checked, onChange, disabled }) {
         </button>
     );
 }
+const normalizeText = (v) => String(v || "").trim().toLowerCase();
 
+const stableArray = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+        .map((x) => {
+            if (typeof x === "string") return x.trim().toLowerCase();
+            return (
+                x?.name ||
+                x?.label ||
+                x?.title ||
+                x?.value ||
+                JSON.stringify(x)
+            )
+                .trim?.()
+                ?.toLowerCase?.() ?? String(x).trim().toLowerCase();
+        })
+        .sort();
+};
+
+const buildComparableKey = (item) => {
+    const productId =
+        item?.dishId ??
+        item?.dish ??
+        item?.productId ??
+        item?.menuItemId ??
+        item?.itemId ??
+        item?.id ??
+        "";
+
+    const name =
+        item?.name ??
+        item?.dishName ??
+        item?.itemName ??
+        item?.dishInfo?.name ??
+        "";
+
+    const qtyType = item?.qtyType || "unit";
+
+    // MUY IMPORTANTE:
+    // Para productos unitarios NO tomes weightUnit en cuenta,
+    // aunque el item viejo venga contaminado con "lb".
+    const normalizedWeightUnit =
+        qtyType === "weight"
+            ? (item?.weightUnit || "lb")
+            : "";
+
+    const note =
+        item?.note ||
+        item?.comment ||
+        item?.specialInstructions ||
+        "";
+
+    const addons = stableArray(
+        item?.addons ||
+        item?.addOns ||
+        item?.extras ||
+        item?.extraIngredients ||
+        item?.selectedExtras
+    );
+
+    const modifiers = stableArray(
+        item?.modifiers ||
+        item?.selectedOptions ||
+        item?.options
+    );
+
+    return JSON.stringify({
+        productRef: productId ? String(productId) : `name:${normalizeText(name)}`,
+        name: normalizeText(name),
+        qtyType,
+        weightUnit: normalizedWeightUnit,
+        note: normalizeText(note),
+        addons,
+        modifiers,
+    });
+};
+
+const getComparableQty = (item) => {
+    const q = Number(item?.quantity ?? item?.qty ?? 1);
+    return Number.isFinite(q) ? q : 1;
+};
+
+const normalizeForPrint = (item, forcedQty = null) => {
+    const quantity = forcedQty ?? getComparableQty(item);
+    return {
+        ...item,
+        quantity,
+        qty: quantity,
+    };
+};
+
+const getOnlyNewItemsForPrint = (prevItems = [], currentItems = []) => {
+    const prevMap = new Map();
+    const currentMap = new Map();
+    const sampleCurrentItemMap = new Map();
+
+    for (const item of prevItems || []) {
+        const key = buildComparableKey(item);
+        const qty = getComparableQty(item);
+        prevMap.set(key, (prevMap.get(key) || 0) + qty);
+    }
+
+    for (const item of currentItems || []) {
+        const key = buildComparableKey(item);
+        const qty = getComparableQty(item);
+
+        currentMap.set(key, (currentMap.get(key) || 0) + qty);
+
+        if (!sampleCurrentItemMap.has(key)) {
+            sampleCurrentItemMap.set(key, item);
+        }
+    }
+
+    const result = [];
+
+    for (const [key, currentQty] of currentMap.entries()) {
+        const prevQty = prevMap.get(key) || 0;
+        const diff = currentQty - prevQty;
+
+        if (diff > 0) {
+            const sampleItem = sampleCurrentItemMap.get(key);
+            result.push(normalizeForPrint(sampleItem, diff));
+        }
+    }
+
+    return result;
+};
 
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
@@ -150,7 +277,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     //    const [showTicket, setShowTicket] = useState(false);
     const [submitAction, setSubmitAction] = useState("invoice");
     const [showTicket, setShowTicket] = useState(false);
+    const itemsToPrintRef = useRef([]);
+    const committedItemsRef = useRef(Array.isArray(order?.items) ? order.items : []);
+    useEffect(() => {
+        committedItemsRef.current = Array.isArray(order?.items) ? order.items : [];
+    }, [order?._id, order?.items]);
 
+    const submitActionRef = useRef("invoice");
+    const printTargetRef = useRef("invoice");
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     useEffect(() => {
@@ -169,12 +303,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const [orderNote, setOrderNote] = useState("");
+    useEffect(() => {
+        setOrderNote(String(order?.orderNote || ""));
+    }, [order?._id, order?.orderNote]);
     const [draftOrderNote, setDraftOrderNote] = useState("");
     const [isNoteOpen, setIsNoteOpen] = useState(false);
 
 
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
+    const [itemsToPrint, setItemsToPrint] = useState([]);
+    const [lastPayloadItems, setLastPayloadItems] = useState([]);
 
     const [customerName, setCustomerName] = useState("");
     const [customerRnc, setCustomerRnc] = useState("");
@@ -364,8 +503,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             const dishId = item.dishId ?? item.id ?? item.dish ?? item._id;
 
             const qtyType = item.qtyType || "unit";
-            const weightUnit = qtyType === "weight" ? (item.weightUnit || "lb") : undefined;
-
+            const weightUnit = qtyType === "weight" ? (item.weightUnit || "lb") : "";
 // IMPORTANTE:
 // - Para weight: unitPrice debe venir de item.unitPrice (600), NO de item.price (1200)
 // - Para unit: unitPrice puede venir de unitPrice/pricePerQuantity/price
@@ -391,6 +529,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 quantity,
                 unitPrice,
                 price: Number(lineTotal.toFixed(2)),
+
+                note: String(item?.note || item?.comment || item?.specialInstructions || "").trim(),
+                addons: Array.isArray(item?.addons)
+                    ? item.addons
+                    : Array.isArray(item?.addOns)
+                        ? item.addOns
+                        : Array.isArray(item?.extras)
+                            ? item.extras
+                            : Array.isArray(item?.extraIngredients)
+                                ? item.extraIngredients
+                                : Array.isArray(item?.selectedExtras)
+                                    ? item.selectedExtras
+                                    : [],
+                modifiers: Array.isArray(item?.modifiers)
+                    ? item.modifiers
+                    : Array.isArray(item?.selectedOptions)
+                        ? item.selectedOptions
+                        : Array.isArray(item?.options)
+                            ? item.options
+                            : [],
             };
 
         });
@@ -459,7 +617,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             });
         },
         onSuccess: async (res) => {
-            // 0) Extrae el ID creado (si fue creación)
             const createdId =
                 res?.data?.data?._id ||
                 res?.data?.data?.order?._id ||
@@ -467,7 +624,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 res?.data?.order?._id ||
                 null;
 
-            // 1) Order “server” desde respuesta (si viene)
             let server =
                 res?.data?.data?.order ??
                 res?.data?.order ??
@@ -475,10 +631,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 res?.data ??
                 {};
 
-            // 2) ID efectivo para todo el flujo (update o create)
             const effectiveId = orderId || createdId;
 
-            // 3) Si la respuesta no trae el order completo, lo buscamos por GET usando effectiveId
             try {
                 if (effectiveId) {
                     const fresh = await api.get(`/api/order/${effectiveId}`);
@@ -497,25 +651,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 console.log("[BILL] No pude refrescar el order por GET:", e?.message);
             }
 
-            // 4) Si fue creación, cambia la URL para que el resto del flujo funcione como siempre
             if (!orderId && createdId) {
                 navigate(`/menu?orderId=${createdId}`, { replace: true });
             }
 
             const fallback = buildOrderPayload();
 
-            // 5) Refrescar cache con el ID correcto
             try {
                 if (effectiveId) {
                     queryClient.invalidateQueries(["order", effectiveId]);
                 }
             } catch (_) {}
 
-            // Items
             const srcItems =
                 Array.isArray(server.items) && server.items.length
                     ? server.items
                     : (fallback.items || []);
+            committedItemsRef.current = srcItems;
 
             const normalizedItems = (srcItems ?? []).map((it) => {
                 const q = num(it.quantity ?? it.qty ?? 1);
@@ -527,15 +679,16 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 const line = num(it.price ?? unit * q);
 
                 return {
+                    ...it,
                     name: it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
                     quantity: q,
+                    qty: q,
                     unitPrice: unit,
                     price: line,
                     tax: Number((line * 0.18).toFixed(2)),
                 };
             });
 
-            // Bills
             const bills = {
                 subtotal: server.bills?.subtotal ?? server.bills?.total ?? fallback.bills?.subtotal ?? 0,
                 discount: server.bills?.discount ?? fallback.bills?.discount ?? 0,
@@ -547,14 +700,46 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
             };
 
-            // Fiscal
             const fiscal = server.fiscal ?? null;
             const ncfNumber = server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
+            const currentPrintTarget = printTargetRef.current;
+
+
+
+            const ticketItemsSource =
+                currentPrintTarget === "ticket"
+                    ? (itemsToPrintRef.current || [])
+                    : normalizedItems;
+
+
+
+            const normalizedTicketItems = (ticketItemsSource ?? []).map((it) => {
+                const q = num(it.quantity ?? it.qty ?? 1);
+                const unit = num(
+                    it.pricePerQuantity ??
+                    it.unitPrice ??
+                    (it.price && q ? it.price / q : 0)
+                );
+                const line = num(it.price ?? unit * q);
+
+                return {
+                    ...it,
+                    name: it.name || it.dishName || it.itemName || it?.dishInfo?.name || "Producto",
+                    quantity: q,
+                    qty: q,
+                    unitPrice: unit,
+                    price: line,
+                    tax: Number((line * 0.18).toFixed(2)),
+                };
+            });
 
             const invoice = {
-                _id: server._id ?? effectiveId, // ✅ usa effectiveId
-                createdAt: server.createdAt ?? new Date().toISOString(),
+                _id: server._id ?? effectiveId,
+                createdAt: server.createdAt ?? order?.createdAt ?? null,
                 table: server.table ?? order?.table ?? draftTable ?? null,
+                orderNote: server.orderNote ?? fallback.orderNote ?? "",
+                items: normalizedTicketItems,
+                orderedItems: normalizedTicketItems,
                 tableName:
                     server.table?.name ??
                     server.tableName ??
@@ -562,7 +747,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     order?.tableName ??
                     draftTable?.name ??
                     "",
-
                 roomName:
                     server.roomName ??
                     server.sala ??
@@ -585,8 +769,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 commissionRate: server.commissionRate,
                 commissionAmount: server.commissionAmount,
                 netTotal: server.netTotal,
-
-
                 customerDetails: {
                     name: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                     rnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
@@ -594,79 +776,46 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     phone: server.customerDetails?.phone ?? fallback.customerDetails?.phone ?? "",
                     address: server.customerDetails?.address ?? fallback.customerDetails?.address ?? "",
                 },
-
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
-
-                items: normalizedItems,
-                orderedItems: normalizedItems,
-
                 paymentMethod: server.paymentMethod ?? fallback.paymentMethod ?? "Efectivo",
-
                 subTotal: bills.subtotal,
                 discountAmount: bills.discount,
                 taxAmount: bills.tax,
                 tipAmount: bills.tip,
                 totalAmount: bills.totalWithTax,
-
                 bills,
                 fiscal,
                 ncfNumber,
             };
 
-
             setOrderInfo(invoice);
-            if (submitAction === "update") {
+
+            if (currentPrintTarget !== "ticket") {
+                itemsToPrintRef.current = [];
+                setItemsToPrint([]);
+            }
+
+            if (currentPrintTarget === "update") {
                 setIsOrderModalOpen(false);
                 navigate("/orders");
                 return;
             }
+            if (currentPrintTarget === "ticket") {
+                if (!Array.isArray(itemsToPrintRef.current) || itemsToPrintRef.current.length === 0) {
+                    enqueueSnackbar("No hay platos nuevos para imprimir en el ticket.", {
+                        variant: "warning",
+                    });
+                    return;
+                }
 
-            if (submitAction === "ticket") {
                 setShowTicket(true);
                 return;
             }
 
-            // invoice
             enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
-
-            // ✅ si solo era actualizar
-            if (submitAction === "update") {
-                setIsOrderModalOpen(false);
-                navigate("/orders");
-                return;
-            }
-
-                // ✅ ticket
-            if (submitAction === "ticket") {
-                setShowTicket(true);
-                return;
-            }
-
-            // ✅ invoice (facturar)
             setShowInvoice(true);
-
             dispatch(removeAllItems());
-
-            if (printTarget === "update") {
-                setIsOrderModalOpen(false);
-                navigate("/orders");
-                return;
-            }
-
-            if (wantsFiscal && fiscalCapable) {
-                setShowInvoice(true);
-            } else if (printTarget === "ticket") {
-                setShowTicket(true);
-            } else {
-                setShowInvoice(true);
-            }
-        },
-        onError: (err) => {
-            enqueueSnackbar(
-                err?.response?.data?.message || "Error actualizando la orden.",
-                { variant: "error" }
-            );
         },
     });
     const paymentMethodMutation = useMutation({
@@ -699,7 +848,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const handlePlaceOrder = (target = "invoice") => {
-        // ✅ Fiscal: si quiere factura fiscal, pedimos RNC/Cédula
         if (wantsFiscal && fiscalCapable) {
             const doc = String(customerRnc || "").replace(/[^\d]/g, "");
             if (!doc) {
@@ -709,21 +857,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }
         }
-        const handleUpdateOnly = () => {
-            const payload = buildOrderPayload();
-
-            if (!payload.items?.length) {
-                enqueueSnackbar("No hay items para actualizar la orden.", { variant: "warning" });
-                return;
-            }
-
-            setPrintTarget("update");
-            orderMutation.mutate(payload);
-        };
 
         const payload = buildOrderPayload();
 
-        // ✅ No se permite guardar si no hay items (esto evita EMPTY_ORDER_NOT_ALLOWED)
         if (!payload.items?.length) {
             enqueueSnackbar("No hay items en el carrito para guardar la orden.", {
                 variant: "warning",
@@ -731,12 +867,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             return;
         }
 
-        // Si es fiscal, forzamos factura
-        if (wantsFiscal && fiscalCapable) {
-            setPrintTarget("invoice");
-        } else {
-            setPrintTarget(target);
-        }
+        const previousItems = committedItemsRef.current || [];
+        const currentItems = payload.items || [];
+        const deltaItems = getOnlyNewItemsForPrint(previousItems, currentItems);
+
+
+
+        itemsToPrintRef.current = deltaItems;
+        setItemsToPrint(deltaItems);
+
+
+
+        setSubmitAction(target);
+        setLastPayloadItems(payload.items || []);
+
+        const nextTarget = wantsFiscal && fiscalCapable ? "invoice" : target;
+
+        submitActionRef.current = target;
+        printTargetRef.current = nextTarget;
+
+        setPrintTarget(nextTarget);
 
         orderMutation.mutate(payload);
     };
@@ -1179,15 +1329,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     type="button"
                     onClick={() => {
                         setSubmitAction("update");
-
-                        const payload = buildOrderPayload(); // ⚠️ si tu función se llama distinto, reemplaza el nombre
-
-                        if (!payload.items?.length) {
-                            enqueueSnackbar("No hay items para actualizar la orden.", { variant: "warning" });
-                            return;
-                        }
-
-                        orderMutation.mutate(payload);
+                        handlePlaceOrder("update");
                     }}
                     disabled={orderMutation.isPending}
                     className="px-4 py-3 w-full rounded-lg bg-[#1f1f1f] text-white font-semibold text-lg border border-gray-800/50 hover:bg-[#2b2b2b]"
@@ -1200,6 +1342,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 <Ticket
                     order={orderInfo}
                     onClose={() => {
+                        itemsToPrintRef.current = [];
+                        setItemsToPrint([]);
                         setShowTicket(false);
                         setIsOrderModalOpen(false);
                         navigate("/orders");

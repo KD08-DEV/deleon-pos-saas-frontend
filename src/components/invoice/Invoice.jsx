@@ -245,9 +245,9 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                 variants={modalVariants}
             >
                 <div ref={receiptRef} className="px-6 pt-6 pb-4 overflow-y-auto">
-                    {/* Negocio */}
+                    {/* Negocio  <h2 className="text-lg font-bold text-gray-900">{headerTitle}</h2>*/}
                     <div className="text-center text-xs text-gray-700 mb-2">
-                        <h2 className="text-lg font-bold text-gray-900">{headerTitle}</h2>
+
                         <p className="font-semibold text-sm text-gray-900">{businessName}</p>
                         {businessRnc && <p>RNC: {businessRnc}</p>}
                         {businessAddress && <p>{businessAddress}</p>}

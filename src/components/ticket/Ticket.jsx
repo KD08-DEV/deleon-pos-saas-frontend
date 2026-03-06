@@ -75,6 +75,7 @@ const Ticket = ({ order, onClose }) => {
     const createdAt = order?.createdAt || order?.updatedAt || order?.date || null;
 
     const items = useMemo(() => order?.items || order?.orderedItems || [], [order]);
+    const orderNote = String(order?.orderNote || "").trim();
 
     const bills = order?.bills || {};
     const subtotal = safeNum(order?.subTotal ?? bills?.subtotal ?? 0);
@@ -190,37 +191,69 @@ const Ticket = ({ order, onClose }) => {
 
                         <div className="ticket-divider" />
 
+
                         <div className="text-xs">
                             {items?.length ? (
-                                items.map((it, idx) => {
-                                    const qty = getQty(it);
-                                    const name = getItemName(it);
-                                    const extras = getItemExtras(it);
+                                <div className="space-y-2">
+                                    {items.map((it, idx) => {
+                                        const qty = getQty(it);
+                                        const name = getItemName(it);
+                                        const extras = getItemExtras(it);
 
-                                    return (
-                                        <div key={`${idx}-${name}`} className="mb-2">
-                                            <div className="flex justify-between gap-2">
-                                                <div className="font-semibold">
-                                                    ({qty}) {name}
+                                        return (
+                                            <div
+                                                key={`${idx}-${name}`}
+                                                className="px-1 py-1"
+                                            >
+                                                <div className="flex items-start gap-2">
+                                                    <div className="min-w-[30px] rounded bg-black px-2 py-1 text-center text-[13px] font-extrabold text-white leading-none">
+                                                        x{qty}
+                                                    </div>
+
+                                                    <div className="flex-1">
+                                                        <div className="text-[14px] font-extrabold leading-snug uppercase">
+                                                            {name}
+                                                        </div>
+
+                                                        {extras?.length ? (
+                                                            <div className="mt-1 pl-1">
+                                                                {extras.slice(0, 6).map((ex, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="text-[11px] text-gray-700 leading-snug"
+                                                                    >
+                                                                        • {ex}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
                                             </div>
-
-                                            {extras?.length ? (
-                                                <div className="mt-1 pl-3 text-[11px] text-gray-700">
-                                                    {extras.slice(0, 6).map((ex, i) => (
-                                                        <div key={i}>- {ex}</div>
-                                                    ))}
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    );
-                                })
+                                        );
+                                    })}
+                                </div>
                             ) : (
                                 <div className="text-center text-gray-500">Sin items</div>
                             )}
                         </div>
 
                         <div className="ticket-divider" />
+                        {orderNote ? (
+                            <>
+                                <div className="mt-4 mb-4 px-1 py-1">
+                                    <div className="text-[13px] font-extrabold uppercase">
+                                        Nota del pedido
+                                    </div>
+
+                                    <div className="mt-2 pl-2 text-[14px] font-semibold whitespace-pre-wrap break-words leading-snug">
+                                        {orderNote}
+                                    </div>
+                                </div>
+
+                                <div className="ticket-divider my-3" />
+                            </>
+                        ) : null}
 
 
 
