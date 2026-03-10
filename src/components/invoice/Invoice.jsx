@@ -1,9 +1,10 @@
-// src/components/invoice/Invoice.jsx
-import React, { useRef } from "react";
+    // src/components/invoice/Invoice.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useReactToPrint } from "react-to-print";
 import useTenant from "../../hooks/useTenant.js";
-
+import { printWithTenantConfig } from "../../lib/tenantPrint";
+import usePrinterOptions from "../../hooks/usePrinterOptions";
 const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
 
 const formatDMY = (dateLike) => {
@@ -49,7 +50,10 @@ const formatDMYTime = (dateLike) => {
 };
 
 const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) => {
+    const [isPrintingLogic, setIsPrintingLogic] = useState(false);
+
     const { tenantInfo } = useTenant();
+
     const receiptRef = useRef(null);
 
     // ===== Datos negocio =====
@@ -59,30 +63,80 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const businessPhone = tenantInfo?.business?.phone || "";
 
     // ===== Fiscal =====
-    const isFiscal = Boolean(order?.fiscal?.requested || order?.ncfNumber || order?.fiscal?.ncfNumber);
+    const resolvedFiscalRequested = order?.fiscal?.requested === true;
+
+    const resolvedNcfType =
+        order?.fiscal?.ncfType ||
+        order?.ncfType ||
+        "";
+
+    const resolvedNcfNumber =
+        order?.ncfNumber ||
+        order?.fiscal?.ncfNumber ||
+        order?.fiscal?.ncf ||
+        order?.fiscal?.number ||
+        order?.fiscal?.documentNumber ||
+        order?.fiscal?.ncfCode ||
+        order?.fiscal?.comprobante ||
+        order?.ncf ||
+        "";
+
+    const isFiscal = Boolean(
+        resolvedFiscalRequested ||
+        (resolvedNcfType && resolvedNcfNumber)
+    );
+
     const tenantPreInvoiceEnabled = !!tenantInfo?.features?.preInvoice?.enabled;
 
 // si existe una prefactura en la orden, tiene prioridad; si no, usa el tenant default
     const isPreInvoice =
         !!order?.fiscal?.preInvoice || tenantPreInvoiceEnabled;
 
+    const ncfType =
+        order?.fiscal?.ncfType ||
+        order?.ncfType ||
+        "";
+
     const ncfNumber =
         order?.ncfNumber ||
         order?.fiscal?.ncfNumber ||
         order?.fiscal?.ncf ||
+        order?.fiscal?.number ||
+        order?.fiscal?.documentNumber ||
+        order?.fiscal?.ncfCode ||
+        order?.fiscal?.comprobante ||
+        order?.ncf ||
         "";
 
-    const ncfType = order?.fiscal?.ncfType || order?.ncfType || "";
-
-
-    // ✅ Secuencial interno (Factura No.)
-    const internalNumberRaw =
+    const facturaNoRaw =
+        order?.facturaNo ??
+        order?.invoiceNumber ??
+        order?.invoiceNo ??
+        order?.fiscal?.facturaNo ??
+        order?.fiscal?.invoiceNumber ??
+        order?.fiscal?.invoiceNo ??
         order?.fiscal?.internalNumber ??
         order?.fiscal?.internalSeq ??
         order?.fiscal?.internal ??
+        order?.fiscal?.sequence ??
+        order?.fiscal?.sequenceNumber ??
         null;
 
-    const facturaNo = internalNumberRaw ? pad(internalNumberRaw, 8) : null;
+    const facturaNo =
+        typeof facturaNoRaw === "string"
+            ? facturaNoRaw
+            : (facturaNoRaw ? pad(facturaNoRaw, 8) : null);
+
+// ✅ Vence (NCF)
+    const expirationDate =
+        order?.expirationDate ||
+        order?.fiscal?.expirationDate ||
+        order?.fiscal?.expiresAt ||
+        order?.fiscal?.expiryDate ||
+        tenantInfo?.fiscal?.ncfConfig?.[ncfType]?.expiresAt ||
+        null;
+
+
 
     // ✅ Sucursal / Punto emisión (defaults)
     const branchName =
@@ -95,12 +149,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         tenantInfo?.fiscal?.emissionPoint ||
         "001";
 
-    // ✅ Vence (NCF)
-    const expirationDate =
-        order?.fiscal?.expirationDate ||
-        order?.fiscal?.expiresAt ||
-        tenantInfo?.fiscal?.ncfConfig?.[ncfType]?.expiresAt ||
-        null;
+
 
     // ===== Cliente =====
     const clientName =
@@ -125,7 +174,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         "";
     const tableObj = order?.table && typeof order.table === "object" ? order.table : null;
 
-// Mesa como texto: "Mesa 1"
+        // Mesa como texto: "Mesa 1"
     const tableName =
         order?.tableName ||
         order?.table?.name ||
@@ -133,7 +182,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         (typeof order?.table === "string" ? order.table : "") ||
         "";
 
-// Mesero/usuario
+    // Mesero/usuario
     const waiterName =
         order?.waiterName ||
         order?.serverName ||
@@ -192,8 +241,37 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     );
     const showShipping = shippingFee > 0;
     const treatAsInternalDelivery = isInternalDelivery || showShipping;
+    const {
+        printers: invoicePrinters,
+        defaultPrinter: defaultInvoicePrinter,
+        isLoadingPrinters,
+    } = usePrinterOptions("invoice");
+
+    const getInvoiceItemName = (item) =>
+        item?.dishInfo?.name ||
+        item?.dishName ||
+        item?.dish?.name ||
+        item?.name ||
+        "Producto";
+    const [selectedPrinterId, setSelectedPrinterId] = useState("");
 
 
+    useEffect(() => {
+        if (!selectedPrinterId && defaultInvoicePrinter?._id) {
+            setSelectedPrinterId(defaultInvoicePrinter._id);
+        }
+    }, [defaultInvoicePrinter, selectedPrinterId]);
+
+    const selectedPrinter = useMemo(
+        () => invoicePrinters.find((p) => p._id === selectedPrinterId) || defaultInvoicePrinter || null,
+        [invoicePrinters, selectedPrinterId, defaultInvoicePrinter]
+    );
+
+    const printingConfig = {
+        enabled: true,
+        mode: selectedPrinter?.mode || "browser",
+    };
+    const [printMessage, setPrintMessage] = useState("");
 
 // Si el backend ya incluyó el envío en grandTotal, no lo sumamos doble.
 // Recalculamos un “expected” y comparamos.
@@ -218,9 +296,117 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         ? "grid grid-cols-[2fr_0.5fr_1fr_1fr]"
         : "grid grid-cols-[2fr_0.5fr_1fr]";
 
-    const handlePrint = useReactToPrint({
+    const browserPrint = useReactToPrint({
         contentRef: receiptRef,
-        documentTitle: isFiscal ? "Factura NCF" : (isPreInvoice ? "PreFactura" : "Factura"),    });
+        documentTitle: isFiscal ? "Factura NCF" : (isPreInvoice ? "PreFactura" : "Factura"),
+    });
+
+    const handleBrowserPrint = async () => {
+        setPrintMessage("Abriendo impresión normal del navegador...");
+        await browserPrint?.();
+    };
+
+    const handleLogicPrint = async () => {
+        if (isPrintingLogic) return;
+
+        try {
+            setIsPrintingLogic(true);
+            setPrintMessage("Enviando factura a la impresora...");
+
+            console.log("[PRINT][invoice] selectedPrinter =", selectedPrinter);
+
+            const itemsSubtotalSum = (items || []).reduce((sum, item) => {
+                const qty = Number(item?.quantity || item?.qty || 1);
+                const unitPrice =
+                    Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
+                    (Number(item?.price || 0) / Number(qty || 1));
+
+                return sum + unitPrice * qty;
+            }, 0);
+
+            const payload = {
+                businessName,
+                rnc: businessRnc,
+                address: businessAddress,
+                phone: businessPhone,
+
+                headerTitle,
+
+                isFiscal,
+                isPreInvoice,
+                ncfType,
+                ncfNumber,
+                facturaNo,
+                branchName,
+                emissionPoint,
+                expirationDate: expirationDate ? formatDMY(expirationDate) : "N/A",
+
+                orderId: order?._id || "N/A",
+                fechaHora: order?.createdAt ? formatDMYTime(order.createdAt) : "N/A",
+                mesa: tableName || "N/A",
+                mesero: waiterName || "N/A",
+                salaArea: salaArea || "N/A",
+
+                clientName,
+                clientPhone,
+                clientAddress,
+                clientRnc,
+
+                taxEnabled,
+                paymentMethod,
+
+                items: (items || []).map((item) => {
+                    const qty = Number(item?.quantity || item?.qty || 1);
+                    const unitPrice =
+                        Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
+                        (Number(item?.price || 0) / Number(qty || 1));
+
+                    const lineSubtotal = unitPrice * qty;
+                    const lineTax =
+                        taxEnabled && tax > 0 && itemsSubtotalSum > 0
+                            ? (lineSubtotal / itemsSubtotalSum) * tax
+                            : 0;
+
+                    return {
+                        name: getInvoiceItemName(item),
+                        qty,
+                        unitPrice,
+                        tax: lineTax,
+                    };
+                }),
+
+                subtotal,
+                discount,
+                tip,
+                tax,
+                isAppDelivery,
+                commissionPct,
+                commissionAmount,
+                showShipping,
+                shippingFee,
+                totalToPay,
+            };
+
+            const result = await printWithTenantConfig({
+                config: printingConfig,
+                type: "invoice",
+                printer: selectedPrinter,
+                fallbackPrint: browserPrint,
+                payload,
+            });
+
+            setPrintMessage(result?.message || "Factura impresa correctamente.");
+        } catch (err) {
+            console.error("[PRINT][invoice] logic print error:", err);
+            setPrintMessage(
+                err?.response?.data?.message ||
+                err?.message ||
+                "No se pudo imprimir la factura."
+            );
+        } finally {
+            setIsPrintingLogic(false);
+        }
+    };
 
     const backdropVariants = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
     const modalVariants = { hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } };
@@ -229,7 +415,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         invoiceTitle ??
         (isFiscal
             ? "Factura con Comprobante Fiscal"
-            : (isPreInvoice ? "PreFactura" : "Factura para Consumidor Final"));
+            : (isPreInvoice ? "PreFactura" : "Factura Consumidor Final"));
 
     return (
         <motion.div
@@ -257,12 +443,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                     {/* Título + tipo */}
                     <div className="text-center mb-1">
                         <h2 className="text-lg font-bold text-center mb-1">
-                            {invoiceTitle
-                                ? invoiceTitle
-                                : isFiscal
-                                    ? "Factura con Comprobante Fiscal"
-                                    : (isPreInvoice ? "PreFactura" : "Factura para Consumidor Final")
-                            }
+                            {headerTitle}
                         </h2>
                     </div>
 
@@ -307,7 +488,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                             <p>
                                 <span className="font-semibold">Sucursal:</span> {branchName}{" "}
                                 <span className="text-gray-500">·</span>{" "}
-                                <span className="font-semibold">Punto de emisión:</span> {emissionPoint}
+                                <span className="font-semibold">Punto de emision:</span> {emissionPoint}
                             </p>
                         )}
 
@@ -453,12 +634,68 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         </p>
                     </div>
                 </div>
+                <div className="border-t px-4 pt-3 pb-2 bg-gray-50">
+                    <div className="space-y-2">
+                        <div className="text-xs font-semibold text-gray-700">Impresora</div>
+
+                        <select
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                            value={selectedPrinterId}
+                            onChange={(e) => setSelectedPrinterId(e.target.value)}
+                            disabled={isLoadingPrinters || invoicePrinters.length === 0}
+                        >
+                            {invoicePrinters.length === 0 ? (
+                                <option value="">No hay impresoras registradas</option>
+                            ) : (
+                                invoicePrinters.map((p) => (
+                                    <option key={p._id} value={p._id}>
+                                        {p.alias} {p.isDefault ? "• default" : ""}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+
+                        {selectedPrinter ? (
+                            <div className="text-[11px] text-gray-500">
+                                Modo: {selectedPrinter.mode} · Papel: {selectedPrinter.paperSize}
+                                {selectedPrinter.ip ? ` · ${selectedPrinter.ip}:${selectedPrinter.port}` : ""}
+                            </div>
+                        ) : (
+                            <div className="text-[11px] text-gray-400">
+                                En modo browser, el navegador mostrará su diálogo de impresión.
+                            </div>
+                        )}
+                        {printMessage && (
+                            <div className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2 py-2">
+                                {printMessage}
+                            </div>
+                        )}
+                    </div>
+                </div>
 
                 {/* Botones */}
-                <div className="flex justify-between items-center border-t px-4 py-3 bg-gray-50 text-xs sm:text-sm">
-                    <button onClick={handlePrint} className="text-primary-600 hover:text-primary-700 font-medium">
-                        Imprimir
-                    </button>
+                <div className="flex flex-wrap justify-between items-center gap-2 border-t px-4 py-3 bg-gray-50 text-xs sm:text-sm">
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleBrowserPrint}
+                            className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium"
+                        >
+                            Otras impresoras
+                        </button>
+
+                        <button
+                            onClick={handleLogicPrint}
+                            disabled={isPrintingLogic}
+                            className={`px-3 py-2 rounded-md text-white font-semibold ${
+                                isPrintingLogic
+                                    ? "bg-gray-400 cursor-not-allowed"
+                                    : "bg-[#111111] hover:bg-[#2b2b2b]"
+                            }`}
+                        >
+                            {isPrintingLogic ? "Imprimiendo..." : "Impresora de red"}
+                        </button>
+                    </div>
+
                     <button onClick={onClose} className="text-red-500 hover:text-red-600 font-medium">
                         Cerrar
                     </button>

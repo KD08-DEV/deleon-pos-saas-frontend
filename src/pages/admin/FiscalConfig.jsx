@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Receipt, CreditCard, Percent, Calendar, AlertCircle, CheckCircle2, Info } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import api from "../../lib/api";
+import useTenantPrinting from "../../hooks/usePrinters.js";
 
 
 const inputCls =
@@ -85,8 +86,45 @@ function ToggleRow({ label, desc, checked, onChange, disabled, icon: Icon }) {
 
 export default function FiscalConfig() {
     const qc = useQueryClient();
+    const {
+        printingConfig,
+        isLoadingPrintingConfig,
+        savePrintingConfig,
+        savingPrintingConfig,
+        testPrinting,
+        testingPrinting,
+    } = useTenantPrinting();
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState(null);
+    const [printingForm, setPrintingForm] = useState(null);
+
+    useEffect(() => {
+        if (!printingConfig) return;
+        setPrintingForm({
+            enabled: !!printingConfig.enabled,
+            mode: printingConfig.mode || "browser",
+            paperSize: printingConfig.paperSize || "80mm",
+            autoPrintTicket: !!printingConfig.autoPrintTicket,
+            autoPrintInvoice: !!printingConfig.autoPrintInvoice,
+            mobile: {
+                enabled: printingConfig?.mobile?.enabled !== false,
+                allowAirPrint: printingConfig?.mobile?.allowAirPrint !== false,
+            },
+            qz: {
+                enabled: !!printingConfig?.qz?.enabled,
+                host: printingConfig?.qz?.host || "localhost",
+                port: Number(printingConfig?.qz?.port || 8181),
+            },
+        });
+    }, [printingConfig]);
+    const savePrinting = async () => {
+        if (!printingForm) return;
+        await savePrintingConfig(printingForm);
+    };
+
+    const runPrintingTest = async () => {
+        await testPrinting();
+    };
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ["admin-fiscal-config"],
@@ -420,6 +458,223 @@ export default function FiscalConfig() {
                     </div>
                 </Section>
             </div>
+
+            {/* Print */}
+            {printingForm && (
+                <div className="mb-6">
+                    <Section
+                        title="Configuración de Impresión"
+                        icon={Receipt}
+                        description="Configura cómo imprimen tickets y facturas para este tenant"
+                    >
+                        <div className="space-y-4">
+                            <ToggleRow
+                                label="Habilitar impresión personalizada"
+                                desc="Activa la configuración de impresión por tenant"
+                                checked={!!printingForm.enabled}
+                                onChange={(v) => setPrintingForm((f) => ({ ...f, enabled: v }))}
+                                icon={Receipt}
+                            />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Modo</div>
+                                    <select
+                                        className={inputCls}
+                                        value={printingForm.mode}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({ ...f, mode: e.target.value }))
+                                        }
+                                    >
+                                        <option value="browser">Browser</option>
+                                        <option value="qz">QZ</option>
+                                    </select>
+                                </label>
+
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Tamaño papel</div>
+                                    <select
+                                        className={inputCls}
+                                        value={printingForm.paperSize}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({ ...f, paperSize: e.target.value }))
+                                        }
+                                    >
+                                        <option value="58mm">58mm</option>
+                                        <option value="80mm">80mm</option>
+                                        <option value="A4">A4</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <ToggleRow
+                                label="Auto imprimir ticket"
+                                desc="Dispara el flujo automático de ticket cuando corresponda"
+                                checked={!!printingForm.autoPrintTicket}
+                                onChange={(v) =>
+                                    setPrintingForm((f) => ({ ...f, autoPrintTicket: v }))
+                                }
+                            />
+
+                            <ToggleRow
+                                label="Auto imprimir factura"
+                                desc="Dispara el flujo automático de factura cuando corresponda"
+                                checked={!!printingForm.autoPrintInvoice}
+                                onChange={(v) =>
+                                    setPrintingForm((f) => ({ ...f, autoPrintInvoice: v }))
+                                }
+                            />
+
+                            <ToggleRow
+                                label="Permitir impresión móvil"
+                                desc="Mantiene habilitado el flujo para celular/navegador"
+                                checked={!!printingForm.mobile.enabled}
+                                onChange={(v) =>
+                                    setPrintingForm((f) => ({
+                                        ...f,
+                                        mobile: { ...f.mobile, enabled: v },
+                                    }))
+                                }
+                            />
+
+                            <ToggleRow
+                                label="Permitir AirPrint"
+                                desc="Solo relevante en dispositivos Apple compatibles"
+                                checked={!!printingForm.mobile.allowAirPrint}
+                                onChange={(v) =>
+                                    setPrintingForm((f) => ({
+                                        ...f,
+                                        mobile: { ...f.mobile, allowAirPrint: v },
+                                    }))
+                                }
+                            />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Alias impresora ticket</div>
+                                    <input
+                                        className={inputCls}
+                                        value={printingForm.ticketPrinter.alias}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({
+                                                ...f,
+                                                ticketPrinter: {
+                                                    ...f.ticketPrinter,
+                                                    alias: e.target.value,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                </label>
+
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Nombre impresora ticket</div>
+                                    <input
+                                        className={inputCls}
+                                        value={printingForm.ticketPrinter.name}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({
+                                                ...f,
+                                                ticketPrinter: {
+                                                    ...f.ticketPrinter,
+                                                    name: e.target.value,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                </label>
+
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Alias impresora factura</div>
+                                    <input
+                                        className={inputCls}
+                                        value={printingForm.invoicePrinter.alias}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({
+                                                ...f,
+                                                invoicePrinter: {
+                                                    ...f.invoicePrinter,
+                                                    alias: e.target.value,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                </label>
+
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Nombre impresora factura</div>
+                                    <input
+                                        className={inputCls}
+                                        value={printingForm.invoicePrinter.name}
+                                        onChange={(e) =>
+                                            setPrintingForm((f) => ({
+                                                ...f,
+                                                invoicePrinter: {
+                                                    ...f.invoicePrinter,
+                                                    name: e.target.value,
+                                                },
+                                            }))
+                                        }
+                                    />
+                                </label>
+                            </div>
+
+                            {printingForm.mode === "qz" && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <label>
+                                        <div className="text-xs text-gray-400 mb-1">QZ Host</div>
+                                        <input
+                                            className={inputCls}
+                                            value={printingForm.qz.host}
+                                            onChange={(e) =>
+                                                setPrintingForm((f) => ({
+                                                    ...f,
+                                                    qz: { ...f.qz, host: e.target.value },
+                                                }))
+                                            }
+                                        />
+                                    </label>
+
+                                    <label>
+                                        <div className="text-xs text-gray-400 mb-1">QZ Port</div>
+                                        <input
+                                            className={inputCls}
+                                            type="number"
+                                            value={printingForm.qz.port}
+                                            onChange={(e) =>
+                                                setPrintingForm((f) => ({
+                                                    ...f,
+                                                    qz: { ...f.qz, port: Number(e.target.value || 8181) },
+                                                }))
+                                            }
+                                        />
+                                    </label>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={savePrinting}
+                                    disabled={savingPrintingConfig}
+                                    className="px-5 py-2 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] disabled:opacity-60"
+                                >
+                                    {savingPrintingConfig ? "Guardando impresión..." : "Guardar impresión"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={runPrintingTest}
+                                    disabled={testingPrinting}
+                                    className="px-5 py-2 rounded-xl border border-gray-700 text-white hover:bg-[#1a1a1a] disabled:opacity-60"
+                                >
+                                    {testingPrinting ? "Probando..." : "Probar backend impresión"}
+                                </button>
+                            </div>
+                        </div>
+                    </Section>
+                </div>
+            )}
             {/* PreFactura */}
             <div className="rounded-lg border border-gray-800/30 bg-[#1a1a1a]/50 p-4 mb-6">
                 <ToggleRow

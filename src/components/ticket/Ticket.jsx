@@ -1,7 +1,9 @@
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useReactToPrint } from "react-to-print";
 import useTenant from "../../hooks/useTenant.js";
+import { printWithTenantConfig } from "../../lib/tenantPrint";
+import usePrinterOptions from "../../hooks/usePrinterOptions";
 
 const safeNum = (v) => {
     if (v === null || v === undefined) return 0;
@@ -64,8 +66,10 @@ const getItemExtras = (it) => {
 };
 
 const Ticket = ({ order, onClose }) => {
+
     const { tenantInfo } = useTenant();
     const receiptRef = useRef(null);
+    const [isPrintingLogic, setIsPrintingLogic] = useState(false);
 
     const businessName = tenantInfo?.business?.name || tenantInfo?.name || "";
     const businessAddress = tenantInfo?.business?.address || "";
@@ -123,12 +127,95 @@ const Ticket = ({ order, onClose }) => {
 
 
     const paymentMethod = order?.paymentMethod || "Efectivo";
+    const {
+        printers: ticketPrinters,
+        defaultPrinter: defaultTicketPrinter,
+        isLoadingPrinters,
+    } = usePrinterOptions("ticket");
 
+    const [selectedPrinterId, setSelectedPrinterId] = useState("");
 
-    const handlePrint = useReactToPrint({
+    useEffect(() => {
+        if (!selectedPrinterId && defaultTicketPrinter?._id) {
+            setSelectedPrinterId(defaultTicketPrinter._id);
+        }
+    }, [defaultTicketPrinter, selectedPrinterId]);
+
+    const selectedPrinter = useMemo(
+        () => ticketPrinters.find((p) => p._id === selectedPrinterId) || defaultTicketPrinter || null,
+        [ticketPrinters, selectedPrinterId, defaultTicketPrinter]
+    );
+    const printingConfig = {
+        enabled: true,
+        mode: selectedPrinter?.mode || "browser",
+    };
+
+    const [printMessage, setPrintMessage] = useState("");
+
+    const browserPrint = useReactToPrint({
         contentRef: receiptRef,
         documentTitle: `Ticket-${operation}`,
     });
+
+    const handleBrowserPrint = async () => {
+        setPrintMessage("Abriendo impresión normal del navegador...");
+        await browserPrint?.();
+    };
+
+    const handleLogicPrint = async () => {
+        if (isPrintingLogic) return;
+
+        try {
+            setIsPrintingLogic(true);
+            setPrintMessage("Enviando ticket a la impresora...");
+
+            console.log("[PRINT][ticket] selectedPrinter =", selectedPrinter);
+
+            const payload = {
+                businessName,
+                rnc: businessRnc,
+                address: businessAddress,
+                phone: businessPhone,
+                title: "",
+                orderId: String(operation),
+                mesa: tableLabel,
+                mesero: String(waiter),
+                fecha: formatDMYTime(createdAt),
+                salaArea: roomLabel,
+                orderNote,
+                showTotals: false,
+                items: (items || []).map((it) => ({
+                    name: getItemName(it),
+                    qty: getQty(it),
+                    total: safeNum(it?.total ?? it?.price ?? 0),
+                    modifiers: getItemExtras(it).map((label) => ({ name: label })),
+                })),
+                subtotal,
+                tax,
+                total,
+                paymentMethod,
+            };
+
+            const result = await printWithTenantConfig({
+                config: printingConfig,
+                type: "ticket",
+                printer: selectedPrinter,
+                fallbackPrint: browserPrint,
+                payload,
+            });
+
+            setPrintMessage(result?.message || "Ticket enviado correctamente.");
+        } catch (err) {
+            console.error("[PRINT][ticket] logic print error:", err);
+            setPrintMessage(
+                err?.response?.data?.message ||
+                err?.message ||
+                "No se pudo imprimir el ticket."
+            );
+        } finally {
+            setIsPrintingLogic(false);
+        }
+    };
 
     return (
         <motion.div
@@ -166,7 +253,7 @@ const Ticket = ({ order, onClose }) => {
 
                         <div className="text-xs space-y-1">
                             <div className="flex justify-between">
-                                <span>Operación:</span>
+                                <span>Operacion:</span>
                                 <span className="font-semibold">{String(operation)}</span>
                             </div>
                             <div className="flex justify-between">
@@ -262,15 +349,69 @@ const Ticket = ({ order, onClose }) => {
                         <div className="text-center text-[11px] text-gray-700">Gracias por su compra</div>
                     </div>
                 </div>
+                <div className="no-print border-t pt-3 px-4 pb-2 bg-white">
+                    <div className="space-y-2">
+                        <div className="text-xs font-semibold text-gray-700">Impresora</div>
+
+                        <select
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                            value={selectedPrinterId}
+                            onChange={(e) => setSelectedPrinterId(e.target.value)}
+                            disabled={isLoadingPrinters || ticketPrinters.length === 0}
+                        >
+                            {ticketPrinters.length === 0 ? (
+                                <option value="">No hay impresoras registradas</option>
+                            ) : (
+                                ticketPrinters.map((p) => (
+                                    <option key={p._id} value={p._id}>
+                                        {p.alias} {p.isDefault ? "• default" : ""}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+
+                        {selectedPrinter ? (
+                            <div className="text-[11px] text-gray-500">
+                                Modo: {selectedPrinter.mode} · Papel: {selectedPrinter.paperSize}
+                                {selectedPrinter.ip ? ` · ${selectedPrinter.ip}:${selectedPrinter.port}` : ""}
+                            </div>
+                        ) : (
+                            <div className="text-[11px] text-gray-400">
+                                En modo browser, el navegador mostrará su diálogo de impresión.
+                            </div>
+                        )}
+                        {printMessage && (
+                            <div className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2 py-2">
+                                {printMessage}
+                            </div>
+                        )}
+
+                    </div>
+                </div>
 
                 <div className="no-print flex items-center justify-between gap-3 border-t px-4 py-3 bg-white">
-                    <button
-                        type="button"
-                        onClick={handlePrint}
-                        className="px-4 py-2 rounded-md bg-[#111111] text-white font-semibold hover:bg-[#2b2b2b]"
-                    >
-                        Imprimir
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={handleBrowserPrint}
+                            className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 font-medium hover:bg-gray-100"
+                        >
+                            Otras impresoras
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleLogicPrint}
+                            disabled={isPrintingLogic}
+                            className={`px-4 py-2 rounded-md text-white font-semibold ${
+                                isPrintingLogic
+                                    ? "bg-gray-400 cursor-not-allowed"
+                                    : "bg-[#111111] hover:bg-[#2b2b2b]"
+                            }`}
+                        >
+                            {isPrintingLogic ? "Imprimiendo..." : "Impresora de red"}
+                        </button>
+                    </div>
 
                     <button
                         type="button"

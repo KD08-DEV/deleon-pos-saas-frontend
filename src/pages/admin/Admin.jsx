@@ -35,7 +35,7 @@ import ExpenseCategories from "./ExpenseCategories";
 import Expenses from "./Expenses";
 import PayrollRuns from "./PayrollRuns";
 import FinanceSummary from "./FinanceSummary";
-
+import PrintersConfig   from "./PrintersConfig.jsx";
 
 import Reports from "./Reports";
 import Employees from "./Employees";
@@ -269,11 +269,11 @@ const Admin = () => {
                     description: "Configuración de comprobantes fiscales"
                 },
                 {
-                    id: "tax-config",
-                    label: "Configuración de Impuestos",
-                    icon: CreditCard,
+                    id: "printersconfig",
+                    label: "Configuración de impresoras",
+                    icon: Receipt,
                     description: "Gestionar impuestos y tasas",
-                    comingSoon: true
+
                 }
             ]
         },
@@ -346,7 +346,8 @@ const Admin = () => {
                     id: "notifications",
                     label: "Notificaciones",
                     icon: Bell,
-                    description: "Configurar notificaciones"
+                    description: "Configurar notificaciones",
+                    comingSoon: true
                 },
                 {
                     id: "help",
@@ -642,6 +643,8 @@ const Admin = () => {
                                 {tab === "expense-categories" && <ExpenseCategories />}
                                 {tab === "expenses" && <Expenses />}
                                 {tab === "payroll" && <PayrollRuns />}
+                                {tab === "printersconfig" && <PrintersConfig />}
+
 
                                 {tab === "menu-management" && <MenuManagement />}
                                 {tab === "tables-management" && <TablesManagement />}
@@ -649,7 +652,7 @@ const Admin = () => {
                                 {tab === "categories-inv" && <InventoryCategories />}
                                 {tab === "notifications" && <Notifications />}
                                 {tab === "help" && <HelpAndSupport />}
-                                {(tab === "schedules" || tab === "attendance" || tab === "tax-config") && (
+                                {(tab === "schedules" || tab === "attendance" || tab === "printersconfig") && (
                                     <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
                                         <div className="p-4 bg-[#f6b100]/10 rounded-full mb-4">
                                             {tab === "sales-reports" && <DollarSign className="w-12 h-12 text-[#f6b100]" />}
@@ -657,7 +660,7 @@ const Admin = () => {
                                             {tab === "financial-analysis" && <TrendingUp className="w-12 h-12 text-[#f6b100]" />}
                                             {tab === "schedules" && <Calendar className="w-12 h-12 text-[#f6b100]" />}
                                             {tab === "attendance" && <Clock className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "tax-config" && <CreditCard className="w-12 h-12 text-[#f6b100]" />}
+                                            {tab === "printersconfig" && <CreditCard className="w-12 h-12 text-[#f6b100]" />}
                                             {tab === "suppliers" && <Store className="w-12 h-12 text-[#f6b100]" />}
                                             {tab === "categories-inv" && <ShoppingBag className="w-12 h-12 text-[#f6b100]" />}
                                             {tab === "notifications" && <Bell className="w-12 h-12 text-[#f6b100]" />}

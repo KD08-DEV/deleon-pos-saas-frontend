@@ -700,8 +700,61 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
             };
 
-            const fiscal = server.fiscal ?? null;
-            const ncfNumber = server.ncfNumber ?? server.fiscal?.ncfNumber ?? server.fiscal?.ncf ?? "";
+            const fallbackFiscal = fallback?.fiscal ?? null;
+
+            const fiscal = {
+                ...(fallbackFiscal || {}),
+                ...(server.fiscal || {}),
+                requested:
+                    fallbackFiscal?.requested ??
+                    server?.fiscal?.requested ??
+                    false,
+                ncfType:
+                    fallbackFiscal?.ncfType ??
+                    server?.fiscal?.ncfType ??
+                    server?.ncfType ??
+                    null,
+                ncfNumber:
+                    server?.fiscal?.ncfNumber ??
+                    server?.fiscal?.ncf ??
+                    server?.ncfNumber ??
+                    fallbackFiscal?.ncfNumber ??
+                    null,
+            };
+
+            const resolvedNcfType =
+                fiscal?.ncfType ||
+                server?.ncfType ||
+                fallbackFiscal?.ncfType ||
+                null;
+
+            const resolvedNcfNumber =
+                fiscal?.ncfNumber ||
+                server?.ncfNumber ||
+                server?.fiscal?.ncfNumber ||
+                server?.fiscal?.ncf ||
+                server?.fiscal?.number ||
+                server?.fiscal?.documentNumber ||
+                server?.fiscal?.ncfCode ||
+                server?.fiscal?.comprobante ||
+                "";
+
+            const resolvedExpirationDate =
+                server?.fiscal?.expirationDate ||
+                server?.fiscal?.expiresAt ||
+                tenantInfo?.fiscal?.ncfConfig?.[resolvedNcfType]?.expiresAt ||
+                null;
+
+            const resolvedFacturaNo =
+                server?.fiscal?.invoiceNumber ||
+                server?.invoiceNumber ||
+                server?.fiscal?.facturaNo ||
+                server?.facturaNo ||
+                server?.fiscal?.internalNumber ||
+                server?.fiscal?.internalSeq ||
+                server?.fiscal?.internal ||
+                null;
+
             const currentPrintTarget = printTargetRef.current;
 
 
@@ -785,10 +838,22 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 tipAmount: bills.tip,
                 totalAmount: bills.totalWithTax,
                 bills,
-                fiscal,
-                ncfNumber,
+                fiscal: {
+                    ...(fiscal || {}),
+                    expirationDate: resolvedExpirationDate,
+                },
+                ncfType: resolvedNcfType,
+                ncfNumber: resolvedNcfNumber,
+                facturaNo: resolvedFacturaNo,
+                expirationDate: resolvedExpirationDate,
             };
 
+            console.log("[BILL][invoice payload final]", invoice);
+            console.log("[BILL][server order final]", server);
+            console.log("[BILL][fallbackFiscal]", fallbackFiscal);
+            console.log("[BILL][fiscal armado]", fiscal);
+            console.log("[BILL][resolvedNcfType]", resolvedNcfType);
+            console.log("[BILL][resolvedNcfNumber]", resolvedNcfNumber);
             setOrderInfo(invoice);
 
             if (currentPrintTarget !== "ticket") {
