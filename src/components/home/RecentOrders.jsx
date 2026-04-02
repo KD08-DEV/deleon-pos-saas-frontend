@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Search, Clock } from "lucide-react";
 import OrderList from "./OrderList";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -7,15 +7,20 @@ import { getOrders } from "../../https/index";
 import { useSelector } from "react-redux";
 import { motion } from "framer-motion";
 
+const INITIAL_LIMIT = 10;
+const LOAD_MORE_STEP = 10;
+
 const RecentOrders = ({ fill = false }) => {
     const { userData } = useSelector((state) => state.user);
-
     const tenantId = userData?.tenantId;
+
+    const [search, setSearch] = useState("");
+    const [visibleCount, setVisibleCount] = useState(INITIAL_LIMIT);
 
     const { data: resData, isError } = useQuery({
         queryKey: ["orders", tenantId],
-        enabled: !!tenantId, // 👈 importante
-        queryFn: async () => await getOrders(tenantId), // 👈 ya enviamos el tenantId correcto
+        enabled: !!tenantId,
+        queryFn: async () => await getOrders(tenantId),
         placeholderData: keepPreviousData,
     });
 
@@ -23,7 +28,41 @@ const RecentOrders = ({ fill = false }) => {
         enqueueSnackbar("Something went wrong!", { variant: "error" });
     }
 
-    const orders = resData?.data?.data ?? [];
+    const orders = useMemo(() => {
+        const raw = resData?.data?.data ?? [];
+
+        return [...raw].sort((a, b) => {
+            const aDate = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+            const bDate = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+            return bDate - aDate;
+        });
+    }, [resData]);
+
+    const filteredOrders = useMemo(() => {
+        const term = String(search || "").trim().toLowerCase();
+        if (!term) return orders;
+
+        return orders.filter((order) => {
+            const customerName = String(order?.customerDetails?.name || "").toLowerCase();
+            const orderId = String(order?._id || "").toLowerCase();
+            const tableNo = String(order?.table?.tableNo || "").toLowerCase();
+            const status = String(order?.orderStatus || "").toLowerCase();
+
+            return (
+                customerName.includes(term) ||
+                orderId.includes(term) ||
+                tableNo.includes(term) ||
+                status.includes(term)
+            );
+        });
+    }, [orders, search]);
+
+    const visibleOrders = useMemo(() => {
+        return filteredOrders.slice(0, visibleCount);
+    }, [filteredOrders, visibleCount]);
+
+    const hasMore = visibleCount < filteredOrders.length;
+    const canShowLess = visibleCount > INITIAL_LIMIT;
 
     return (
         <motion.div
@@ -42,7 +81,7 @@ const RecentOrders = ({ fill = false }) => {
                             <Clock className="text-blue-400 w-5 h-5" />
                         </motion.div>
                         <h1 className="text-[#f5f5f5] text-base sm:text-lg font-semibold tracking-wide">
-                            Ordenes Recientes
+                            Órdenes Recientes
                         </h1>
                     </div>
                 </div>
@@ -54,7 +93,12 @@ const RecentOrders = ({ fill = false }) => {
                     <Search className="text-[#ababab] text-sm sm:text-base" />
                     <input
                         type="text"
-                        placeholder="Busca tus ordenes recientes..."
+                        value={search}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            setVisibleCount(INITIAL_LIMIT);
+                        }}
+                        placeholder="Busca tus órdenes recientes..."
                         className="bg-transparent outline-none text-[#f5f5f5] w-full text-sm sm:text-base placeholder:text-gray-500"
                     />
                 </motion.div>
@@ -66,10 +110,34 @@ const RecentOrders = ({ fill = false }) => {
                         scrollbarColor: "#3a3a3a #1a1a1a",
                     }}
                 >
-                    {orders.length ? (
-                        orders.map((order) => (
-                            <OrderList key={order._id} order={order} />
-                        ))
+                    {visibleOrders.length ? (
+                        <>
+                            {visibleOrders.map((order) => (
+                                <OrderList key={order._id} order={order} />
+                            ))}
+
+                            <div className="pt-3 flex flex-wrap gap-3 justify-center">
+                                {hasMore && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_STEP)}
+                                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-all"
+                                    >
+                                        Ver más
+                                    </button>
+                                )}
+
+                                {canShowLess && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setVisibleCount(INITIAL_LIMIT)}
+                                        className="px-4 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#353535] text-white font-medium transition-all"
+                                    >
+                                        Ver menos
+                                    </button>
+                                )}
+                            </div>
+                        </>
                     ) : (
                         <motion.p
                             initial={{ opacity: 0 }}
