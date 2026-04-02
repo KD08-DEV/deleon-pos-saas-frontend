@@ -208,6 +208,7 @@ const CashRegister = () => {
         from: "",
         to: "",
         method: "",
+        fiscal: "",
         user: "",
         client: "",
     });
@@ -933,7 +934,7 @@ const CashRegister = () => {
                 payload: err?.config?.data,
                 data: err?.response?.data,
             });
-            showToast("No se pudo agregar dinero (modal). Revisa consola.");
+            showToast("No se pudo agregar dinero.");
         },
     });
 
@@ -969,22 +970,31 @@ const CashRegister = () => {
         },
         onError: (err) => {
             const status = err?.response?.status;
-            console.log("[POST open] ERROR", {
+
+            console.log("[POST add] ERROR", {
                 status,
                 url: err?.config?.url,
                 payload: err?.config?.data,
                 data: err?.response?.data,
             });
 
-            if (status === 409) {
-                setSessionConflict(true);
-                showToast("Ya existe una sesión de caja para ese día. Usa “Agregar dinero” o (Admin) “Editar fondo inicial”.");
+            if (status === 404) {
+                showToast("No se encontró la sesión para esa fecha/caja.");
                 queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
                 return;
             }
 
-            setSessionConflict(false);
-            showToast("No se pudo guardar el fondo inicial.");
+            if (status === 409) {
+                showToast("La caja ya está cerrada. No se puede agregar dinero.");
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+                return;
+            }
+
+            showToast(
+                err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                "No se pudo agregar dinero."
+            );
         },
 
     });
@@ -1037,6 +1047,7 @@ const CashRegister = () => {
         },
         onError: (err) => {
             const status = err?.response?.status;
+            const msg = err?.response?.data?.message || err?.response?.data?.error || "";
 
             console.log("[POST add] ERROR", {
                 status,
@@ -1046,11 +1057,22 @@ const CashRegister = () => {
             });
 
             if (status === 404) {
-                showToast("No se encontró la sesión (404). El backend no está encontrando la sesión para esa fecha/caja.");
+                showToast("No se encontró la sesión para esa fecha/caja.");
                 queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
                 return;
             }
-            showToast("No se pudo agregar dinero. Revisa consola.");
+
+            if (status === 409 && msg === "SESSION_CLOSED") {
+                showToast("Solo admin puede agregar dinero después del cierre.");
+                return;
+            }
+
+            if (status === 403) {
+                showToast("Solo administración puede agregar dinero.");
+                return;
+            }
+
+            showToast(msg || "No se pudo agregar dinero.");
         },
     });
 
@@ -1085,6 +1107,35 @@ const CashRegister = () => {
     const cleanedParams = useMemo(() => {
         return {};
     }, []);
+    const getFiscalType = (r) => {
+        const directType = normalize(
+            r?.fiscal?.ncfType ||
+            r?.fiscal?.type ||
+            r?.ncfType ||
+            r?.bills?.ncfType ||
+            r?.invoice?.fiscal?.ncfType ||
+            r?.invoice?.ncfType ||
+            ""
+        );
+
+        if (directType) return directType;
+
+        const ncfNumber = String(
+            r?.fiscal?.ncfNumber ||
+            r?.fiscal?.ncf ||
+            r?.ncfNumber ||
+            r?.ncf ||
+            r?.invoice?.fiscal?.ncfNumber ||
+            r?.invoice?.fiscal?.ncf ||
+            r?.invoice?.ncfNumber ||
+            ""
+        ).trim().toUpperCase();
+
+        if (ncfNumber.startsWith("B01")) return "b01";
+        if (ncfNumber.startsWith("B02")) return "b02";
+
+        return "";
+    };
 
     const getClientName = (r) => {
         return (
@@ -1177,6 +1228,7 @@ const CashRegister = () => {
         const from = modalFilters.from ? new Date(`${modalFilters.from}T00:00:00`) : null;
         const to = modalFilters.to ? new Date(`${modalFilters.to}T23:59:59`) : null;
         const method = normalize(modalFilters.method);
+        const fiscal = normalize(modalFilters.fiscal);
         const user = normalize(modalFilters.user);
         const client = normalize(modalFilters.client);
 
@@ -1188,6 +1240,36 @@ const CashRegister = () => {
             if (method) {
                 const pm = normalize(r?.paymentMethod || "Efectivo");
                 if (!pm.includes(method)) return false;
+            }
+            console.log(
+                "REPORTS FISCAL DEBUG",
+                sortedReports.slice(0, 10).map((r) => ({
+                    id: r?._id,
+                    fiscal: r?.fiscal,
+                    ncfType: r?.ncfType,
+                    ncfNumber: r?.ncfNumber,
+                    invoice: r?.invoice,
+                    resolved: getFiscalType(r),
+                }))
+            );
+            if (fiscal) {
+                const fiscalType = getFiscalType(r);
+
+                if (fiscal === "fiscal" && !["b01", "b02"].includes(fiscalType)) {
+                    return false;
+                }
+
+                if (fiscal === "b01" && fiscalType !== "b01") {
+                    return false;
+                }
+
+                if (fiscal === "b02" && fiscalType !== "b02") {
+                    return false;
+                }
+
+                if (fiscal === "nofiscal" && ["b01", "b02"].includes(fiscalType)) {
+                    return false;
+                }
             }
 
             if (user) {
@@ -1390,6 +1472,7 @@ const CashRegister = () => {
             from: "",
             to: "",
             method: "",
+            fiscal: "",
             user: "",
             client: "",
         });
@@ -1486,7 +1569,7 @@ const CashRegister = () => {
                             placeholder="0"
                         />
 
-                        {sessionExists && (isSelectedToday || isAdmin) && (
+                        {isAdminLike && sessionExists && (isSelectedToday || isAdmin) && (
                             <div className="mt-3">
                                 <label className="text-xs text-gray-400 mb-1 block">Agregar dinero</label>
                                 <div className="flex gap-2">
@@ -1500,13 +1583,32 @@ const CashRegister = () => {
                                     <button
                                         type="button"
                                         onClick={() => {
+                                            if (!isAdminLike) {
+                                                showToast("Solo administración puede agregar dinero.");
+                                                return;
+                                            }
+
+                                            if (!sessionExists) {
+                                                showToast("No existe una sesión de caja para esta fecha.");
+                                                return;
+                                            }
+
+                                            if (sessionClosed && !isAdminLike) {
+                                                showToast("La caja ya está cerrada. No se puede agregar dinero.");
+                                                return;
+                                            }
+
                                             const cleaned = String(addAmountInput ?? "").replace(/[^\d.-]/g, "");
                                             const amount = Number(cleaned);
-                                            if (!Number.isFinite(amount) || amount <= 0) return;
+
+                                            if (!Number.isFinite(amount) || amount <= 0) {
+                                                showToast("Monto inválido.");
+                                                return;
+                                            }
 
                                             addCashMutation.mutate({
                                                 dateYMD: selectedYMD,
-                                                registerId: "MAIN",
+                                                registerId: REGISTER_ID,
                                                 amount,
                                             });
 
@@ -1519,9 +1621,7 @@ const CashRegister = () => {
                                 </div>
 
                                 <div className="text-xs text-gray-500 mt-1">
-                                    {isCashier
-                                        ? "La cajera solo puede agregar dinero. El fondo inicial solo se guarda una vez."
-                                        : "Puedes agregar dinero a la caja. (El admin también puede ajustar el fondo inicial)."}
+                                    Solo administración puede agregar dinero o ajustar el fondo inicial.
                                 </div>
                             </div>
                         )}
@@ -1653,14 +1753,6 @@ const CashRegister = () => {
                             </button>
                         )}
 
-
-                        <div className="text-xs text-gray-500 mt-1">
-                            {cashSessionLoading
-                                ? "Cargando..."
-                                : openingAlreadySet
-                                    ? "Fondo inicial guardado "
-                                    : "Aún no se ha guardado el fondo inicial de hoy."}
-                        </div>
                     </div>
                 </div>
             </div>
@@ -2098,6 +2190,20 @@ const CashRegister = () => {
 
                                                     </select>
                                                 </div>
+                                                <div>
+                                                    <label className="text-xs text-gray-400 mb-1 block">Comprobante fiscal</label>
+                                                    <select
+                                                        value={modalFilters.fiscal}
+                                                        onChange={(e) => setModalFilters((f) => ({ ...f, fiscal: e.target.value }))}
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                    >
+                                                        <option value="">Todos</option>
+                                                        <option value="fiscal">Solo con comprobante fiscal (B01/B02)</option>
+                                                        <option value="b01">Solo B01</option>
+                                                        <option value="b02">Solo B02</option>
+                                                        <option value="nofiscal">Sin comprobante fiscal</option>
+                                                    </select>
+                                                </div>
 
                                                 <div>
                                                     <label className="text-xs text-gray-400 mb-1 block">Buscar por usuario</label>
@@ -2122,6 +2228,7 @@ const CashRegister = () => {
                                                 {(modalFilters.from ||
                                                     modalFilters.to ||
                                                     modalFilters.method ||
+                                                    modalFilters.fiscal ||
                                                     modalFilters.user ||
                                                     modalFilters.client) && (
                                                     <button

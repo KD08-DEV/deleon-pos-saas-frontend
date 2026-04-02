@@ -43,11 +43,14 @@ const MenuManagement = () => {
         dish: null,
     });
     const [showDishModal, setShowDishModal] = useState(false);
+    const [page, setPage] = useState(1);
+    const [limit] = useState(12);
     const [editingDish, setEditingDish] = useState(null);
     const [dishForm, setDishForm] = useState({
         name: "",
         category: "",
         inventoryCategoryId: "",
+        productionArea: "kitchen",
         isInventoryItem: false,
         allowCustomPrice: false,
         price: "",
@@ -68,21 +71,41 @@ const MenuManagement = () => {
 
 
     const { data, isLoading, isError } = useQuery({
-        queryKey: ["dishes", tenantId],
-        queryFn: () => getDishes(tenantId),
+        queryKey: ["dishes", tenantId, page, limit, searchTerm, selectedCategory],
+        queryFn: () =>
+            getDishes({
+                tenantId,
+                page,
+                limit,
+                search: searchTerm,
+                category: selectedCategory,
+            }),
         enabled: Boolean(tenantId),
         staleTime: 30_000,
+        keepPreviousData: true,
     });
 
 
     const dishes = useMemo(() => {
         const raw =
+            data?.data?.data?.items ??
+            data?.data?.items ??
             data?.data?.data ??
             data?.data?.dishes ??
             data?.data ??
             [];
         return Array.isArray(raw) ? raw : [];
     }, [data]);
+
+    const total =
+        data?.data?.data?.total ??
+        data?.data?.total ??
+        dishes.length;
+
+    const totalPages =
+        data?.data?.data?.totalPages ??
+        data?.data?.totalPages ??
+        1;
     const [invCats, setInvCats] = useState([]);
     const getDishCategoryLabel = (dish) => {
         // si viene poblado (objeto)
@@ -111,28 +134,14 @@ const MenuManagement = () => {
     }, [dishes, invCats]); // 👈 importante: invCats afecta el label
 
     // Filtrar platos
-    const filteredDishes = useMemo(() => {
-        const q = searchTerm.toLowerCase();
-
-        return dishes.filter((dish) => {
-            const label = getDishCategoryLabel(dish);
-
-            const matchesSearch =
-                dish.name?.toLowerCase().includes(q) ||
-                label?.toLowerCase().includes(q);
-
-            const matchesCategory =
-                !selectedCategory || label === selectedCategory;
-
-            return matchesSearch && matchesCategory;
-        });
-    }, [dishes, searchTerm, selectedCategory, invCats]);
+    const filteredDishes = dishes;
 
     const resetForm = () => {
         setDishForm({
             name: "",
             category: "",
             inventoryCategoryId: "",
+            productionArea: "kitchen",
             isInventoryItem: false,
             allowCustomPrice: false,
             price: "",
@@ -161,6 +170,7 @@ const MenuManagement = () => {
             name: dish.name || "",
             // ✅ category siempre será la del inventario si existe
             category: invName || dish.category || "",
+            productionArea: dish.productionArea || "kitchen",
 
             allowCustomPrice: Boolean(dish.allowCustomPrice),
             inventoryCategoryId: invId,
@@ -256,6 +266,9 @@ const MenuManagement = () => {
     useEffect(() => {
         reloadInvCats();
     }, []);
+    useEffect(() => {
+        setPage(1);
+    }, [searchTerm, selectedCategory]);
 
 
 
@@ -271,7 +284,7 @@ const MenuManagement = () => {
 
         formData.append("name", String(dishForm.name || "").trim());
         formData.append("category", String(dishForm.category || "").trim());
-
+        formData.append("productionArea", String(dishForm.productionArea || "kitchen").trim());
         const sellMode = dishForm.sellMode || "unit";
         const weightUnit = dishForm.weightUnit || "lb";
 
@@ -407,7 +420,7 @@ const MenuManagement = () => {
                                     <Edit className="w-4 h-4 text-white" />
                                 </button>
                                 <button
-                                    onClick={() => setConfirmDelete({ open: false, dish: null })}
+                                    onClick={() => setConfirmDelete({ open: true, dish })}
                                     className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-red-500 transition-colors"
                                     title="Eliminar"
                                 >
@@ -489,6 +502,23 @@ const MenuManagement = () => {
                                     required
                                 />
                             </div>
+
+                            <div>
+                                <label className="text-sm text-gray-400 mb-1 block">Área de Producción *</label>
+                                <select
+                                    value={dishForm.productionArea}
+                                    onChange={(e) => setDishForm((f) => ({ ...f, productionArea: e.target.value }))}
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                >
+                                    <option value="kitchen">Cocina</option>
+                                    <option value="bar">Bar</option>
+                                    <option value="other">Otra</option>
+                                </select>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Esto define a qué impresora de producción se enviará el ticket.
+                                </p>
+                            </div>
+
                             {/* Categoría de inventario (para stock) */}
                             <div>
                                 <label className="text-sm text-gray-400 mb-1 block flex items-center gap-2">
@@ -859,6 +889,29 @@ const MenuManagement = () => {
                     </div>
                 </div>
             )}
+            <div className="flex items-center justify-between mt-6">
+                <p className="text-sm text-gray-400">
+                    Página {page} de {totalPages} · {total} platos
+                </p>
+
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                        disabled={page === 1}
+                        className="px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white disabled:opacity-50"
+                    >
+                        Anterior
+                    </button>
+
+                    <button
+                        onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                        disabled={page >= totalPages}
+                        className="px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-50"
+                    >
+                        Siguiente
+                    </button>
+                </div>
+            </div>
 
         </div>
     );

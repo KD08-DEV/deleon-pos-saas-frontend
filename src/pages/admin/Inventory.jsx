@@ -123,16 +123,20 @@ function Badge({ children, tone = "neutral" }) {
 
 function Modal({ open, title, onClose, children }) {
     if (!open) return null;
+
     return (
-        <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-            <div className="w-full max-w-2xl rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl">
-                <div className="p-5 border-b border-white/10 flex items-center justify-between">
-                    <div className="text-white font-semibold">{title}</div>
-                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5">
+        <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-start md:items-center justify-center px-3 sm:px-4 py-4 sm:py-6 overflow-y-auto">
+            <div className="w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl">
+                <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#0b0b0c] z-10">
+                    <div className="text-white font-semibold pr-3">{title}</div>
+                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 shrink-0">
                         <X className="w-5 h-5 text-white/70" />
                     </button>
                 </div>
-                <div className="p-5">{children}</div>
+
+                <div className="p-4 sm:p-5 overflow-y-auto max-h-[calc(92vh-72px)]">
+                    {children}
+                </div>
             </div>
         </div>
     );
@@ -378,6 +382,20 @@ export default function Inventory({ plan }) {
         },
         onError: (e) => {
             const msg = e?.response?.data?.message || e?.message || "Error archivando";
+            enqueueSnackbar(String(msg), { variant: "error" });
+        },
+    });
+    const unarchiveItemMutation = useMutation({
+        mutationFn: async (id) => {
+            const res = await api.patch(`/api/inventory/items/${encodeURIComponent(id)}/unarchive`);
+            return res.data;
+        },
+        onSuccess: async () => {
+            enqueueSnackbar("Desarchivado", { variant: "success" });
+            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
+        },
+        onError: (e) => {
+            const msg = e?.response?.data?.message || e?.message || "Error desarchivando";
             enqueueSnackbar(String(msg), { variant: "error" });
         },
     });
@@ -853,13 +871,22 @@ export default function Inventory({ plan }) {
                                                             Editar
                                                         </button>
 
-                                                        <button
-                                                            onClick={() => archiveItemMutation.mutate(it._id)}
-                                                            className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center gap-2"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                            Archivar
-                                                        </button>
+                                                        {it.isArchived ? (
+                                                            <button
+                                                                onClick={() => unarchiveItemMutation.mutate(it._id)}
+                                                                className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center gap-2"
+                                                            >
+                                                                Desarchivar
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => archiveItemMutation.mutate(it._id)}
+                                                                className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center gap-2"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                                Archivar
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>
@@ -928,12 +955,21 @@ export default function Inventory({ plan }) {
                                             >
                                                 Editar
                                             </button>
-                                            <button
-                                                onClick={() => archiveItemMutation.mutate(it._id)}
-                                                className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
-                                            >
-                                                Archivar
-                                            </button>
+                                            {it.isArchived ? (
+                                                <button
+                                                    onClick={() => unarchiveItemMutation.mutate(it._id)}
+                                                    className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200"
+                                                >
+                                                    Desarchivar
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => archiveItemMutation.mutate(it._id)}
+                                                    className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+                                                >
+                                                    Archivar
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -2010,7 +2046,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                 </div>
             </div>
 
-            <div className="mt-5 flex gap-2 justify-end">
+            <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 justify-end">
                 <button onClick={onClose} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80">
                     Cancelar
                 </button>
@@ -2131,7 +2167,7 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
             </div>
 
             {canYield && (
-                <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="text-white/70 text-sm">
                         {useYield ? "Aplicando rendimiento (merma por proceso)" : "Entrada normal"}
                     </div>
@@ -2226,7 +2262,7 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
                                 />
                                 <button
                                     onClick={() => setSteps((arr) => arr.filter((_, i) => i !== idx))}
-                                    className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+                                    className="w-full px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
                                 >
                                     Quitar
                                 </button>

@@ -128,9 +128,60 @@ const SalesReports = () => {
         enabled: true,
         keepPreviousData: true,
         staleTime: 30_000,
-    });
 
-    const detailRows = productReportQuery.data || [];
+    });
+    useEffect(() => {
+        if (productReportQuery.data?.length) {
+            console.log("[sales-by-product][first-row]", productReportQuery.data[0]);
+        }
+    }, [productReportQuery.data]);
+
+    const detailRows = useMemo(() => {
+        return (productReportQuery.data || []).map((r) => {
+            const resolvedCategory =
+                r?.categoryName ||
+                r?.menuCategory ||
+                r?.inventoryCategoryName ||
+                r?.dishCategory ||
+                r?.dish?.category ||
+                r?.productCategory ||
+                r?.category ||
+                "";
+
+            const resolvedPresentation =
+                r?.presentationName ||
+                r?.presentation ||
+                r?.variant ||
+                r?.size ||
+                "Regular";
+
+            const resolvedProduct =
+                r?.product ||
+                r?.productName ||
+                r?.dishName ||
+                r?.itemName ||
+                r?.name ||
+                "Producto";
+
+            const resolvedPaymentMethod =
+                r?.paymentMethod ||
+                r?.method ||
+                "Desconocido";
+
+            return {
+                ...r,
+                category: String(resolvedCategory || "").trim() || "Sin categoría",
+                presentation: String(resolvedPresentation || "").trim() || "Regular",
+                product: String(resolvedProduct || "").trim() || "Producto",
+                paymentMethod: String(resolvedPaymentMethod || "").trim() || "Desconocido",
+                qty: safeNumber(r?.qty ?? r?.quantity ?? 0),
+                revenue: safeNumber(r?.revenue ?? r?.sales ?? r?.total ?? 0),
+                unitCost: safeNumber(r?.unitCost ?? r?.costUnit ?? 0),
+                costTotal: safeNumber(r?.costTotal ?? r?.totalCost ?? 0),
+                taxTotal: safeNumber(r?.taxTotal ?? r?.tax ?? r?.itbis ?? 0),
+            };
+        });
+    }, [productReportQuery.data]);
 
     const reportRows = useMemo(() => {
         if (tab === "category") return groupByCategory(detailRows);

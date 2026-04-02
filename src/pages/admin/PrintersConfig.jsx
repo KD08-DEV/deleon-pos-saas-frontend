@@ -117,12 +117,12 @@ export default function PrintersConfig() {
                             value={form.category}
                             onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
                         >
-                            <option value="ticket">ticket</option>
-                            <option value="invoice">invoice</option>
-                            <option value="kitchen">kitchen</option>
-                            <option value="bar">bar</option>
-                            <option value="delivery">delivery</option>
-                            <option value="other">other</option>
+                            <option value="ticket">Ticket general</option>
+                            <option value="invoice">Factura</option>
+                            <option value="kitchen">Cocina</option>
+                            <option value="bar">Bar</option>
+                            <option value="delivery">Delivery</option>
+                            <option value="other">Otra</option>
                         </select>
                     </label>
 

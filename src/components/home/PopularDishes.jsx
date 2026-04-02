@@ -117,14 +117,12 @@ const PopularDishes = memo(({ fill = false }) => {
     // ✅ 2) Platos
     const { data, isLoading, isError } = useQuery({
         queryKey: ["dishes", userData?.tenantId],
-        enabled: true,
+        enabled: !!userData?.tenantId,
         queryFn: async () => {
-            const url = userData?.tenantId
-                ? `/api/dishes?tenantId=${userData.tenantId}`
-                : "/api/dishes";
-
-            const response = await api.get(url);
-            return Array.isArray(response.data?.data) ? response.data.data : response.data;
+            const response = await api.get("/api/dishes?page=1&limit=10");
+            return Array.isArray(response?.data?.data?.items)
+                ? response.data.data.items
+                : [];
         },
         staleTime: 20_000,
     });

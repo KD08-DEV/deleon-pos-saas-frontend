@@ -516,7 +516,7 @@ const Admin = () => {
                 {/* CONTENIDO PRINCIPAL CON MENÚ LATERAL Y CONTENIDO */}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-4">
                     {/* MENÚ LATERAL CON SUBMENÚS */}
-                    <div className="lg:col-span-1">
+                    <div className="hidden lg:block lg:col-span-1">
                         <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-4 shadow-xl sticky top-4">
                             <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
                                 <LayoutDashboard className="w-5 h-5 text-[#f6b100]" />
@@ -602,7 +602,7 @@ const Admin = () => {
                     <div className="lg:col-span-3">
                         <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-6 shadow-xl">
                             {/* TABS VISIBLES EN MÓVIL (ocultos en desktop) */}
-                            <div className="lg:hidden flex flex-wrap gap-2 mb-6 border-b border-gray-800/50 pb-4">
+                            <div className="lg:hidden flex gap-2 overflow-x-auto pb-4 mb-6 border-b border-gray-800/50">
                                 {menuSections.flatMap(section => section.items)
                                     .filter(item => !item.comingSoon && !item.action)
                                     .map((item) => {
@@ -611,9 +611,9 @@ const Admin = () => {
                                         return (
                                             <button
                                                 key={item.id}
-                                                onClick={() => setTab(item.id)}
+                                                onClick={() => handleTabClick(item)}
                                                 className={`
-                                                    px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
+                                                    shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
                                                     flex items-center gap-2
                                                     ${
                                                         isActive
@@ -652,7 +652,7 @@ const Admin = () => {
                                 {tab === "categories-inv" && <InventoryCategories />}
                                 {tab === "notifications" && <Notifications />}
                                 {tab === "help" && <HelpAndSupport />}
-                                {(tab === "schedules" || tab === "attendance" || tab === "printersconfig") && (
+                                {(tab === "schedules" || tab === "attendance") && (
                                     <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
                                         <div className="p-4 bg-[#f6b100]/10 rounded-full mb-4">
                                             {tab === "sales-reports" && <DollarSign className="w-12 h-12 text-[#f6b100]" />}

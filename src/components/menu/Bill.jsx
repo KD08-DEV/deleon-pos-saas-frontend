@@ -173,6 +173,12 @@ const getOnlyNewItemsForPrint = (prevItems = [], currentItems = []) => {
 
     return result;
 };
+const inferNcfTypeFromNumber = (value) => {
+    const ncf = String(value || "").trim().toUpperCase();
+    if (ncf.startsWith("B01")) return "B01";
+    if (ncf.startsWith("B02")) return "B02";
+    return null;
+};
 
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
@@ -274,9 +280,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [tenantInfo]);
 
     const [printTarget, setPrintTarget] = useState("invoice"); // "invoice" | "ticket" | "update"
-    //    const [showTicket, setShowTicket] = useState(false);
     const [submitAction, setSubmitAction] = useState("invoice");
     const [showTicket, setShowTicket] = useState(false);
+    const [showProductionFallback, setShowProductionFallback] = useState(false);
+    const [productionFallbackTickets, setProductionFallbackTickets] = useState([]);
     const itemsToPrintRef = useRef([]);
     const committedItemsRef = useRef(Array.isArray(order?.items) ? order.items : []);
     useEffect(() => {
@@ -334,6 +341,40 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     const TAX_RATE = 18;
     const [taxEnabled, setTaxEnabled] = useState(true);
+    useEffect(() => {
+        if (!order?._id) return;
+
+        const existingNcfNumber =
+            order?.fiscal?.ncfNumber ||
+            order?.ncfNumber ||
+            "";
+
+        const inferredType = inferNcfTypeFromNumber(existingNcfNumber);
+
+        const existingType =
+            order?.fiscal?.ncfType ||
+            order?.ncfType ||
+            inferredType ||
+            null;
+
+        const existingRequested = Boolean(
+            order?.fiscal?.requested ||
+            existingNcfNumber
+        );
+
+        setWantsFiscal(existingRequested);
+
+        if (existingType) {
+            setNcfType(existingType);
+        }
+    }, [
+        order?._id,
+        order?.fiscal?.requested,
+        order?.fiscal?.ncfType,
+        order?.fiscal?.ncfNumber,
+        order?.ncfType,
+        order?.ncfNumber,
+    ]);
     useEffect(() => {
         if (!discountEnabledByTenant) setDiscountValue(0);
     }, [discountEnabledByTenant]);
@@ -504,17 +545,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             const qtyType = item.qtyType || "unit";
             const weightUnit = qtyType === "weight" ? (item.weightUnit || "lb") : "";
-// IMPORTANTE:
-// - Para weight: unitPrice debe venir de item.unitPrice (600), NO de item.price (1200)
-// - Para unit: unitPrice puede venir de unitPrice/pricePerQuantity/price
+            // IMPORTANTE:
+            // - Para weight: unitPrice debe venir de item.unitPrice (600), NO de item.price (1200)
+            // - Para unit: unitPrice puede venir de unitPrice/pricePerQuantity/price
             const unitPrice =
                 qtyType === "weight"
                     ? num(item.unitPrice ?? item.pricePerQuantity ?? 0)
                     : num(item.unitPrice ?? item.pricePerQuantity ?? item.price ?? 0);
 
-// Line total:
-// - Para weight: ya viene en item.price (1200). Si no viene, lo calculas.
-// - Para unit: unitPrice * quantity
+            // Line total:
+            // - Para weight: ya viene en item.price (1200). Si no viene, lo calculas.
+            // - Para unit: unitPrice * quantity
             const lineTotal =
                 qtyType === "weight"
                     ? num(item.price ?? (unitPrice * quantity))
@@ -529,6 +570,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 quantity,
                 unitPrice,
                 price: Number(lineTotal.toFixed(2)),
+                productionArea: item.productionArea || "kitchen",
 
                 note: String(item?.note || item?.comment || item?.specialInstructions || "").trim(),
                 addons: Array.isArray(item?.addons)
@@ -595,15 +637,51 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         // fiscal (si aplica)
         if (wantsFiscal && fiscalCapable) {
+            const existingNcfNumber =
+                order?.fiscal?.ncfNumber ||
+                order?.ncfNumber ||
+                "";
+
+            const inferredExistingType = inferNcfTypeFromNumber(existingNcfNumber);
+
+            const safeNcfType =
+                inferredExistingType ||
+                order?.fiscal?.ncfType ||
+                order?.ncfType ||
+                (allowedNcfTypes.includes(ncfType) ? ncfType : null) ||
+                allowedNcfTypes[0] ||
+                "B02";
+
             basePayload.fiscal = {
                 requested: true,
-                ncfType: allowedNcfTypes.includes(ncfType) ? ncfType : (allowedNcfTypes[0] || "B02"),
+                ncfType: safeNcfType,
             };
         }
 
         return basePayload;
     };
 
+
+    const groupItemsByProductionArea = (items = []) => {
+        const groups = {};
+
+        for (const item of items || []) {
+            let area = String(item?.productionArea || "kitchen").trim().toLowerCase();
+
+            // Todo lo que no sea bar se va a cocina por defecto
+            if (area !== "bar" && area !== "kitchen") {
+                area = "kitchen";
+            }
+
+            if (!groups[area]) groups[area] = [];
+            groups[area].push({
+                ...item,
+                productionArea: area,
+            });
+        }
+
+        return groups;
+    };
 
     const orderMutation = useMutation({
         mutationFn: async (payload) => {
@@ -703,16 +781,16 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             const fallbackFiscal = fallback?.fiscal ?? null;
 
             const fiscal = {
-                ...(fallbackFiscal || {}),
                 ...(server.fiscal || {}),
+                ...(fallbackFiscal || {}),
                 requested:
-                    fallbackFiscal?.requested ??
                     server?.fiscal?.requested ??
+                    fallbackFiscal?.requested ??
                     false,
                 ncfType:
-                    fallbackFiscal?.ncfType ??
                     server?.fiscal?.ncfType ??
                     server?.ncfType ??
+                    fallbackFiscal?.ncfType ??
                     null,
                 ncfNumber:
                     server?.fiscal?.ncfNumber ??
@@ -763,7 +841,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 currentPrintTarget === "ticket"
                     ? (itemsToPrintRef.current || [])
                     : normalizedItems;
-
 
 
             const normalizedTicketItems = (ticketItemsSource ?? []).map((it) => {
@@ -867,18 +944,40 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }
             if (currentPrintTarget === "ticket") {
-                if (!Array.isArray(itemsToPrintRef.current) || itemsToPrintRef.current.length === 0) {
-                    enqueueSnackbar("No hay platos nuevos para imprimir en el ticket.", {
-                        variant: "warning",
+                const sourceItems =
+                    Array.isArray(itemsToPrintRef.current) && itemsToPrintRef.current.length
+                        ? itemsToPrintRef.current
+                        : normalizedItems;
+
+                const grouped = groupItemsByProductionArea(sourceItems);
+
+                const fallbackTickets = Object.entries(grouped).map(([area, items]) => ({
+                    area,
+                    title:
+                        area === "bar"
+                            ? "BAR"
+                            : area === "kitchen"
+                                ? "COCINA"
+                                : "PRODUCCION",
+                    printerCategory: area,
+                    order: {
+                        ...invoice,
+                        items,
+                        orderedItems: items,
+                    },
+                }));
+
+                if (fallbackTickets.length) {
+                    setProductionFallbackTickets(fallbackTickets);
+                    setShowProductionFallback(true);
+                } else {
+                    enqueueSnackbar("No hay platos nuevos para imprimir.", {
+                        variant: "info",
                     });
-                    return;
                 }
 
-                setShowTicket(true);
                 return;
-            }
-
-            enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
+            }            enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
             setShowInvoice(true);
             dispatch(removeAllItems());
         },
@@ -1410,8 +1509,28 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         itemsToPrintRef.current = [];
                         setItemsToPrint([]);
                         setShowTicket(false);
-                        setIsOrderModalOpen(false);
-                        navigate("/orders");
+                    }}
+                />
+            )}
+            {showProductionFallback && productionFallbackTickets.length > 0 && (
+                <Ticket
+                    order={productionFallbackTickets[0].order}
+                    title={productionFallbackTickets[0].title}
+                    printerCategory={productionFallbackTickets[0].printerCategory}
+                    onClose={() => {
+                        setProductionFallbackTickets((prev) => {
+                            const next = prev.slice(1);
+
+                            if (!next.length) {
+                                setShowProductionFallback(false);
+                                itemsToPrintRef.current = [];
+                                setItemsToPrint([]);
+                                setIsOrderModalOpen(false);
+                                navigate("/orders"); // o cambia por "/tables" / "/mesas" si ese es tu route real
+                            }
+
+                            return next;
+                        });
                     }}
                 />
             )}

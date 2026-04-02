@@ -1,4 +1,3 @@
-// pos-frontend/src/pages/Orders.jsx
 import React, { useState, useEffect, useRef, memo } from "react";
 import BottomNav from "../components/shared/BottomNav";
 import OrderCard from "../components/orders/OrderCard";
@@ -9,9 +8,13 @@ import { enqueueSnackbar } from "notistack";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Filter, ListOrdered } from "lucide-react";
 
+const INITIAL_VISIBLE_ORDERS = 24;
+const LOAD_MORE_STEP = 12;
+
 const Orders = () => {
     const [status, setStatus] = useState("all");
     const [orders, setOrders] = useState([]);
+    const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ORDERS);
 
     // 🔔 referencia al audio y a las órdenes previas
     const audioRef = useRef(null);
@@ -20,42 +23,30 @@ const Orders = () => {
 
     useEffect(() => {
         document.title = "POS | Orders";
-        // Carga el sonido de nueva orden
         audioRef.current = new Audio("/sounds/new-order.mp3");
     }, []);
-
 
     const { data: resData, isError } = useQuery({
         queryKey: ["orders"],
         queryFn: getOrders,
         placeholderData: keepPreviousData,
-        // 🔁 refrescar automáticamente cada 2 segundos
         refetchInterval: 2000,
         refetchIntervalInBackground: true,
     });
 
-    // Cuando vienen datos nuevos del servidor
     useEffect(() => {
         const serverOrders = resData?.data?.data ?? [];
 
-        // ---- DETECTAR ÓRDENES NUEVAS ----
         const currentIds = new Set(serverOrders.map((o) => o._id));
         const prevIds = prevOrderIdsRef.current;
 
-        // En la primera carga solo guardamos el estado, no sonamos nada
         if (firstLoadRef.current) {
             firstLoadRef.current = false;
         } else {
-            // Buscar ids que antes no existían
             const newIds = [...currentIds].filter((id) => !prevIds.has(id));
 
             if (newIds.length > 0 && audioRef.current) {
-                // Sonar la campana (ignoramos errores del navegador)
-                audioRef.current
-                    .play()
-                    .catch(() => {
-                        // por si el navegador bloquea autoplay, no rompemos nada
-                    });
+                audioRef.current.play().catch(() => {});
 
                 enqueueSnackbar(
                     `${newIds.length} nueva(s) orden(es) recibida(s)`,
@@ -64,18 +55,18 @@ const Orders = () => {
             }
         }
 
-        // Actualizar referencia de ids previos
         prevOrderIdsRef.current = currentIds;
-
-        // Guardar órdenes en el estado local
         setOrders(serverOrders);
     }, [resData]);
+
+    useEffect(() => {
+        setVisibleCount(INITIAL_VISIBLE_ORDERS);
+    }, [status]);
 
     if (isError) {
         enqueueSnackbar("Failed to load orders", { variant: "error" });
     }
 
-    // Callback que recibe OrderCard cuando cambia el status
     const handleStatusChanged = (updatedOrder) => {
         if (!updatedOrder?._id) return;
         setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
@@ -85,6 +76,9 @@ const Orders = () => {
         if (status === "all") return true;
         return order.orderStatus === status;
     });
+
+    const visibleOrders = filteredOrders.slice(0, visibleCount);
+    const hasMoreOrders = filteredOrders.length > visibleCount;
 
     const STATUS_TABS = [
         { key: "all", label: "Todo", icon: ListOrdered },
@@ -96,14 +90,12 @@ const Orders = () => {
 
     return (
         <section className="relative min-h-screen flex flex-col pb-24 bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f] dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-[#0f0f0f] from-gray-50 via-white to-gray-50 transition-colors duration-300">
-            {/* Efectos de fondo simplificados */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-30 dark:opacity-30 opacity-20">
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 dark:bg-blue-500/5 bg-blue-400/10 rounded-full blur-3xl" />
                 <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 dark:bg-purple-500/5 bg-purple-400/10 rounded-full blur-3xl" />
             </div>
 
             <div className="relative z-10 px-2 sm:px-3 lg:px-4 max-w-full mx-auto w-full">
-                {/* Header mejorado */}
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -114,11 +106,12 @@ const Orders = () => {
                         <BackButton />
                         <div className="flex items-center gap-2">
                             <ListOrdered className="text-blue-400 dark:text-blue-400 text-blue-600 w-6 h-6" />
-                            <h1 className="text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900 text-2xl sm:text-3xl font-bold tracking-wide">Ordenes</h1>
+                            <h1 className="text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900 text-2xl sm:text-3xl font-bold tracking-wide">
+                                Ordenes
+                            </h1>
                         </div>
                     </div>
 
-                    {/* Tabs mejorados */}
                     <div className="flex flex-wrap gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         {STATUS_TABS.map((tab) => {
                             const isActive = status === tab.key;
@@ -142,7 +135,7 @@ const Orders = () => {
                                             transition={{ type: "spring", stiffness: 300, damping: 25 }}
                                         />
                                     )}
-                                    <Icon className={`w-4 h-4 relative z-10 ${isActive ? 'text-blue-400 dark:text-blue-400 text-blue-600' : ''}`} />
+                                    <Icon className={`w-4 h-4 relative z-10 ${isActive ? "text-blue-400 dark:text-blue-400 text-blue-600" : ""}`} />
                                     <span className="relative z-10">{tab.label}</span>
                                 </motion.button>
                             );
@@ -150,7 +143,6 @@ const Orders = () => {
                     </div>
                 </motion.div>
 
-                {/* Orders Grid mejorado */}
                 <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
                     <AnimatePresence mode="wait">
                         {filteredOrders.length > 0 ? (
@@ -160,21 +152,40 @@ const Orders = () => {
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.3 }}
-                                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
                             >
-                                {filteredOrders.map((order, index) => (
-                                    <motion.div
-                                        key={order._id}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.05, duration: 0.3 }}
-                                    >
-                                        <OrderCard
-                                            order={order}
-                                            onStatusChanged={handleStatusChanged}
-                                        />
-                                    </motion.div>
-                                ))}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {visibleOrders.map((order, index) => (
+                                        <motion.div
+                                            key={order._id}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: index * 0.03, duration: 0.25 }}
+                                        >
+                                            <OrderCard
+                                                order={order}
+                                                onStatusChanged={handleStatusChanged}
+                                            />
+                                        </motion.div>
+                                    ))}
+                                </div>
+
+                                {hasMoreOrders && (
+                                    <div className="flex justify-center mt-8">
+                                        <motion.button
+                                            whileHover={{ scale: 1.03 }}
+                                            whileTap={{ scale: 0.97 }}
+                                            onClick={() =>
+                                                setVisibleCount((prev) => prev + LOAD_MORE_STEP)
+                                            }
+                                            className="px-5 py-3 rounded-xl text-sm font-semibold
+                                                bg-gradient-to-r from-blue-500/20 to-cyan-500/20
+                                                text-blue-400 border border-blue-500/30
+                                                shadow-lg shadow-blue-500/10"
+                                        >
+                                            Cargar más ({filteredOrders.length - visibleCount} restantes)
+                                        </motion.button>
+                                    </div>
+                                )}
                             </motion.div>
                         ) : (
                             <motion.div

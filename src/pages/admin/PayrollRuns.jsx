@@ -9,9 +9,16 @@ const todayYMD = () => new Date().toISOString().slice(0, 10);
 
 function money(n) {
     const x = Number(String(n).replace(/,/g, ""));
+    return new Intl.NumberFormat("es-DO", {
+        style: "currency",
+        currency: "DOP",
+        minimumFractionDigits: 2,
+    }).format(Number.isFinite(x) ? x : 0);
+}
+function toNumber(value) {
+    const x = Number(String(value ?? "").replace(/,/g, "").trim());
     return Number.isFinite(x) ? x : 0;
 }
-
 export default function PayrollRuns() {
     const [rows, setRows] = useState([]);
     const [err, setErr] = useState("");
@@ -38,13 +45,15 @@ export default function PayrollRuns() {
 
     const totals = useMemo(() => {
         let gross = 0, deductions = 0, net = 0;
+
         for (const it of items) {
-            const g = money(it.gross);
-            const d = money(it.deductions);
+            const g = toNumber(it.gross);
+            const d = toNumber(it.deductions);
             gross += g;
             deductions += d;
             net += Math.max(0, g - d);
         }
+
         return { gross, deductions, net };
     }, [items]);
 
@@ -127,30 +136,70 @@ export default function PayrollRuns() {
                         <div className="text-xs text-white/70">Fecha de pago</div>
                         <input className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2" type="date" value={payDateYMD} onChange={(e) => setPayDateYMD(e.target.value)} />
                     </div>
-                    <div className="md:col-span-3 flex items-end justify-end text-white/80">
-                        Neto: <span className="ml-2 font-semibold">{totals.net.toFixed(2)}</span>
+                    <div className="md:col-span-3 flex items-end justify-end">
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                            Neto: <span className="ml-2 font-semibold text-white">{money(totals.net)}</span>
+                        </div>
                     </div>
                 </div>
 
                 <div className="mt-4 border border-white/10 rounded-xl overflow-hidden">
-                    <div className="grid grid-cols-12 bg-white/5 px-3 py-2 text-sm text-white/80">
-                        <div className="col-span-3">Empleado</div>
-                        <div className="col-span-2">Rol</div>
-                        <div className="col-span-2 text-right">Bruto</div>
-                        <div className="col-span-2 text-right">Descuentos</div>
-                        <div className="col-span-2">Nota</div>
-                        <div className="col-span-1 text-right">Acción</div>
+                    <div className="grid grid-cols-12 gap-2 bg-white/5 px-3 py-2 text-sm text-white/80">
+                        <div className="col-span-3 whitespace-nowrap">Empleado</div>
+                        <div className="col-span-2 whitespace-nowrap">Cargo</div>
+                        <div className="col-span-2 text-right whitespace-nowrap">Bruto</div>
+                        <div className="col-span-2 text-right whitespace-nowrap">Deducciones</div>
+                        <div className="col-span-2 whitespace-nowrap">Nota</div>
+                        <div className="col-span-1 text-right whitespace-nowrap">Acción</div>
                     </div>
 
                     {items.map((it, i) => (
-                        <div key={i} className="grid grid-cols-12 px-3 py-2 border-t border-white/10 gap-2 items-center">
-                            <input className="col-span-3 bg-black/40 border border-white/10 rounded-lg px-2 py-2" placeholder="Nombre" value={it.employeeName} onChange={(e) => updateItem(i, { employeeName: e.target.value })} />
-                            <input className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2" placeholder="Cargo" value={it.roleName} onChange={(e) => updateItem(i, { roleName: e.target.value })} />
-                            <input className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right" placeholder="0.00" value={it.gross} onChange={(e) => updateItem(i, { gross: e.target.value })} />
-                            <input className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right" placeholder="0.00" value={it.deductions} onChange={(e) => updateItem(i, { deductions: e.target.value })} />
-                            <input className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2" placeholder="Opcional" value={it.note} onChange={(e) => updateItem(i, { note: e.target.value })} />
+                        <div
+                            key={i}
+                            className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
+                        >
+                            <input
+                                className="col-span-3 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
+                                placeholder="Nombre"
+                                value={it.employeeName}
+                                onChange={(e) => updateItem(i, { employeeName: e.target.value })}
+                            />
+
+                            <input
+                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
+                                placeholder="Cargo"
+                                value={it.roleName}
+                                onChange={(e) => updateItem(i, { roleName: e.target.value })}
+                            />
+
+                            <input
+                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
+                                placeholder="0.00"
+                                value={it.gross}
+                                onChange={(e) => updateItem(i, { gross: e.target.value })}
+                            />
+
+                            <input
+                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
+                                placeholder="0.00"
+                                value={it.deductions}
+                                onChange={(e) => updateItem(i, { deductions: e.target.value })}
+                            />
+
+                            <input
+                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
+                                placeholder="Opcional"
+                                value={it.note}
+                                onChange={(e) => updateItem(i, { note: e.target.value })}
+                            />
+
                             <div className="col-span-1 flex justify-end">
-                                <button type="button" className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30" onClick={() => removeRow(i)} disabled={items.length === 1}>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30"
+                                    onClick={() => removeRow(i)}
+                                    disabled={items.length === 1}
+                                >
                                     X
                                 </button>
                             </div>
@@ -170,23 +219,53 @@ export default function PayrollRuns() {
 
             <h2 className="mt-6 text-lg font-semibold">Corridas</h2>
             <div className="mt-2 border border-white/10 rounded-xl overflow-hidden">
-                <div className="grid grid-cols-12 bg-white/5 px-3 py-2 text-sm text-white/80">
-                    <div className="col-span-3">Fecha pago</div>
-                    <div className="col-span-4">Período</div>
-                    <div className="col-span-2 text-right">Neto</div>
-                    <div className="col-span-2">Estado</div>
-                    <div className="col-span-1 text-right">Acción</div>
+                <div className="grid grid-cols-12 gap-2 bg-white/5 px-3 py-2 text-sm text-white/80">
+                    <div className="col-span-2 whitespace-nowrap">Fecha pago</div>
+                    <div className="col-span-4 whitespace-nowrap">Período</div>
+                    <div className="col-span-1 text-center whitespace-nowrap">Empleados</div>
+                    <div className="col-span-2 text-right whitespace-nowrap">Neto</div>
+                    <div className="col-span-2 whitespace-nowrap">Estado</div>
+                    <div className="col-span-1 text-right whitespace-nowrap">Acción</div>
                 </div>
 
                 {rows.map((r) => (
-                    <div key={r._id} className="grid grid-cols-12 px-3 py-2 border-t border-white/10">
-                        <div className="col-span-3">{r.payDateYMD}</div>
-                        <div className="col-span-4">{r.periodFromYMD} a {r.periodToYMD}</div>
-                        <div className="col-span-2 text-right">{Number(r.totals?.net || 0).toFixed(2)}</div>
-                        <div className="col-span-2">{r.status}</div>
+                    <div
+                        key={r._id}
+                        className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
+                    >
+                        <div className="col-span-2">{r.payDateYMD}</div>
+
+                        <div className="col-span-4">
+                            {r.periodFromYMD} a {r.periodToYMD}
+                        </div>
+
+                        <div className="col-span-1 text-center">
+                            {r.items?.length || 0}
+                        </div>
+
+                        <div className="col-span-2 text-right">
+                            {money(r.totals?.net || 0)}
+                        </div>
+
+                        <div className="col-span-2">
+            <span
+                className={`px-2 py-1 rounded text-xs ${
+                    r.status === "posted"
+                        ? "bg-green-500/20 text-green-300"
+                        : "bg-yellow-500/20 text-yellow-300"
+                }`}
+            >
+                {r.status === "posted" ? "Posteada" : "Borrador"}
+            </span>
+                        </div>
+
                         <div className="col-span-1 flex justify-end">
                             {r.status !== "posted" ? (
-                                <button className="px-2 py-1 rounded bg-white/10 hover:bg-white/20" onClick={() => onPost(r._id)} disabled={busy}>
+                                <button
+                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
+                                    onClick={() => onPost(r._id)}
+                                    disabled={busy}
+                                >
                                     Postear
                                 </button>
                             ) : (

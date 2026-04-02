@@ -10,6 +10,7 @@ import { setUser } from "../redux/slices/userSlice";
 import { QK } from "../queryKeys";
 import { getSocket } from "../realtime/socket";
 import { useTablesRealtime } from "../realtime/useTablesRealtime";
+import { AnimatePresence, motion } from "framer-motion";
 
 
 
@@ -24,6 +25,15 @@ export default function Tables() {
     const [deliveryPayMethod, setDeliveryPayMethod] = React.useState("Efectivo");
     const [pendingVirtual, setPendingVirtual] = React.useState(null);
 
+
+    const [tableActionModal, setTableActionModal] = React.useState({
+        open: false,
+        table: null,
+    });
+
+    const closeTableActionModal = () => {
+        setTableActionModal({ open: false, table: null });
+    };
 
     const userState = useSelector((state) => state.user);
 
@@ -109,6 +119,22 @@ export default function Tables() {
     const mCreateOrder = useMutation({
         mutationFn: (payload) => addOrder(payload),
     });
+    const mUpdateTable = useMutation({
+        mutationFn: ({ id, body }) => updateTable(id, body),
+        onSuccess: (_res, vars) => {
+            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
+            queryClient.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
+
+            enqueueSnackbar("Estado de mesa actualizado.", { variant: "success" });
+            closeTableActionModal();
+        },
+        onError: (error) => {
+            enqueueSnackbar(
+                error?.response?.data?.message || "No se pudo actualizar la mesa.",
+                { variant: "error" }
+            );
+        },
+    });
 
 
 
@@ -117,10 +143,46 @@ export default function Tables() {
         (currentUser?.role || currentUser?.user?.role || "").toString().toLowerCase();
 
 
-    const handlePickTable = (table) => {
+    const goToTableFlow = (table) => {
         const tableId = table?._id;
         const status = table?.status || "Disponible";
 
+        const existingOrderId =
+            table?.currentOrder?._id ||
+            table?.currentOrder?.id ||
+            table?.currentOrder ||
+            null;
+
+        const canEditBooked =
+            normalizedRole === "admin" ||
+            normalizedRole === "camarero" ||
+            normalizedRole === "cajera";
+
+        if ((status === "Ocupada" || status === "Reservada") && existingOrderId) {
+            if (!canEditBooked) {
+                enqueueSnackbar("Mesa ocupada. No tienes permisos para editar esta orden.", {
+                    variant: "warning",
+                });
+                return;
+            }
+
+            navigate(`/menu?orderId=${existingOrderId}`);
+            return;
+        }
+
+        dispatch(
+            setDraftContext({
+                table: tableId,
+                isVirtual: false,
+                virtualType: null,
+                orderSource: "DINE_IN",
+            })
+        );
+
+        navigate("/menu");
+    };
+
+    const handlePickTable = (table) => {
         // 1) CANALES VIRTUALES
         if (table?.isVirtual) {
             const vtRaw = (table?.virtualType || "QUICK").toString().trim().toUpperCase();
@@ -132,57 +194,19 @@ export default function Tables() {
                     table: null,
                     isVirtual: true,
                     virtualType: vt,
-                    orderSource: vt, // IMPORTANTE: mismo string que antes mandabas al backend
+                    orderSource: vt,
                 })
             );
 
-            navigate("/menu"); // sin orderId => draft local
+            navigate("/menu");
             return;
         }
 
-        // 2) MESA OCUPADA => abrir orden existente (si tienes permiso)
-        if (status === "Ocupada") {
-            const existingOrderId =
-                table?.currentOrder?._id ||
-                table?.currentOrder?.id ||
-                table?.currentOrder ||
-                null;
-
-            const canEditBooked =
-                normalizedRole === "admin" ||
-                normalizedRole === "camarero" ||
-                normalizedRole === "cajera";
-
-            if (canEditBooked && existingOrderId) {
-                navigate(`/menu?orderId=${existingOrderId}`);
-                return;
-            }
-
-            if (canEditBooked && !existingOrderId) {
-                enqueueSnackbar(
-                    "Esta mesa está marcada como ocupada pero no tiene una orden asociada.",
-                    { variant: "warning" }
-                );
-                return;
-            }
-
-            enqueueSnackbar("Mesa ocupada. No tienes permisos para editar esta orden.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        // 3) MESA DISPONIBLE => draft local
-        dispatch(
-            setDraftContext({
-                table: tableId,
-                isVirtual: false,
-                virtualType: null,
-                orderSource: "DINE_IN",
-            })
-        );
-
-        navigate("/menu"); // sin orderId => draft local
+        // 2) MESA REAL => abrir modal/panel
+        setTableActionModal({
+            open: true,
+            table,
+        });
     };
 
 
@@ -263,6 +287,119 @@ export default function Tables() {
                     ))
                 )}
             </div>
+            <AnimatePresence>
+                {tableActionModal.open && tableActionModal.table && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={closeTableActionModal}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="w-full max-w-md rounded-2xl border border-white/10 bg-gradient-to-br from-[#111111] to-[#0a0a0a] shadow-2xl overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="p-5 border-b border-white/10">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-white">
+                                            Mesa {tableActionModal.table?.tableNo || "—"}
+                                        </h3>
+                                        <p className="text-sm text-white/60 mt-1">
+                                            Área: {tableActionModal.table?.area || "General"}
+                                        </p>
+                                    </div>
+
+                                    <span
+                                        className={`px-2 py-1 rounded text-xs ${
+                                            tableActionModal.table?.status === "Disponible"
+                                                ? "bg-yellow-700/40 text-yellow-300"
+                                                : "bg-green-700/40 text-green-300"
+                                        }`}
+                                    >
+                            {tableActionModal.table?.status || "Disponible"}
+                        </span>
+                                </div>
+                            </div>
+
+                            <div className="p-5 space-y-3">
+                                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-white/60">Sillas</span>
+                                        <span className="text-white font-medium">
+                                {tableActionModal.table?.seats ?? "—"}
+                            </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-sm mt-2">
+                                        <span className="text-white/60">Orden actual</span>
+                                        <span className="text-white font-medium">
+                                {tableActionModal.table?.currentOrder?._id ? "Sí" : "No"}
+                            </span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const selectedTable = tableActionModal.table;
+                                        closeTableActionModal();
+                                        goToTableFlow(selectedTable);
+                                    }}
+                                    className="w-full px-4 py-3 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all"
+                                >
+                                    {tableActionModal.table?.currentOrder?._id ? "Abrir orden" : "Ir al menú"}
+                                </button>
+
+                                {tableActionModal.table?.status !== "Disponible" && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            mUpdateTable.mutate({
+                                                id: tableActionModal.table._id,
+                                                body: { status: "Disponible" },
+                                            })
+                                        }
+                                        disabled={mUpdateTable.isPending}
+                                        className="w-full px-4 py-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 font-semibold hover:bg-red-500/20 transition-all disabled:opacity-60"
+                                    >
+                                        {mUpdateTable.isPending ? "Guardando..." : "Desocupar mesa"}
+                                    </button>
+                                )}
+
+                                {tableActionModal.table?.status !== "Ocupada" && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            mUpdateTable.mutate({
+                                                id: tableActionModal.table._id,
+                                                body: { status: "Ocupada" },
+                                            })
+                                        }
+                                        disabled={mUpdateTable.isPending}
+                                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white font-semibold hover:bg-white/10 transition-all disabled:opacity-60"
+                                    >
+                                        {mUpdateTable.isPending ? "Guardando..." : "Marcar ocupada"}
+                                    </button>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onClick={closeTableActionModal}
+                                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-[#1a1a1a] text-white hover:bg-[#262626] transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </section>
     );
 }

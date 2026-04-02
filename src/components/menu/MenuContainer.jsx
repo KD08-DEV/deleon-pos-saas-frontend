@@ -20,15 +20,17 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
     const cart = useSelector((s) => s.cart);
 
+    const MENU_LIMIT = 10000;
+
     const { data, isLoading, isError } = useQuery({
-        queryKey: ["dishes", tenantId],
+        queryKey: ["dishes", tenantId, MENU_LIMIT],
         enabled: !!tenantId,
         staleTime: 0,
         refetchOnMount: "always",
         refetchOnWindowFocus: true,
         queryFn: async () => {
-            const res = await api.get(`/api/dishes?tenantId=${tenantId}`);
-            const payload = Array.isArray(res.data?.data) ? res.data.data : res.data;
+            const res = await api.get(`/api/dishes?page=1&limit=${MENU_LIMIT}`);
+            const payload = res?.data?.data?.items;
             return Array.isArray(payload) ? payload : [];
         },
     });
@@ -98,10 +100,9 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
     const categories = useMemo(() => {
         const grouped = dishes.reduce((acc, d) => {
             const invName = getInvCatName(d);
+            const menuCategory = (d?.category || "").trim();
 
-            // 👇 Importante: aquí eliminamos el fallback a d.category,
-            // porque tú quieres que sea LA MISMA de inventario siempre.
-            const k = invName || "Uncategorized";
+            const k = invName || menuCategory || "Uncategorized";
 
             if (!acc[k]) acc[k] = [];
             acc[k].push(d);
@@ -165,6 +166,32 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
     const [qtyMap, setQtyMap] = useState({});
     // Pesos por plato (por id) - para sellMode === "weight"
     const [weightMap, setWeightMap] = useState({});
+    const [addedFxMap, setAddedFxMap] = useState({});
+    const fxTimeoutsRef = useRef({});
+
+    const triggerAddFx = (dishId) => {
+        setAddedFxMap((prev) => ({ ...prev, [dishId]: true }));
+
+        if (fxTimeoutsRef.current[dishId]) {
+            clearTimeout(fxTimeoutsRef.current[dishId]);
+        }
+
+        fxTimeoutsRef.current[dishId] = setTimeout(() => {
+            setAddedFxMap((prev) => {
+                const next = { ...prev };
+                delete next[dishId];
+                return next;
+            });
+            delete fxTimeoutsRef.current[dishId];
+        }, 700);
+    };
+
+    useEffect(() => {
+        return () => {
+            Object.values(fxTimeoutsRef.current).forEach(clearTimeout);
+        };
+    }, []);
+
     const getWeight = (id) => {
         const v = weightMap[id];
         const n = Number(String(v ?? "1").replace(",", "."));
@@ -210,16 +237,20 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                 unitPrice,
                 price: unitPrice * quantity,
                 imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
+                productionArea: dish.productionArea || "kitchen",
             };
 
             if (typeof onAddToCart === "function") {
                 onAddToCart(item);
+                triggerAddFx(dish._id);
                 enqueueSnackbar?.(`${item.name} x${item.quantity} added to cart`, { variant: "success" });
                 return;
             }
 
             dispatch(addItems(item));
+            triggerAddFx(dish._id);
             return;
+
         }
 
         // WEIGHT (lb)
@@ -242,15 +273,18 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
             unitPrice,
             price: lineTotal,
             imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
+            productionArea: dish.productionArea || "kitchen",
         };
 
         if (typeof onAddToCart === "function") {
             onAddToCart(item);
+            triggerAddFx(dish._id);
             enqueueSnackbar?.(`${item.name} (${weight} ${item.weightUnit}) added to cart`, { variant: "success" });
             return;
         }
 
         dispatch(addItems(item));
+        triggerAddFx(dish._id);
     };
 
 
@@ -337,6 +371,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                             price: unitPrice * quantity,
                                             imageUrl: customPriceDish.imageUrl ? `http://localhost:8000${customPriceDish.imageUrl}` : "",
                                             allowCustomPrice: true,
+                                            productionArea: customPriceDish.productionArea || "kitchen",
                                         };
 
                                         if (typeof onAddToCart === "function") {
@@ -345,6 +380,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                             dispatch(addItems(item));
                                         }
 
+                                        triggerAddFx(customPriceDish._id);
                                         enqueueSnackbar?.(`${item.name} x${item.quantity} agregado`, { variant: "success" });
                                         setCustomPriceDish(null);
                                     }}
@@ -437,6 +473,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                                         const qty = getQty(dish._id);
                                                         const isWeight = String(dish?.sellMode || "unit").toLowerCase() === "weight";
                                                         const canAdd = isWeight ? getWeight(dish._id) > 0 : qty > 0;
+                                                        const justAdded = !!addedFxMap[dish._id];
 
                                                         return (
                                                             <motion.div
@@ -506,18 +543,55 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
 
 
                                                                     {/* Botón Agregar */}
-                                                                    <button
-                                                                        onClick={() => addToCart(dish)}
-                                                                        disabled={!canAdd}
-                                                                        className={`mt-3 w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-semibold transition-colors ${
-                                                                            canAdd
-                                                                                ? "bg-[#025cca] hover:bg-[#0b6fe8] text-white"
-                                                                                : "bg-[#2a2a2a] text-[#777] cursor-not-allowed"
-                                                                        }`}
-                                                                    >
-                                                                        <ShoppingCart size={18} />
-                                                                        Add
-                                                                    </button>
+                                                                    <div className="relative mt-3 w-full">
+                                                                        <AnimatePresence>
+                                                                            {justAdded && (
+                                                                                <motion.div
+                                                                                    initial={{ opacity: 0, y: 8, scale: 0.92 }}
+                                                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                                                    exit={{ opacity: 0, y: -10, scale: 0.9 }}
+                                                                                    transition={{ duration: 0.25 }}
+                                                                                    className="pointer-events-none absolute -top-3 left-1/2 z-10 -translate-x-1/2"
+                                                                                >
+                                                                                    <span className="rounded-full border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f6b100]">
+                                                                                        Agregado
+                                                                                    </span>
+                                                                                </motion.div>
+                                                                            )}
+                                                                        </AnimatePresence>
+
+                                                                        <motion.button
+                                                                            onClick={() => addToCart(dish)}
+                                                                            disabled={!canAdd}
+                                                                            whileTap={canAdd ? { scale: 0.97 } : {}}
+                                                                            animate={
+                                                                                justAdded
+                                                                                    ? {
+                                                                                        scale: [1, 1.06, 0.98, 1],
+                                                                                        boxShadow: [
+                                                                                            "0 0 0 rgba(246,177,0,0)",
+                                                                                            "0 0 0 6px rgba(246,177,0,0.10)",
+                                                                                            "0 0 0 rgba(246,177,0,0)",
+                                                                                        ],
+                                                                                    }
+                                                                                    : {
+                                                                                        scale: 1,
+                                                                                        boxShadow: "0 0 0 rgba(246,177,0,0)",
+                                                                                    }
+                                                                            }
+                                                                            transition={{ duration: 0.45, ease: "easeOut" }}
+                                                                            className={`w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-semibold transition-colors ${
+                                                                                canAdd
+                                                                                    ? "bg-[#025cca] hover:bg-[#0b6fe8] text-white"
+                                                                                    : "bg-[#2a2a2a] text-[#777] cursor-not-allowed"
+                                                                            }`}
+                                                                        >
+                                                                            <ShoppingCart size={18} />
+                                                                            {justAdded ? "Agregado" : "Add"}
+                                                                        </motion.button>
+                                                                    </div>
+
+
                                                                 </div>
                                                             </motion.div>
                                                         );

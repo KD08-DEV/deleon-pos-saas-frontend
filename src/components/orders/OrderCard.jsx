@@ -934,18 +934,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                                     <Receipt className="w-4 h-4" />
                                                     <span>{localOrder?.invoiceUrl ? "Ver factura" : "Generar factura"}</span>
                                                 </motion.button>
-
-
-                                                <motion.button
-                                                    type="button"
-                                                    onClick={openNormalInvoice}
-                                                    whileHover={{ scale: 1.02 }}
-                                                    whileTap={{ scale: 0.98 }}
-                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-slate-500/20 to-slate-700/20 text-slate-200 border border-slate-500/30 hover:bg-slate-500/30"
-                                                >
-                                                    <Receipt className="w-4 h-4" />
-                                                    <span>Ver factura</span>
-                                                </motion.button>
+                                            
 
 
                                             {/* Comprobante Fiscal */}

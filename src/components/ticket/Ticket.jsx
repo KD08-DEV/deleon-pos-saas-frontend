@@ -65,7 +65,7 @@ const getItemExtras = (it) => {
     return extras;
 };
 
-const Ticket = ({ order, onClose }) => {
+const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
 
     const { tenantInfo } = useTenant();
     const receiptRef = useRef(null);
@@ -127,23 +127,46 @@ const Ticket = ({ order, onClose }) => {
 
 
     const paymentMethod = order?.paymentMethod || "Efectivo";
+
     const {
-        printers: ticketPrinters,
-        defaultPrinter: defaultTicketPrinter,
-        isLoadingPrinters,
-    } = usePrinterOptions("ticket");
+        printers: primaryPrinters,
+        defaultPrinter: primaryDefaultPrinter,
+        isLoadingPrinters: isLoadingPrimaryPrinters,
+    } = usePrinterOptions(printerCategory);
+
+    const {
+        printers: kitchenPrinters,
+        defaultPrinter: kitchenDefaultPrinter,
+        isLoadingPrinters: isLoadingKitchenPrinters,
+    } = usePrinterOptions("kitchen");
+
+    const resolvedPrinters = useMemo(() => {
+        if (Array.isArray(primaryPrinters) && primaryPrinters.length > 0) {
+            return primaryPrinters;
+        }
+        return Array.isArray(kitchenPrinters) ? kitchenPrinters : [];
+    }, [primaryPrinters, kitchenPrinters]);
+
+    const resolvedDefaultPrinter = useMemo(() => {
+        return primaryDefaultPrinter || kitchenDefaultPrinter || null;
+    }, [primaryDefaultPrinter, kitchenDefaultPrinter]);
+
+    const isLoadingPrinters = isLoadingPrimaryPrinters || isLoadingKitchenPrinters;
 
     const [selectedPrinterId, setSelectedPrinterId] = useState("");
 
     useEffect(() => {
-        if (!selectedPrinterId && defaultTicketPrinter?._id) {
-            setSelectedPrinterId(defaultTicketPrinter._id);
+        if (!selectedPrinterId && resolvedDefaultPrinter?._id) {
+            setSelectedPrinterId(resolvedDefaultPrinter._id);
         }
-    }, [defaultTicketPrinter, selectedPrinterId]);
+    }, [resolvedDefaultPrinter, selectedPrinterId]);
 
     const selectedPrinter = useMemo(
-        () => ticketPrinters.find((p) => p._id === selectedPrinterId) || defaultTicketPrinter || null,
-        [ticketPrinters, selectedPrinterId, defaultTicketPrinter]
+        () =>
+            resolvedPrinters.find((p) => p._id === selectedPrinterId) ||
+            resolvedDefaultPrinter ||
+            null,
+        [resolvedPrinters, selectedPrinterId, resolvedDefaultPrinter]
     );
     const printingConfig = {
         enabled: true,
@@ -176,7 +199,7 @@ const Ticket = ({ order, onClose }) => {
                 rnc: businessRnc,
                 address: businessAddress,
                 phone: businessPhone,
-                title: "",
+                title: title || "TICKET",
                 orderId: String(operation),
                 mesa: tableLabel,
                 mesero: String(waiter),
@@ -184,16 +207,16 @@ const Ticket = ({ order, onClose }) => {
                 salaArea: roomLabel,
                 orderNote,
                 showTotals: false,
+                showItemPrices: false,
                 items: (items || []).map((it) => ({
                     name: getItemName(it),
                     qty: getQty(it),
-                    total: safeNum(it?.total ?? it?.price ?? 0),
                     modifiers: getItemExtras(it).map((label) => ({ name: label })),
                 })),
-                subtotal,
-                tax,
-                total,
-                paymentMethod,
+                subtotal: undefined,
+                tax: undefined,
+                total: undefined,
+                paymentMethod: "",
             };
 
             const result = await printWithTenantConfig({
@@ -357,12 +380,12 @@ const Ticket = ({ order, onClose }) => {
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
                             value={selectedPrinterId}
                             onChange={(e) => setSelectedPrinterId(e.target.value)}
-                            disabled={isLoadingPrinters || ticketPrinters.length === 0}
+                            disabled={isLoadingPrinters || resolvedPrinters.length === 0}
                         >
-                            {ticketPrinters.length === 0 ? (
+                            {resolvedPrinters.length === 0 ? (
                                 <option value="">No hay impresoras registradas</option>
                             ) : (
-                                ticketPrinters.map((p) => (
+                                resolvedPrinters.map((p) => (
                                     <option key={p._id} value={p._id}>
                                         {p.alias} {p.isDefault ? "• default" : ""}
                                     </option>
@@ -383,6 +406,11 @@ const Ticket = ({ order, onClose }) => {
                         {printMessage && (
                             <div className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-md px-2 py-2">
                                 {printMessage}
+                            </div>
+                        )}
+                        {printerCategory !== "kitchen" && primaryPrinters.length === 0 && kitchenPrinters.length > 0 && (
+                            <div className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-2 py-2">
+                                No hay impresora registrada para "{printerCategory}". Se está usando la impresora de cocina.
                             </div>
                         )}
 
