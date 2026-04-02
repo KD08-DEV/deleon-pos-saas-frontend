@@ -31,14 +31,33 @@ const getTenantId = () => localStorage.getItem("tenantId");
 
 export const addDish = (formData, tenantIdParam) => {
     const tenantId = tenantIdParam || getTenantId();
-    return api.post(`/api/dishes?tenantId=${encodeURIComponent(tenantId)}`, formData, {
+
+    return api.post("/api/dishes", formData, {
+        params: tenantId ? { tenantId } : undefined,
         headers: { "Content-Type": "multipart/form-data" },
     });
 };
 
-export const getDishes = (tenantIdParam) => {
+export const getDishes = ({
+                              tenantId: tenantIdParam,
+                              page = 1,
+                              limit = 12,
+                              search = "",
+                              category = "",
+                              includeInventory = false,
+                          } = {}) => {
     const tenantId = tenantIdParam || getTenantId();
-    return api.get(`/api/dishes?tenantId=${encodeURIComponent(tenantId)}`);
+
+    return api.get("/api/dishes", {
+        params: {
+            ...(tenantId ? { tenantId } : {}),
+            page,
+            limit,
+            search,
+            category,
+            includeInventory,
+        },
+    });
 };
 
 export const deleteDish = (id) => api.delete(`/api/dishes/${encodeURIComponent(id)}`);

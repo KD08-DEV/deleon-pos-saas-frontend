@@ -24,6 +24,18 @@ const currency = (n) =>
     new Intl.NumberFormat("en-IN", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
         .format(Number(n || 0));
 
+const extractDishList = (response) => {
+    const raw =
+        response?.data?.data?.items ??
+        response?.data?.items ??
+        response?.data?.data ??
+        response?.data?.dishes ??
+        response?.data ??
+        [];
+
+    return Array.isArray(raw) ? raw : [];
+};
+
 const MenuManagement = () => {
     const userData = useSelector((state) => state.user.userData);
     const tenantId = userData?.tenantId || localStorage.getItem("tenantId") || "";
@@ -43,8 +55,11 @@ const MenuManagement = () => {
         dish: null,
     });
     const [showDishModal, setShowDishModal] = useState(false);
+    const PAGE_SIZE = 48; // puedes subirlo a 100 si quieres ver casi todo de una vez
+    const CATEGORY_FETCH_LIMIT = 1000;
+
     const [page, setPage] = useState(1);
-    const [limit] = useState(12);
+    const limit = PAGE_SIZE;
     const [editingDish, setEditingDish] = useState(null);
     const [dishForm, setDishForm] = useState({
         name: "",
@@ -85,17 +100,21 @@ const MenuManagement = () => {
         keepPreviousData: true,
     });
 
+    const { data: allDishesData } = useQuery({
+        queryKey: ["dishes-all-for-categories", tenantId, searchTerm],
+        queryFn: () =>
+            getDishes({
+                tenantId,
+                page: 1,
+                limit: CATEGORY_FETCH_LIMIT,
+                search: searchTerm,
+            }),
+        enabled: Boolean(tenantId),
+        staleTime: 30_000,
+    });
 
-    const dishes = useMemo(() => {
-        const raw =
-            data?.data?.data?.items ??
-            data?.data?.items ??
-            data?.data?.data ??
-            data?.data?.dishes ??
-            data?.data ??
-            [];
-        return Array.isArray(raw) ? raw : [];
-    }, [data]);
+    const dishes = useMemo(() => extractDishList(data), [data]);
+    const allDishes = useMemo(() => extractDishList(allDishesData), [allDishesData]);
 
     const total =
         data?.data?.data?.total ??
@@ -125,13 +144,26 @@ const MenuManagement = () => {
     // Obtener categorías únicas
 // ✅ Categorías únicas (usando la misma lógica del badge)
     const categories = useMemo(() => {
-        const set = new Set();
-        for (const dish of dishes) {
-            const label = getDishCategoryLabel(dish);
-            if (label && label.trim()) set.add(label.trim());
+        const map = new Map();
+
+        for (const dish of allDishes) {
+            const value = String(dish?.category || "").trim();
+            if (!value) continue;
+
+            const label = String(getDishCategoryLabel(dish) || value).trim();
+
+            if (!map.has(value)) {
+                map.set(value, {
+                    value,
+                    label,
+                });
+            }
         }
-        return Array.from(set).sort((a, b) => a.localeCompare(b));
-    }, [dishes, invCats]); // 👈 importante: invCats afecta el label
+
+        return Array.from(map.values()).sort((a, b) =>
+            a.label.localeCompare(b.label)
+        );
+    }, [allDishes, invCats]);
 
     // Filtrar platos
     const filteredDishes = dishes;
@@ -380,8 +412,8 @@ const MenuManagement = () => {
                     >
                         <option value="">Todas las categorías</option>
                         {categories.map((cat) => (
-                            <option key={cat} value={cat}>
-                                {cat}
+                            <option key={cat.value} value={cat.value}>
+                                {cat.label}
                             </option>
                         ))}
                     </select>
