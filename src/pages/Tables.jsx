@@ -146,19 +146,29 @@ export default function Tables() {
     const goToTableFlow = (table) => {
         const tableId = table?._id;
         const status = table?.status || "Disponible";
+        const currentOrder = table?.currentOrder || null;
 
         const existingOrderId =
-            table?.currentOrder?._id ||
-            table?.currentOrder?.id ||
-            table?.currentOrder ||
-            null;
+            currentOrder?._id ||
+            currentOrder?.id ||
+            (typeof currentOrder === "string" ? currentOrder : null);
+
+        const existingOrderStatus = String(currentOrder?.orderStatus || "").trim();
+
+        const hasActiveOrder =
+            Boolean(existingOrderId) &&
+            !["Cancelado", "Completado"].includes(existingOrderStatus);
+
+        const hasClosedOrderLinked =
+            Boolean(existingOrderId) &&
+            ["Cancelado", "Completado"].includes(existingOrderStatus);
 
         const canEditBooked =
             normalizedRole === "admin" ||
             normalizedRole === "camarero" ||
             normalizedRole === "cajera";
 
-        if ((status === "Ocupada" || status === "Reservada") && existingOrderId) {
+        if ((status === "Ocupada" || status === "Reservada") && hasActiveOrder) {
             if (!canEditBooked) {
                 enqueueSnackbar("Mesa ocupada. No tienes permisos para editar esta orden.", {
                     variant: "warning",
@@ -168,6 +178,21 @@ export default function Tables() {
 
             navigate(`/menu?orderId=${existingOrderId}`);
             return;
+        }
+
+        if ((status === "Ocupada" || status === "Reservada") && hasClosedOrderLinked) {
+            console.warn("[Tables] Mesa con orden cerrada enlazada detectada", {
+                tableId,
+                existingOrderId,
+                existingOrderStatus,
+            });
+
+            enqueueSnackbar(
+                "La mesa tenía una orden cerrada asociada. Se abrirá una nueva orden.",
+                { variant: "warning" }
+            );
+
+            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
         }
 
         dispatch(

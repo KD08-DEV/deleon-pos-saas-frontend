@@ -1,6 +1,6 @@
-
 import React, { useEffect, useMemo, useState, memo } from "react";
 import { useSnackbar } from "notistack";
+import { useSelector } from "react-redux";
 import { formatDateAndTime } from "../../utils";
 import { updateOrder } from "../../https";
 import useTenant from "../../hooks/useTenant";
@@ -10,8 +10,6 @@ import SplitBillModal from "./SplitBillModal";
 import SplitInvoicesModal from "./SplitInvoicesModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, X, Circle, ArrowLeft, ArrowRight, Receipt, CreditCard, Clock, User, Hash, MoreVertical, Table2, Users, Package, Calendar, MessageSquareText  } from "lucide-react";
-
-
 
 const STATUS_FLOW = ["En Progreso", "Listo", "Completado"];
 
@@ -83,6 +81,10 @@ const unwrapOrder = (res) => res?.data?.data ?? res?.data?.order ?? res?.data;
 const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const { enqueueSnackbar } = useSnackbar();
 
+    const userState = useSelector((state) => state.user);
+    const currentUser = userState?.userData || userState?.user || userState;
+    const normalizedRole = String(currentUser?.role || "").trim().toLowerCase();
+    const isAdminUser = normalizedRole === "admin";
     // mantenemos copia local para poder refrescar la tarjeta cuando emitimos NCF
     const [localOrder, setLocalOrder] = useState(order);
     useEffect(() => setLocalOrder(order), [order]);
@@ -387,6 +389,13 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
         } finally {
             setIsUpdating(false);
         }
+    };
+    const canAdminRecoverCancelled =
+        currentStatus === "Cancelado" && isAdminUser;
+
+    const handleRecoverCancelled = async (nextStatus = "En Progreso") => {
+        setShowOrderDetails(false);
+        await handleStatusUpdate(nextStatus);
     };
 
 
@@ -920,6 +929,31 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                                 <span>{primaryButtonLabel}</span>
                                             </motion.button>
                                         </div>
+                                        {canAdminRecoverCancelled && (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <motion.button
+                                                    type="button"
+                                                    onClick={() => handleRecoverCancelled("En Progreso")}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
+                                                >
+                                                    <ArrowRight className="w-4 h-4" />
+                                                    <span>Reactivar orden</span>
+                                                </motion.button>
+
+                                                <motion.button
+                                                    type="button"
+                                                    onClick={() => handleRecoverCancelled("Completado")}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-blue-500/30"
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4" />
+                                                    <span>Marcar como completada</span>
+                                                </motion.button>
+                                            </div>
+                                        )}
 
                                         <div className={`grid grid-cols-1 sm:grid-cols-${hasNormalInvoice ? "3" : "2"} gap-3`}>
                                             {/* ✅ Ver factura normal (solo si NO es fiscal) */}
