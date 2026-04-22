@@ -338,9 +338,38 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     // Propina + ITBIS
     const [tipEnabled, setTipEnabled] = useState(true);
     const [tipPercent, setTipPercent] = useState(10);
+    const [taxEnabled, setTaxEnabled] = useState(true);
+    useEffect(() => {
+        if (!order?._id) return;
+
+        const bills = order?.bills || {};
+        const savedTax = bills?.taxEnabled;
+        const savedTipAmount = num(bills?.tipAmount ?? bills?.tip ?? 0);
+        const savedTipEnabled =
+            typeof bills?.tipEnabled === "boolean"
+                ? bills.tipEnabled
+                : savedTipAmount > 0;
+
+        if (typeof savedTax === "boolean") {
+            setTaxEnabled(savedTax);
+        } else {
+            setTaxEnabled(taxEnabledByTenant);
+        }
+
+        setTipEnabled(savedTipEnabled);
+
+        if (savedTipAmount > 0 && subtotal > 0) {
+            const discountAmt = num(bills?.discount ?? 0);
+            const base = Math.max(subtotal - discountAmt, 0);
+            const pct = base > 0 ? (savedTipAmount / base) * 100 : 0;
+            setTipPercent(Number(pct.toFixed(2)));
+        } else {
+            setTipPercent(0);
+        }
+    }, [order?._id, order?.bills, subtotal, taxEnabledByTenant]);
+
 
     const TAX_RATE = 18;
-    const [taxEnabled, setTaxEnabled] = useState(true);
     useEffect(() => {
         if (!order?._id) return;
 
@@ -763,7 +792,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     qty: q,
                     unitPrice: unit,
                     price: line,
-                    tax: Number((line * 0.18).toFixed(2)),
+                    tax: num(it.taxAmount ?? 0),
                 };
             });
 

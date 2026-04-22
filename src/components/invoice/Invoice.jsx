@@ -212,7 +212,10 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const subtotal = Number(order?.subTotal ?? bills?.subtotal ?? bills?.total ?? 0);
 
     const discount = Number(order?.discountAmount ?? bills?.discount ?? 0);
-    const taxEnabled = order?.taxEnabled ?? bills?.taxEnabled ?? true;
+    const taxEnabled =
+        typeof (order?.taxEnabled ?? bills?.taxEnabled) === "boolean"
+            ? (order?.taxEnabled ?? bills?.taxEnabled)
+            : tax > 0;
     const tax = Number(order?.taxAmount ?? bills?.tax ?? 0);
     const tip = Number(order?.tipAmount ?? bills?.tipAmount ?? bills?.tip ?? 0);
 
