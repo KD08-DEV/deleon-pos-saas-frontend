@@ -7,6 +7,8 @@ import { saveAs } from "file-saver";
 import api from "../../lib/api";
 const REGISTER_ID = "MAIN";
 import { useSelector } from "react-redux";
+import { listExpenses } from "../../lib/adminFinanceApi";
+
 
 
 
@@ -187,6 +189,7 @@ const CashRegister = () => {
         return `${yyyy}-${mm}-${dd}`;
     };
 
+
     // Sesión de caja (menudo / fondo inicial) guardada en MongoDB
     const todayYMD = getLocalYMD();
 
@@ -256,7 +259,37 @@ const CashRegister = () => {
 
 
 
+    const { data: expensesRows = [], refetch: refetchExpenses } = useQuery({
+        queryKey: ["admin/expenses/day", selectedYMD],
+        queryFn: async () => {
+            const r = await listExpenses({
+                from: selectedYMD,
+                to: selectedYMD,
+            });
+            return r.data || [];
+        },
+        enabled: !!selectedYMD,
+        staleTime: 10000,
+    });
 
+    const expensesSummary = useMemo(() => {
+        const rows = Array.isArray(expensesRows) ? expensesRows : [];
+
+        const totalExpenses = rows.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+
+        const cashExpenses = rows
+            .filter((r) => String(r.paymentMethod || "").toLowerCase() === "cash")
+            .reduce((acc, r) => acc + Number(r.amount || 0), 0);
+
+        const nonCashExpenses = totalExpenses - cashExpenses;
+
+        return {
+            totalExpenses: Number(totalExpenses.toFixed(2)),
+            cashExpenses: Number(cashExpenses.toFixed(2)),
+            nonCashExpenses: Number(nonCashExpenses.toFixed(2)),
+            count: rows.length,
+        };
+    }, [expensesRows]);
     // Fondo inicial (menudo)
     const [openingCashInput, setOpeningCashInput] = useState("");
     const openingEditedRef = useRef(false);
@@ -1286,9 +1319,12 @@ const CashRegister = () => {
         });
     }, [sortedReports, modalFilters]);
 
-    const buildCashClosure = (rows, openingInitial, addedTotal) => {
-        const normalizeMethod = (m) => String(m || "Efectivo").trim().toLowerCase();
-
+    const buildCashClosure = (
+        rows,
+        openingInitial,
+        addedTotal,
+        expensesSummary = { totalExpenses: 0, cashExpenses: 0 }
+    ) => {
         const buckets = {
             efectivo: { label: "Efectivo", total: 0, count: 0 },
             tarjeta: { label: "Tarjeta", total: 0, count: 0 },
@@ -1303,9 +1339,12 @@ const CashRegister = () => {
         let totalCount = 0;
 
         const normalizeText = (v) => String(v || "").trim().toLowerCase();
+        const normalizeMethod = (v) => normalizeText(v);
+
         const normalizeChannel = (r) => {
             const os = normalizeText(r?.orderSource || r?.source || r?.channel);
             if (os) return os;
+
             const t = r?.table || r?.tableId || r?.tableInfo || null;
             const vt = normalizeText(t?.virtualType || t?.type || r?.virtualType);
             return vt;
@@ -1318,16 +1357,12 @@ const CashRegister = () => {
             const channel = normalizeChannel(r);
             const pmRaw = normalizeMethod(r?.paymentMethod);
 
-            // 1) Método de pago REAL primero (esto decide si entra a efectivo del cierre)
             if (pmRaw.includes("efect")) key = "efectivo";
             else if (pmRaw.includes("tarj")) key = "tarjeta";
             else if (pmRaw.includes("transf")) key = "transferencia";
-
-            // 2) Si no se detecta método (casos especiales), cae por canal/origen
             else if (channel.includes("pedidoya") || channel.includes("pedido") || channel.includes("pedidosya")) key = "pedidoya";
             else if (channel.includes("ubereats") || channel.includes("uber")) key = "ubereats";
             else if (channel.includes("delivery")) key = "delivery";
-
 
             buckets[key].total += total;
             buckets[key].count += 1;
@@ -1338,33 +1373,35 @@ const CashRegister = () => {
 
         const openingVal = safeNumber(openingInitial);
         const addedVal = safeNumber(addedTotal);
-
         const cashSales = safeNumber(buckets.efectivo.total);
 
-        // En caja realmente: fondo inicial + efectivo ventas + agregado
-        const cashInRegister = openingVal + cashSales + addedVal;
+        const totalExpenses = safeNumber(expensesSummary?.totalExpenses);
+        const cashExpenses = safeNumber(expensesSummary?.cashExpenses);
 
-        // Total ventas + fondo inicial (agregado NO es venta)
+        const cashInRegister = openingVal + cashSales + addedVal - cashExpenses;
         const totalWithMenudo = openingVal + grandTotal;
+        const netSales = grandTotal - totalExpenses;
 
         return {
             buckets,
             grandTotal,
+            netSales,
             totalWithMenudo,
             totalCount,
             openingInitial: openingVal,
             addedTotal: addedVal,
             cashSales,
+            totalExpenses,
+            cashExpenses,
             cashInRegister,
         };
     };
-
     // Resumen basado en los últimos 10 registros
 // Resumen basado en los registros de HOY
 
     const initialCashClosure = useMemo(
-        () => buildCashClosure(dayReports, openingInitial, addedTotal),
-        [dayReports, openingInitial, addedTotal]
+        () => buildCashClosure(dayReports, openingInitial, addedTotal, expensesSummary),
+        [dayReports, openingInitial, addedTotal, expensesSummary]
     );
 
 // Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
@@ -1544,9 +1581,24 @@ const CashRegister = () => {
                                 <div className="text-sm font-semibold text-white">{currency(initialCashClosure.cashSales)}</div>
                             </div>
 
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                <div className="text-xs text-gray-400 mb-1">Gastos del día</div>
+                                <div className="text-sm font-semibold text-red-400">
+                                    {currency(initialCashClosure.totalExpenses)}
+                                </div>
+                                <div className="text-[11px] text-gray-500 mt-1">
+                                    En efectivo: {currency(initialCashClosure.cashExpenses)}
+                                </div>
+                            </div>
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors">
                                 <div className="text-xs text-gray-400 mb-1">Efectivo en caja (fondo + ventas)</div>
                                 <div className="text-sm font-semibold text-[#f6b100]">{currency(initialCashClosure.cashInRegister)}</div>
+                            </div>
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
+                                <div className="text-xs text-gray-400 mb-1">Ventas netas</div>
+                                <div className="text-sm font-semibold text-white">
+                                    {currency(initialCashClosure.netSales)}
+                                </div>
                             </div>
                         </div>
                     </div>
