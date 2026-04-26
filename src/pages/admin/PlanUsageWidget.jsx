@@ -153,9 +153,9 @@ const PlanUsageWidget = () => {
                     })}
                 </div>
 
-                {plan !== "vip" && (
+                {plan !== "estandar" && (
                     <p className="mt-3 text-[11px] text-gray-500">
-                        ¿Has llegado al límite? Pásate a PRO o VIP para obtener más usuarios, mesas y platos.
+                        ¿Has llegado al límite? Pásate a PRO o Estandar para obtener más usuarios, mesas y platos.
                     </p>
                 )}
             </div>

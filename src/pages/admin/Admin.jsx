@@ -124,7 +124,7 @@ const Admin = () => {
     const usage = usageData?.usage || {};
     const remaining = usageData?.remaining || {};
     const rawPlan = (usageData?.plan || "emprendedor").toLowerCase();
-    const canInventory = ["premium", "vip"].includes(rawPlan);
+    const canInventory = ["premium", "estandar"].includes(rawPlan);
 
     const totalUsersLimit =
         limits.maxUsers === null || limits.maxUsers === undefined
@@ -868,10 +868,10 @@ const Admin = () => {
                         </div>
 
                         {/* Mensaje de mejora */}
-                        {rawPlan !== "vip" && (
+                        {rawPlan !== "estandar" && (
                             <div className="mt-6 p-4 bg-[#1a1a1a] border border-gray-800/50 rounded-lg">
                                 <p className="text-xs text-gray-400 text-center">
-                                    ¿Has llegado al límite? Pásate a PRO o VIP para obtener más usuarios, mesas y platos.
+                                    ¿Has llegado al límite? Pásate a PRO o estandar para obtener más usuarios, mesas y platos.
                                 </p>
                             </div>
                         )}

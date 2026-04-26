@@ -177,9 +177,9 @@ export default function Inventory({ plan }) {
     }
     const { enqueueSnackbar, closeSnackbar } = useSnackbar();
 
-    // SOLO premium y vip
+    // SOLO premium y estandar
     const rawPlan = String(plan || "").toLowerCase();
-    const canUseInventory = ["premium", "vip"].includes(rawPlan);
+    const canUseInventory = ["premium", "estandar"].includes(rawPlan);
 
     const userData = useSelector((state) => state.user.userData);
     const tenantId = userData?.tenantId;
@@ -654,7 +654,7 @@ export default function Inventory({ plan }) {
                 <div className={`${cardCls} p-6`}>
                     <div className="text-white text-lg font-semibold">Inventario</div>
                     <div className="text-white/70 mt-1">
-                        Este módulo está disponible solo para los planes <b>Premium</b> y <b>VIP</b>.
+                        Este módulo está disponible solo para los planes <b>Premium</b> y <b>Estandar</b>.
                     </div>
                 </div>
             </div>

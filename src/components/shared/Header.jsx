@@ -31,14 +31,14 @@ const Header = memo(() => {
     const menuRef = useRef(null);
     const notifRef = useRef(null);
 
-    // Plan gating (Premium/VIP)
+    // Plan gating (Premium/estandar)
     const rawPlan =
         (userData?.tenant?.plan ||
             userData?.plan ||
             userData?.subscription?.plan ||
             "") + "";
     const plan = rawPlan.toLowerCase();
-    const canInventory = ["premium", "vip"].includes(plan);
+    const canInventory = ["premium", "estandar"].includes(plan);
 
     const logoutMutation = useMutation({
         mutationFn: () => logout(),
@@ -134,7 +134,7 @@ const Header = memo(() => {
                         title={
                             canInventory
                                 ? "Notificaciones de inventario"
-                                : "Inventario disponible solo en Premium/VIP"
+                                : "Inventario disponible solo en Premium/estandar"
                         }
                     >
                         <Bell className="text-[#f5f5f5] text-xl group-hover:text-yellow-400 transition-colors" />

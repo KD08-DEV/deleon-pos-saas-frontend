@@ -138,7 +138,7 @@ const SuperAdminCreateTenant = () => {
                     >
                         <option value="emprendedor">emprendedor</option>
                         <option value="premium">premium</option>
-                        <option value="vip">vip</option>
+                        <option value="estandar">estandar</option>
                     </select>
                 </div>
 
