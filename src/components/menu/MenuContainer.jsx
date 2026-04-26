@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ShoppingCart, Minus, Plus } from "lucide-react";
+import { ChevronDown, ShoppingCart, Minus, Plus, Search, X } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import { useDispatch ,useSelector } from "react-redux";
 import { setCart } from "../../redux/slices/cartSlice";

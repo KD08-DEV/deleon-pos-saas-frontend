@@ -116,8 +116,8 @@ const Login = () => {
             const { _id, name, email, phone, role } = userData;
             dispatch(setUser({ _id, name, email, phone, role, tenantId }));
 
-            navigate("/");
-        },
+            navigate("/mesas", { replace: true });
+            },
         onError: (error) => {
             const msg = error?.response?.data?.message || "Error al iniciar sesión";
             enqueueSnackbar(msg, { variant: "error" });

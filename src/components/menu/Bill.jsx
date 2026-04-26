@@ -179,6 +179,17 @@ const inferNcfTypeFromNumber = (value) => {
     if (ncf.startsWith("B02")) return "B02";
     return null;
 };
+const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+const getActiveRegisterId = () => {
+    try {
+        return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+            .trim()
+            .toUpperCase();
+    } catch {
+        return "MAIN";
+    }
+};
 
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
@@ -241,7 +252,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const taxEnabledByTenant = tenantFeatures?.tax?.enabled === true;
     const tipEnabledByTenant = tenantFeatures?.tip?.enabled === true;
     const fiscalEnabledByTenant = !!tenantInfo?.fiscal?.enabled;
-
+    const chargeMode = tenantInfo?.features?.checkout?.chargeMode || "AT_COMPLETE";
 
     useEffect(() => {
 
@@ -646,6 +657,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             discount: { type: discountType, value: num(discountValue) || 0 },
             bills,
             orderNote: String(orderNote || "").trim(),
+            registerId: getActiveRegisterId(),
+            paymentStatus: chargeMode === "AT_INVOICE" ? "Pagado" : "Pendiente",
+            markAsPaid: chargeMode === "AT_INVOICE",
         };
 
         // customerDetails (si hay data)
@@ -685,7 +699,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 requested: true,
                 ncfType: safeNcfType,
             };
+            if (chargeMode === "AT_INVOICE") {
+                basePayload.paymentStatus = "Pagado";
+            }
+
         }
+
 
         return basePayload;
     };
@@ -714,11 +733,18 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     const orderMutation = useMutation({
         mutationFn: async (payload) => {
-            if (orderId) return updateOrder(orderId, payload);
+            const registerId = getActiveRegisterId();
 
-            // Crear solo aquí (cuando el usuario presiona actualizar)
+            if (orderId) {
+                return updateOrder(orderId, {
+                    ...payload,
+                    registerId,
+                });
+            }
+
             return addOrder({
                 ...payload,
+                registerId,
                 table: payload?.table ?? draftTable ?? null,
                 orderSource: payload?.orderSource ?? draftOrderSource,
             });
@@ -1052,6 +1078,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         }
 
         const payload = buildOrderPayload();
+        payload.submitAction = target;
 
         if (!payload.items?.length) {
             enqueueSnackbar("No hay items en el carrito para guardar la orden.", {

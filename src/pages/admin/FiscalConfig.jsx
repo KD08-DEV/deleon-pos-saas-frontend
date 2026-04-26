@@ -151,8 +151,7 @@ export default function FiscalConfig() {
                 uberEatsCommissionPct: Math.round((Number(data?.features?.orderSources?.uberEats?.commissionRate ?? 0.22)) * 100),
                 deliveryEnabled: !!data?.features?.orderSources?.delivery?.enabled,
                 preInvoiceEnabled: !!data?.features?.preInvoice?.enabled,
-
-
+                chargeMode: String(data?.features?.checkout?.chargeMode || "AT_COMPLETE"),
             },
             fiscalEnabled: !!data?.fiscal?.enabled,
             B01: {
@@ -222,6 +221,9 @@ export default function FiscalConfig() {
                     tip: { enabled: !!form.features.tipEnabled },
                     discount: { enabled: !!form.features.discountEnabled },
                     preInvoice: { enabled: !!form.features.preInvoiceEnabled },
+                    checkout: {
+                        chargeMode: form.features.chargeMode || "AT_COMPLETE",
+                    },
                     orderSources: {
                         pedidosYa: {
                             enabled: !!form.features.pedidosYaEnabled,
@@ -357,6 +359,32 @@ export default function FiscalConfig() {
                         />
                     </div>
                 </Section>
+            </div>
+            {/* Modo de cobro */}
+            <div className="space-y-2">
+                <label className="block text-sm font-medium text-white">
+                    Modo de cobro
+                </label>
+
+                <select
+                    value={form.features.chargeMode || "AT_COMPLETE"}
+                    onChange={(e) =>
+                        setForm((f) => ({
+                            ...f,
+                            features: {
+                                ...f.features,
+                                chargeMode: e.target.value,
+                            },
+                        }))
+                    }
+                    className={inputCls}
+                >
+                    <option value="AT_INVOICE">Cobrar al facturar</option>
+                    <option value="AT_COMPLETE">Cobrar al completar</option>
+                </select>
+                <p className="text-xs text-gray-400">
+                    Cobrar al facturar: la venta entra al cierre al emitir la factura. Cobrar al completar: la venta entra al cierre solo cuando se marca como completada.
+                </p>
             </div>
 
             {/* Aplicaciones de delivery */}

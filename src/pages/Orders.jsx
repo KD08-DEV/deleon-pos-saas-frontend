@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import BottomNav from "../components/shared/BottomNav";
 import OrderCard from "../components/orders/OrderCard";
 import BackButton from "../components/shared/BackButton";
@@ -6,24 +6,71 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getOrders } from "../https/index";
 import { enqueueSnackbar } from "notistack";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Filter, ListOrdered } from "lucide-react";
+import { Filter, ListOrdered, ChevronDown, Check } from "lucide-react";
 
 const INITIAL_VISIBLE_ORDERS = 24;
 const LOAD_MORE_STEP = 12;
+
+const getItemProductType = (item) => {
+    const candidates = [
+        item?.productType,
+        item?.itemType,
+        item?.station,
+        item?.kitchenStation,
+        item?.prepStation,
+        item?.preparationType,
+        item?.productionType,
+        item?.category,
+        item?.dishCategory,
+        item?.dish?.category,
+        item?.dishInfo?.category,
+    ];
+
+    const found = candidates.find((value) => String(value || "").trim());
+    return found ? String(found).trim() : null;
+};
+
+const orderHasProductType = (order, productType) => {
+    if (!productType || productType === "all") return true;
+    return (order?.items || []).some((item) => getItemProductType(item) === productType);
+};
+
+const sortOrdersOldestTopNewestBottom = (orders) => {
+    return [...(orders || [])].sort((a, b) => {
+        const aTime = new Date(a?.createdAt || 0).getTime();
+        const bTime = new Date(b?.createdAt || 0).getTime();
+        return aTime - bTime;
+    });
+};
 
 const Orders = () => {
     const [status, setStatus] = useState("all");
     const [orders, setOrders] = useState([]);
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ORDERS);
+    const [productTypeFilter, setProductTypeFilter] = useState("all");
+    const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
 
-    // 🔔 referencia al audio y a las órdenes previas
     const audioRef = useRef(null);
     const prevOrderIdsRef = useRef(new Set());
     const firstLoadRef = useRef(true);
+    const typeMenuRef = useRef(null);
 
     useEffect(() => {
         document.title = "POS | Orders";
         audioRef.current = new Audio("/sounds/new-order.mp3");
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (typeMenuRef.current && !typeMenuRef.current.contains(event.target)) {
+                setIsTypeMenuOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
     }, []);
 
     const { data: resData, isError } = useQuery({
@@ -47,11 +94,9 @@ const Orders = () => {
 
             if (newIds.length > 0 && audioRef.current) {
                 audioRef.current.play().catch(() => {});
-
-                enqueueSnackbar(
-                    `${newIds.length} nueva(s) orden(es) recibida(s)`,
-                    { variant: "info" }
-                );
+                enqueueSnackbar(`${newIds.length} nueva(s) orden(es) recibida(s)`, {
+                    variant: "info",
+                });
             }
         }
 
@@ -61,23 +106,70 @@ const Orders = () => {
 
     useEffect(() => {
         setVisibleCount(INITIAL_VISIBLE_ORDERS);
-    }, [status]);
+    }, [status, productTypeFilter]);
 
-    if (isError) {
-        enqueueSnackbar("Failed to load orders", { variant: "error" });
-    }
+    useEffect(() => {
+        if (isError) {
+            enqueueSnackbar("Failed to load orders", { variant: "error" });
+        }
+    }, [isError]);
 
     const handleStatusChanged = (updatedOrder) => {
         if (!updatedOrder?._id) return;
         setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
     };
 
-    const filteredOrders = (orders || []).filter((order) => {
-        if (status === "all") return true;
-        return order.orderStatus === status;
-    });
+    const statusFilteredOrders = useMemo(() => {
+        if (status === "all") return orders || [];
+        return (orders || []).filter((order) => order.orderStatus === status);
+    }, [orders, status]);
 
-    const visibleOrders = filteredOrders.slice(0, visibleCount);
+    const availableProductTypes = useMemo(() => {
+        const unique = new Set();
+
+        for (const order of statusFilteredOrders || []) {
+            for (const item of order?.items || []) {
+                const type = getItemProductType(item);
+                if (type) unique.add(type);
+            }
+        }
+
+        return Array.from(unique).sort((a, b) => a.localeCompare(b, "es"));
+    }, [statusFilteredOrders]);
+
+    const productTypeCounts = useMemo(() => {
+        const counts = {};
+
+        for (const order of statusFilteredOrders || []) {
+            const localTypes = new Set();
+
+            for (const item of order?.items || []) {
+                const type = getItemProductType(item);
+                if (type) localTypes.add(type);
+            }
+
+            localTypes.forEach((type) => {
+                counts[type] = (counts[type] || 0) + 1;
+            });
+        }
+
+        return counts;
+    }, [statusFilteredOrders]);
+
+    const filteredOrders = useMemo(() => {
+        const statusFiltered = (orders || []).filter((order) => {
+            if (status !== "all" && order.orderStatus !== status) return false;
+            return orderHasProductType(order, productTypeFilter);
+        });
+
+        return sortOrdersOldestTopNewestBottom(statusFiltered);
+    }, [orders, status, productTypeFilter]);
+
+    const visibleOrders = useMemo(() => {
+        if (filteredOrders.length <= visibleCount) return filteredOrders;
+        return filteredOrders.slice(filteredOrders.length - visibleCount);
+    }, [filteredOrders, visibleCount]);
+
     const hasMoreOrders = filteredOrders.length > visibleCount;
 
     const STATUS_TABS = [
@@ -88,27 +180,112 @@ const Orders = () => {
         { key: "Cancelado", label: "Cancelado", icon: Filter },
     ];
 
-    return (
-        <section className="relative min-h-screen flex flex-col pb-24 bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f] dark:from-[#0f0f0f] dark:via-[#1a1a1a] dark:to-[#0f0f0f] from-gray-50 via-white to-gray-50 transition-colors duration-300">
-            <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-30 dark:opacity-30 opacity-20">
-                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 dark:bg-blue-500/5 bg-blue-400/10 rounded-full blur-3xl" />
-                <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 dark:bg-purple-500/5 bg-purple-400/10 rounded-full blur-3xl" />
-            </div>
+    const selectedTypeLabel =
+        productTypeFilter === "all" ? "Todos" : productTypeFilter;
 
+    return (
+        <section className="relative min-h-screen flex flex-col pb-24 bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f]">
             <div className="relative z-10 px-2 sm:px-3 lg:px-4 max-w-full mx-auto w-full">
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="flex flex-col md:flex-row md:items-center justify-between px-4 sm:px-6 py-6 gap-4"
+                    className="flex flex-col gap-4 px-4 sm:px-6 py-6"
                 >
-                    <div className="flex items-center gap-4">
-                        <BackButton />
-                        <div className="flex items-center gap-2">
-                            <ListOrdered className="text-blue-400 dark:text-blue-400 text-blue-600 w-6 h-6" />
-                            <h1 className="text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900 text-2xl sm:text-3xl font-bold tracking-wide">
-                                Ordenes
-                            </h1>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <BackButton />
+                            <div className="flex items-center gap-2">
+                                <ListOrdered className="text-blue-400 w-6 h-6" />
+                                <h1 className="text-[#f5f5f5] text-2xl sm:text-3xl font-bold tracking-wide">
+                                    Ordenes
+                                </h1>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                            <div className="relative" ref={typeMenuRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsTypeMenuOpen((prev) => !prev)}
+                                    className="flex items-center justify-between gap-3 min-w-[220px] rounded-xl border border-[#2a2a2a]/70 bg-[#171717] px-3 py-2.5 text-sm text-[#f5f5f5] shadow-lg hover:border-blue-500/40 transition-all"
+                                >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <Filter className="w-4 h-4 text-blue-400 shrink-0" />
+                                        <span className="text-[#9ca3af] shrink-0">Tipo</span>
+                                        <span className="truncate font-medium text-white">
+                                            {selectedTypeLabel}
+                                        </span>
+                                    </div>
+                                    <ChevronDown
+                                        className={`w-4 h-4 text-[#9ca3af] transition-transform ${
+                                            isTypeMenuOpen ? "rotate-180" : ""
+                                        }`}
+                                    />
+                                </button>
+
+                                {isTypeMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-[280px] max-h-80 overflow-y-auto rounded-xl border border-[#2a2a2a] bg-[#111111] shadow-2xl z-[9999] p-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setProductTypeFilter("all");
+                                                setIsTypeMenuOpen(false);
+                                            }}
+                                            className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-all ${
+                                                productTypeFilter === "all"
+                                                    ? "bg-blue-500/15 text-blue-300"
+                                                    : "text-[#e5e7eb] hover:bg-[#1b1b1b]"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="truncate">Todos</span>
+                                                <span className="text-xs text-[#888]">
+                                                    ({statusFilteredOrders.length})
+                                                </span>
+                                            </div>
+                                            {productTypeFilter === "all" && (
+                                                <Check className="w-4 h-4" />
+                                            )}
+                                        </button>
+
+                                        <div className="my-2 border-t border-[#222]" />
+
+                                        {availableProductTypes.length === 0 ? (
+                                            <div className="px-3 py-3 text-sm text-[#888]">
+                                                No hay categorías disponibles.
+                                            </div>
+                                        ) : (
+                                            availableProductTypes.map((type) => {
+                                                const isSelected = productTypeFilter === type;
+                                                return (
+                                                    <button
+                                                        key={type}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setProductTypeFilter(type);
+                                                            setIsTypeMenuOpen(false);
+                                                        }}
+                                                        className={`w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-all ${
+                                                            isSelected
+                                                                ? "bg-blue-500/15 text-blue-300"
+                                                                : "text-[#e5e7eb] hover:bg-[#1b1b1b]"
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <span className="truncate">{type}</span>
+                                                            <span className="text-xs text-[#888]">
+                                                                ({productTypeCounts[type] || 0})
+                                                            </span>
+                                                        </div>
+                                                        {isSelected && <Check className="w-4 h-4" />}
+                                                    </button>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -124,18 +301,11 @@ const Orders = () => {
                                     whileTap={{ scale: 0.95 }}
                                     className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
                                         isActive
-                                            ? "bg-gradient-to-r from-blue-500/20 to-cyan-500/20 dark:from-blue-500/20 dark:to-cyan-500/20 from-blue-500/30 to-cyan-500/30 text-blue-400 dark:text-blue-400 text-blue-600 border border-blue-500/30 dark:border-blue-500/30 border-blue-400/40 shadow-lg shadow-blue-500/10 dark:shadow-blue-500/10 shadow-blue-400/20"
-                                            : "bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 text-[#ababab] dark:text-[#ababab] text-gray-600 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50 hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-400 hover:text-white dark:hover:text-white hover:text-gray-900"
+                                            ? "bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-400 border border-blue-500/30"
+                                            : "bg-gradient-to-r from-[#1f1f1f] to-[#252525] text-[#ababab] border border-[#2a2a2a]/50"
                                     }`}
                                 >
-                                    {isActive && (
-                                        <motion.div
-                                            layoutId="activeOrderTab"
-                                            className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 rounded-xl"
-                                            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                                        />
-                                    )}
-                                    <Icon className={`w-4 h-4 relative z-10 ${isActive ? "text-blue-400 dark:text-blue-400 text-blue-600" : ""}`} />
+                                    <Icon className="w-4 h-4 relative z-10" />
                                     <span className="relative z-10">{tab.label}</span>
                                 </motion.button>
                             );
@@ -153,55 +323,45 @@ const Orders = () => {
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.3 }}
                             >
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm text-[#ababab]">
+                                        Mostrando {visibleOrders.length} de {filteredOrders.length} órdenes.
+                                    </p>
+                                    <p className="text-xs text-[#666]">
+                                        Ordenadas con las más recientes abajo.
+                                    </p>
+                                </div>
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {visibleOrders.map((order, index) => (
-                                        <motion.div
+                                    {visibleOrders.map((order) => (
+                                        <OrderCard
                                             key={order._id}
-                                            initial={{ opacity: 0, y: 20 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: index * 0.03, duration: 0.25 }}
-                                        >
-                                            <OrderCard
-                                                order={order}
-                                                onStatusChanged={handleStatusChanged}
-                                            />
-                                        </motion.div>
+                                            order={order}
+                                            onStatusChanged={handleStatusChanged}
+                                        />
                                     ))}
                                 </div>
 
                                 {hasMoreOrders && (
-                                    <div className="flex justify-center mt-8">
-                                        <motion.button
-                                            whileHover={{ scale: 1.03 }}
-                                            whileTap={{ scale: 0.97 }}
-                                            onClick={() =>
-                                                setVisibleCount((prev) => prev + LOAD_MORE_STEP)
-                                            }
-                                            className="px-5 py-3 rounded-xl text-sm font-semibold
-                                                bg-gradient-to-r from-blue-500/20 to-cyan-500/20
-                                                text-blue-400 border border-blue-500/30
-                                                shadow-lg shadow-blue-500/10"
+                                    <div className="mt-6 flex justify-center">
+                                        <button
+                                            onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_STEP)}
+                                            className="px-4 py-2 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-500/30"
                                         >
-                                            Cargar más ({filteredOrders.length - visibleCount} restantes)
-                                        </motion.button>
+                                            Cargar más anteriores
+                                        </button>
                                     </div>
                                 )}
                             </motion.div>
                         ) : (
                             <motion.div
-                                key="empty-state"
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                className="flex flex-col items-center justify-center py-20"
+                                key="orders-empty"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="text-center py-20 text-[#888]"
                             >
-                                <ListOrdered className="text-[#ababab] dark:text-[#ababab] text-gray-400 w-16 h-16 mb-4 opacity-50" />
-                                <p className="text-center text-[#ababab] dark:text-[#ababab] text-gray-600 text-base font-medium">
-                                    No hay pedidos disponibles
-                                </p>
-                                <p className="text-center text-[#666] dark:text-[#666] text-gray-500 text-sm mt-2">
-                                    {status !== "all" ? `Intenta con otro filtro` : "Las ordenes aparecerán aquí"}
-                                </p>
+                                No hay órdenes para mostrar.
                             </motion.div>
                         )}
                     </AnimatePresence>

@@ -5,7 +5,27 @@ import { X, Search, Filter, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import api from "../../lib/api";
-const REGISTER_ID = "MAIN";
+const DEFAULT_REGISTER_ID = "MAIN";
+const ALL_REGISTERS_ID = "__ALL_REGISTERS__";
+const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+
+
+const getSavedRegisterId = () => {
+    try {
+        return localStorage.getItem(REGISTER_STORAGE_KEY) || DEFAULT_REGISTER_ID;
+    } catch {
+        return DEFAULT_REGISTER_ID;
+    }
+};
+
+const saveRegisterId = (value) => {
+    try {
+        localStorage.setItem(REGISTER_STORAGE_KEY, String(value || DEFAULT_REGISTER_ID));
+    } catch {
+        // ignore
+    }
+};
 import { useSelector } from "react-redux";
 import { listExpenses } from "../../lib/adminFinanceApi";
 
@@ -143,6 +163,31 @@ const getOpeningCashStorageKey = () => {
 
 const CashRegister = () => {
     const [batchesModalOpen, setBatchesModalOpen] = useState(false);
+    const [selectedRegisterId, setSelectedRegisterId] = useState(() => {
+        const saved = getSavedRegisterId();
+        return saved || ALL_REGISTERS_ID;
+    });
+    const getLocalYMD = () => {
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    };
+    const todayYMD = getLocalYMD();
+
+
+    const [selectedYMD, setSelectedYMD] = useState(todayYMD);
+    const isSelectedToday = selectedYMD === todayYMD;
+
+    const [modalFilters, setModalFilters] = useState({
+        from: "",
+        to: "",
+        method: "",
+        fiscal: "",
+        user: "",
+        client: "",
+    });
 
     const [showFullView, setShowFullView] = useState(false);
     const [showFiltersMenu, setShowFiltersMenu] = useState(false);
@@ -171,27 +216,95 @@ const CashRegister = () => {
     const [managerCodeModalOpen, setManagerCodeModalOpen] = useState(false);
     const [managerCodeInput, setManagerCodeInput] = useState("");
     const [closeManagerCode, setCloseManagerCode] = useState("");
-    const [forceSummary, setForceSummary] = useState(false);
-
-
-
-
-
+    const me = getUserFromStorage();
     const userData = useSelector((state) => state.auth?.userData);
 
+    const role = String(
+        me?.role ||
+        userData?.role ||
+        userData?.user?.role ||
+        getRoleFromToken() ||
+        ""
+    ).trim();
 
-    const queryClient = useQueryClient();
-    const getLocalYMD = () => {
-        const d = new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
+    const roleNorm = role.toLowerCase();
+
+    const roleRaw =
+        me?.role ||
+        me?.user?.role ||
+        me?.profile?.role ||
+        me?.account?.role ||
+        "";
+    const roleUpper = String(me?.role || role || "").trim().toUpperCase();
 
 
+
+
+    const isCajera = roleUpper === "CAJERA";
+
+    const isAdmin =
+        roleNorm === "admin" ||
+        roleNorm === "owner" ||
+        roleNorm === "superadmin" ||
+        roleNorm.includes("admin");
+
+    const isCashier =
+        roleNorm === "cajera" ||
+        roleNorm === "cashier" ||
+        roleNorm.includes("cajera");
     // Sesión de caja (menudo / fondo inicial) guardada en MongoDB
-    const todayYMD = getLocalYMD();
+
+    const ADMIN_ROLES = new Set([
+        "SUPER_ADMIN",
+        "ADMIN",
+        "OWNER",
+        "MANAGER",
+        "GERENTE",
+        "ADMINISTRADOR",
+    ]);
+    const { data: registersResp, isLoading: registersLoading } = useQuery({
+        queryKey: ["admin/registers"],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/registers");
+            return res.data;
+        },
+        staleTime: 60_000,
+        retry: 1,
+    });
+    const registers = useMemo(() => {
+        return Array.isArray(registersResp?.data) ? registersResp.data : [];
+    }, [registersResp]);
+    const isAdminLike = ADMIN_ROLES.has(roleUpper);
+    const activeRegisterId = useMemo(() => {
+        if (isAdminLike) {
+            if (!registers.length) return ALL_REGISTERS_ID;
+
+            if (!selectedRegisterId || selectedRegisterId === ALL_REGISTERS_ID) {
+                return ALL_REGISTERS_ID;
+            }
+
+            if (registers.some((r) => r.code === selectedRegisterId)) {
+                return selectedRegisterId;
+            }
+
+            return ALL_REGISTERS_ID;
+        }
+
+        if (selectedRegisterId && registers.some((r) => r.code === selectedRegisterId)) {
+            return selectedRegisterId;
+        }
+
+        return registers[0]?.code || DEFAULT_REGISTER_ID;
+    }, [selectedRegisterId, registers, isAdminLike]);
+
+
+    const isViewingAllRegisters = isAdminLike && activeRegisterId === ALL_REGISTERS_ID;
+
+
+    const activeRegisterLabel =
+        isViewingAllRegisters || (isAdminLike && !registers.length)
+            ? "TODAS LAS CAJAS"
+            : activeRegisterId;
 
 
     const addDaysYMD = (ymd, days) => {
@@ -203,32 +316,140 @@ const CashRegister = () => {
         return `${yyyy}-${mm}-${dd}`;
     };
 
+    const [forceSummary, setForceSummary] = useState(false);
+    const registerFilterValue = isViewingAllRegisters ? undefined : activeRegisterId;
 
-    const [selectedYMD, setSelectedYMD] = useState(todayYMD);
-    const isSelectedToday = selectedYMD === todayYMD;
+    const {
+        data: cashSessionResp,
+        isLoading: cashSessionLoading,
+        isError: cashSessionIsError,
+    } = useQuery({
+        queryKey: ["admin/cash-session", selectedYMD, registerFilterValue || "ALL"],
+        enabled: !isViewingAllRegisters,
+        queryFn: async () => {
+            const params = { dateYMD: selectedYMD, registerId: registerFilterValue };
 
-    const [modalFilters, setModalFilters] = useState({
-        from: "",
-        to: "",
-        method: "",
-        fiscal: "",
-        user: "",
-        client: "",
+            console.log("[GET cash-session] request", {
+                url: "/api/admin/cash-session",
+                params,
+                me: { id: me?._id, role },
+            });
+
+            const res = await api.get("/api/admin/cash-session", { params });
+            return res.data;
+        },
+        staleTime: 10_000,
+        retry: 1,
     });
-    const me = getUserFromStorage();
+
+    const cashPayload = cashSessionResp?.data ?? cashSessionResp ?? null;
+    const cashSession = cashSessionResp?.data ?? null;
+    const session =
+        cashPayload?.data ??
+        cashPayload?.session ??
+        cashPayload?.cashSession ??
+        cashPayload?.result ??
+        (cashPayload?._id ? cashPayload : null) ??
+        null;
+
+    const [sessionConflict, setSessionConflict] = useState(false);
+
+    const adminCanSeeSummary = Boolean(isAdminLike);
+
+// IMPORTANTE:
+// Si admin está en "ver todas las ventas" O en "todas las cajas",
+// debe usar SIEMPRE el resumen consolidado
+    const useConsolidatedSummary =
+        adminCanSeeSummary && (showFullView || isViewingAllRegisters);
+
+    const summaryRegisterId = useConsolidatedSummary
+        ? ALL_REGISTERS_ID
+        : activeRegisterId;
+
+    const { data: summaryRangeResp } = useQuery({
+        queryKey: ["admin/cash-session", "summary-range", selectedYMD, summaryRegisterId],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/cash-session/range", {
+                params: {
+                    from: selectedYMD,
+                    to: selectedYMD,
+                    registerId: summaryRegisterId,
+                },
+            });
+            return res.data;
+        },
+        enabled: Boolean(selectedYMD && useConsolidatedSummary),
+        staleTime: 10_000,
+        retry: 1,
+    });
+
+    const summaryRangeData = summaryRangeResp?.data ?? summaryRangeResp ?? null;
+
+// Usa los totales consolidados que YA devuelve el backend
+    const rangeOpeningTotal = safeNumber(summaryRangeData?.openingTotal);
+    const rangeAddedTotal = safeNumber(summaryRangeData?.addedTotal);
+    const rangeCountedTotal = safeNumber(summaryRangeData?.countedTotal);
+    const rangeExpectedTotal = safeNumber(summaryRangeData?.expectedInRegisterTotal);
+    const rangeDifferenceTotal = safeNumber(summaryRangeData?.differenceTotal);
+
+    const openingInitial = useConsolidatedSummary
+        ? rangeOpeningTotal
+        : safeNumber(session?.openingFloatInitial);
+
+    const addedTotal = useConsolidatedSummary
+        ? rangeAddedTotal
+        : safeNumber(session?.addedFloatTotal);
+
+    const closingCountedSaved = useConsolidatedSummary
+        ? rangeCountedTotal
+        : safeNumber(session?.closing?.countedTotal);
+
+    const expectedInRegisterShown = useConsolidatedSummary
+        ? rangeExpectedTotal
+        : safeNumber(session?.closing?.expectedInRegister);
+
+    const differenceShown = useConsolidatedSummary
+        ? rangeDifferenceTotal
+        : safeNumber(session?.closing?.difference);
+
+    const closingAlreadySet = Boolean(session?.closedAt) || closingCountedSaved > 0;
+    const sessionExists = !!session;
+
+// ✅ Session closed: acepta status o closedAt
+    const sessionClosed =
+        String(session?.status || cashSession?.status || "").toUpperCase() === "CLOSED" ||
+        Boolean(session?.closedAt) ||
+        Boolean(session?.closing?.countedTotal);
+
+// ✅ ClosedBy: soporta varias estructuras
+    const closedById =
+        session?.closing?.closedBy?._id ??
+        session?.closing?.closedBy ??
+        session?.closedBy?._id ??
+        session?.closedBy ??
+        null;
+
+// ✅ My user id: usa storage/redux primero (más confiable que token)
+    const myUserId =
+        me?._id ||
+        me?.id ||
+        userData?._id ||
+        userData?.id ||
+        userData?.user?._id ||
+        userData?.user?.id ||
+        getUserIdFromToken();
+
+    const closedByMe = closedById && myUserId ? String(closedById) === String(myUserId) : false;
+
+// ✅ Regla final
+    const showSummary =
+        adminCanSeeSummary ||
+        (sessionClosed && (isCajera || isCashier));
+
+    const queryClient = useQueryClient();
 
 
 // Usa todas las fuentes posibles (storage, redux, token)
-    const role = String(
-        me?.role ||
-        userData?.role ||
-        userData?.user?.role ||
-        getRoleFromToken() ||
-        ""
-    ).trim();
-
-    const roleNorm = role.toLowerCase();
-
 
 
     // Día único seleccionado en el modal (solo si from está y to está vacío o igual a from)
@@ -260,12 +481,14 @@ const CashRegister = () => {
 
 
     const { data: expensesRows = [], refetch: refetchExpenses } = useQuery({
-        queryKey: ["admin/expenses/day", selectedYMD],
+        queryKey: ["admin/expenses/day", selectedYMD, registerFilterValue || "ALL"],
         queryFn: async () => {
-            const r = await listExpenses({
-                from: selectedYMD,
-                to: selectedYMD,
-            });
+            const params = { from: selectedYMD, to: selectedYMD };
+            if (registerFilterValue) {
+                params.registerId = registerFilterValue;
+            }
+
+            const r = await listExpenses(params);
             return r.data || [];
         },
         enabled: !!selectedYMD,
@@ -347,12 +570,12 @@ const CashRegister = () => {
 
             if (sessionDoc?._id) {
                 queryClient.setQueryData(
-                    ["admin/cash-session", selectedYMD, REGISTER_ID],
+                    ["admin/cash-session", selectedYMD, activeRegisterId],
                     { success: true, data: sessionDoc }
                 );
             }
 
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
             queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
             setAdjustCloseOpen(false);
 
@@ -383,12 +606,12 @@ const CashRegister = () => {
 
             if (sessionDoc?._id) {
                 queryClient.setQueryData(
-                    ["admin/cash-session", selectedYMD, REGISTER_ID],
+                    ["admin/cash-session", selectedYMD, activeRegisterId],
                     { success: true, data: sessionDoc }
                 );
             }
 
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
             queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
 
             // ✅ UX: limpiar campos
@@ -422,6 +645,44 @@ const CashRegister = () => {
 
     });
 
+    useEffect(() => {
+        if (isAdminLike) {
+            if (!registers.length) {
+                setSelectedRegisterId(ALL_REGISTERS_ID);
+                saveRegisterId(ALL_REGISTERS_ID);
+                return;
+            }
+
+            if (!selectedRegisterId || selectedRegisterId === ALL_REGISTERS_ID) {
+                setSelectedRegisterId(ALL_REGISTERS_ID);
+                saveRegisterId(ALL_REGISTERS_ID);
+                return;
+            }
+
+            const exists = registers.some((r) => r.code === selectedRegisterId);
+            if (!exists) {
+                setSelectedRegisterId(ALL_REGISTERS_ID);
+                saveRegisterId(ALL_REGISTERS_ID);
+                return;
+            }
+
+            saveRegisterId(selectedRegisterId);
+            return;
+        }
+
+        if (!registers.length) return;
+
+        const exists = registers.some((r) => r.code === selectedRegisterId);
+
+        if (!exists) {
+            const fallback = registers[0]?.code || DEFAULT_REGISTER_ID;
+            setSelectedRegisterId(fallback);
+            saveRegisterId(fallback);
+            return;
+        }
+
+        saveRegisterId(selectedRegisterId);
+    }, [registers, selectedRegisterId, isAdminLike]);
 
 
     const [batchesTab, setBatchesTab] = useState("open"); // "open" | "closed" | "all"
@@ -629,10 +890,12 @@ const CashRegister = () => {
     const safeList = Array.isArray(filteredInventoryItems) ? filteredInventoryItems : [];
 
     const { data: modalRangeSessionResp } = useQuery({
-        queryKey: ["admin/cash-session", "modal-range", modalRangeFrom, modalRangeTo, REGISTER_ID],
+        queryKey: ["admin/cash-session", "modal-range", modalRangeFrom, modalRangeTo, summaryRegisterId],
+
         enabled: modalRangeEnabled,
         queryFn: async () => {
-            const params = { from: modalRangeFrom, to: modalRangeTo, registerId: REGISTER_ID };
+            const params = { from: modalRangeFrom, to: modalRangeTo, registerId: summaryRegisterId };
+            if (registerFilterValue) params.registerId = registerFilterValue;
             console.log("[GET cash-session/range] request", params);
 
             const res = await api.get("/api/admin/cash-session/range", { params });
@@ -643,6 +906,8 @@ const CashRegister = () => {
         staleTime: 10_000,
         retry: 1,
     });
+
+
 
     const { data: mermaRes } = useQuery({
         queryKey: ["inventory/merma/summary", selectedYMD],
@@ -667,44 +932,19 @@ const CashRegister = () => {
 
 
 
-    const {
-        data: cashSessionResp,
-        isLoading: cashSessionLoading,
-        isError: cashSessionIsError,
-    } = useQuery({
-        queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID],
 
-        queryFn: async () => {
-            const params = { dateYMD: selectedYMD, registerId: REGISTER_ID };
-
-            console.log("[GET cash-session] request", {
-                url: "/api/admin/cash-session",
-                params,
-                // opcional: usuario que tienes en localStorage (solo para debug)
-                me: { id: me?._id, role },
-            });
-
-            const res = await api.get("/api/admin/cash-session", { params });
-
-
-            return res.data;
-        },
-
-
-        staleTime: 10_000,
-        retry: 1,
-    });
 
     const { data: modalCashSessionResp } = useQuery({
         queryKey: ["admin/cash-session", "modal", modalDay || "range"],
 
         queryFn: async () => {
-            const res = await api.get("/api/admin/cash-session/current", {
-                params: { dateYMD: modalDay, registerId: REGISTER_ID },
-            });
+            const params = { dateYMD: modalDay };
+            if (registerFilterValue) params.registerId = registerFilterValue;
+
+            const res = await api.get("/api/admin/cash-session/current", { params });
             return res.data;
         },
-        enabled: Boolean(modalDay), // solo corre si hay un día único
+        enabled: Boolean(modalDay) && !isViewingAllRegisters,// solo corre si hay un día único
         staleTime: 30_000,
         retry: 1,
     });
@@ -738,7 +978,9 @@ const CashRegister = () => {
 
     const modalMenudoActual = modalOpeningInitial + modalAddedTotal;
 
-    const cashSession = cashSessionResp?.data ?? null; // <-- ESTO ES LO QUE TE FALTA
+
+
+
 
     function getUserIdFromToken() {
         try {
@@ -752,100 +994,19 @@ const CashRegister = () => {
             return null;
         }
     }
-    const roleRaw =
-        me?.role ||
-        me?.user?.role ||
-        me?.profile?.role ||
-        me?.account?.role ||
-        "";
 
-    const roleUpper = String(me?.role || role || "").trim().toUpperCase();
-
-    const ADMIN_ROLES = new Set([
-        "SUPER_ADMIN",
-        "ADMIN",
-        "OWNER",
-        "MANAGER",
-        "GERENTE",
-        "ADMINISTRADOR",
-    ]);
-
-    const isAdminLike = ADMIN_ROLES.has(roleUpper);
-    const isCajera = roleUpper === "CAJERA";
-
-
-    const isAdmin =
-        roleNorm === "admin" ||
-        roleNorm === "owner" ||
-        roleNorm === "superadmin" ||
-        roleNorm.includes("admin");
-
-    const isCashier =
-        roleNorm === "cajera" ||
-        roleNorm === "cashier" ||
-        roleNorm.includes("cajera");
-
-    const cashPayload = cashSessionResp?.data ?? cashSessionResp ?? null;
 
 
 
 // soporta: { success:true, data:{...} }  | { found:true, session:{...} } | { session:{...} } | documento directo
-    const session =
-        cashPayload?.data ??
-        cashPayload?.session ??
-        cashPayload?.cashSession ??
-        cashPayload?.result ??
-        (cashPayload?._id ? cashPayload : null) ??
-        null;
 
-
-
-
-    const closingCountedSaved = safeNumber(session?.closing?.countedTotal);
-    const closingAlreadySet = Boolean(session?.closedAt) || closingCountedSaved > 0;
-
-    const sessionExists = !!session;
 
     // Solo mostrar resumen si ya cerró (o si es admin)
-// ✅ Session closed: acepta status o closedAt
-    const sessionClosed =
-        String(session?.status || cashSession?.status || "").toUpperCase() === "CLOSED" ||
-        Boolean(session?.closedAt) ||
-        Boolean(session?.closing?.countedTotal);
-
-// ✅ ClosedBy: soporta varias estructuras
-    const closedById =
-        session?.closing?.closedBy?._id ??
-        session?.closing?.closedBy ??
-        session?.closedBy?._id ??
-        session?.closedBy ??
-        null;
-
-// ✅ My user id: usa storage/redux primero (más confiable que token)
-    const myUserId =
-        me?._id ||
-        me?.id ||
-        userData?._id ||
-        userData?.id ||
-        userData?.user?._id ||
-        userData?.user?.id ||
-        getUserIdFromToken();
-
-    const closedByMe = closedById && myUserId ? String(closedById) === String(myUserId) : false;
-
-// ✅ Regla final
 
 
-    const adminCanSeeSummary = Boolean(isAdminLike);
-    const showSummary =
-        adminCanSeeSummary ||
-        (sessionClosed && (isCajera || isCashier)); // <- sin closedByMe
-
-    const [sessionConflict, setSessionConflict] = useState(false);
 
 
-    const openingInitial = safeNumber(session?.openingFloatInitial);
-    const addedTotal = safeNumber(session?.addedFloatTotal);
+
     const menudoActual = openingInitial + addedTotal; // opening + adds
 
 
@@ -902,6 +1063,12 @@ const CashRegister = () => {
             setClosingNote("");
         }
     }, [selectedYMD, closingAlreadySet, closingCountedSaved]);
+    useEffect(() => {
+        setIsEditingOpening(false);
+        setClosingCountedInput("");
+        setClosingNote("");
+        setAddAmountInput?.("");
+    }, [activeRegisterId]);
 
 
     // Cajera solo puede guardar fondo inicial si:
@@ -999,7 +1166,7 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
         },
         onError: (err) => {
             const status = err?.response?.status;
@@ -1013,13 +1180,13 @@ const CashRegister = () => {
 
             if (status === 404) {
                 showToast("No se encontró la sesión para esa fecha/caja.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
                 return;
             }
 
             if (status === 409) {
                 showToast("La caja ya está cerrada. No se puede agregar dinero.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
                 return;
             }
 
@@ -1047,7 +1214,7 @@ const CashRegister = () => {
         },
         onSuccess: () => {
             // refrescar sesión del día
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
             setIsEditingOpening(false);
         },
         onError: (err) => {
@@ -1076,7 +1243,7 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
         },
         onError: (err) => {
             const status = err?.response?.status;
@@ -1091,7 +1258,7 @@ const CashRegister = () => {
 
             if (status === 404) {
                 showToast("No se encontró la sesión para esa fecha/caja.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, REGISTER_ID] });
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
                 return;
             }
 
@@ -1138,8 +1305,19 @@ const CashRegister = () => {
 
     // Limpia filtros vacíos antes de enviar (para la query inicial)
     const cleanedParams = useMemo(() => {
-        return {};
-    }, []);
+        const params = {
+            from: selectedYMD,
+            to: selectedYMD,
+        };
+
+        if (registerFilterValue) {
+            params.registerId = registerFilterValue;
+        }
+
+        return params;
+    }, [selectedYMD, registerFilterValue]);
+
+
     const getFiscalType = (r) => {
         const directType = normalize(
             r?.fiscal?.ncfType ||
@@ -1189,6 +1367,7 @@ const CashRegister = () => {
     };
 
     const { data, isLoading, isError, error } = useQuery({
+
         queryKey: ["admin/reports", cleanedParams],
         queryFn: async () => {
             const res = await api.get("/api/admin/reports", { params: cleanedParams });
@@ -1204,8 +1383,8 @@ const CashRegister = () => {
     // Ordenar por fecha más reciente
     const sortedReports = useMemo(() => {
         return [...reports].sort((a, b) => {
-            const dateA = new Date(a?.createdAt || 0);
-            const dateB = new Date(b?.createdAt || 0);
+            const dateA = new Date(a?.paidAt || a?.createdAt || 0);
+            const dateB = new Date(b?.paidAt || b?.createdAt || 0);
             return dateB - dateA;
         });
     }, [reports]);
@@ -1252,7 +1431,9 @@ const CashRegister = () => {
     };
 
     const dayReports = useMemo(() => {
-        return sortedReports.filter((r) => toLocalYMD(r?.createdAt) === selectedYMD);
+        return sortedReports.filter((r) =>
+            toLocalYMD(r?.paidAt || r?.createdAt) === selectedYMD
+        );
     }, [sortedReports, selectedYMD]);
 
 
@@ -1266,7 +1447,7 @@ const CashRegister = () => {
         const client = normalize(modalFilters.client);
 
         return sortedReports.filter((r) => {
-            const createdAt = r?.createdAt ? new Date(r.createdAt) : null;
+            const createdAt = r?.paidAt ? new Date(r.paidAt) : (r?.createdAt ? new Date(r.createdAt) : null);
             if (from && createdAt && createdAt < from) return false;
             if (to && createdAt && createdAt > to) return false;
 
@@ -1528,7 +1709,12 @@ const CashRegister = () => {
                 {/* TODO tu contenido actual de la página (header, cards, tabla, etc.) */}
         <div className={showFullView ? "pointer-events-none select-none" : ""}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                <h2 className="text-2xl font-bold text-white">Cierre de Caja</h2>
+                <div>
+                    <h2 className="text-2xl font-bold text-white">Cierre de Caja</h2>
+                    <div className="text-sm text-gray-400 mt-1">
+                        Caja activa: <span className="text-white font-medium">{activeRegisterLabel}</span>
+                    </div>
+                </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1539,6 +1725,33 @@ const CashRegister = () => {
                             onChange={(e) => setSelectedYMD(e.target.value)}
                             className="w-full sm:w-auto bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
                         />
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <span className="text-sm text-gray-400 whitespace-nowrap">Caja:</span>
+
+                        {isAdminLike ? (
+                            <select
+                                value={activeRegisterId}
+                                onChange={(e) => setSelectedRegisterId(e.target.value)}
+                                className="w-full sm:w-auto min-w-[220px] bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
+                                disabled={registersLoading}
+                            >
+                                <option value={ALL_REGISTERS_ID}>ADMIN — Ver todas las ventas</option>
+
+                                {registers.length > 0 &&
+                                    registers.map((r) => (
+                                        <option key={r._id || r.code} value={r.code}>
+                                            {r.name}{r.location ? ` — ${r.location}` : ""}
+                                        </option>
+                                    ))
+                                }
+                            </select>
+                        ) : (
+                            <div className="w-full sm:w-auto min-w-[220px] bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2">
+                                {activeRegisterLabel}
+                            </div>
+                        )}
                     </div>
 
                     {isAdmin && showSummary && (
@@ -1660,7 +1873,7 @@ const CashRegister = () => {
 
                                             addCashMutation.mutate({
                                                 dateYMD: selectedYMD,
-                                                registerId: REGISTER_ID,
+                                                registerId: activeRegisterId,
                                                 amount,
                                             });
 
@@ -1691,7 +1904,7 @@ const CashRegister = () => {
 
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: REGISTER_ID,
+                                            registerId: activeRegisterId,
                                             openingFloat,
                                         });
                                     }}
@@ -1712,7 +1925,7 @@ const CashRegister = () => {
 
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: REGISTER_ID,
+                                            registerId: activeRegisterId,
                                             openingFloat,
                                         });
                                     }}
@@ -1745,7 +1958,7 @@ const CashRegister = () => {
 
                                                     adjustOpeningMutation.mutate({
                                                         dateYMD: selectedYMD,
-                                                        registerId: REGISTER_ID,
+                                                        registerId: activeRegisterId,
                                                         openingFloat,
                                                         note: `Ajuste de fondo inicial por admin (${selectedYMD})`,
                                                     });
@@ -1815,8 +2028,8 @@ const CashRegister = () => {
                     <h3 className="text-white font-semibold text-lg">Comparación (Reporte de Cierre de Caja)</h3>
 
                     {(() => {
-                        const counted = safeNumber(session?.closing?.countedTotal);
-                        const expected = safeNumber(initialCashClosure.cashInRegister);
+                        const counted = safeNumber(closingCountedSaved);
+                        const expected = safeNumber(expectedInRegisterShown);
                         const diff = Number((counted - expected).toFixed(2));
 
                         return (
@@ -1925,7 +2138,7 @@ const CashRegister = () => {
                             closeCashSessionMutation.mutate({
                                 fid,
                                 dateYMD: selectedYMD,
-                                registerId: REGISTER_ID,
+                                registerId: activeRegisterId,
                                 countedTotal,
                                 note: closingNote,
                             });
@@ -2362,14 +2575,14 @@ const CashRegister = () => {
                                                                     if (modalSessionExists) {
                                                                         adjustCashModalMutation.mutate({
                                                                             dateYMD: modalDay,
-                                                                            registerId: "default",
+                                                                            registerId: activeRegisterId,
                                                                             openingFloat,
                                                                             note: `Ajuste de fondo inicial por admin (modal) — ${modalDay}`,
                                                                         });
                                                                     } else {
                                                                         openCashSessionModalMutation.mutate({
                                                                             dateYMD: modalDay,
-                                                                            registerId: "default",
+                                                                            registerId: activeRegisterId,
                                                                             openingFloat,
                                                                         });
                                                                     }
@@ -2580,7 +2793,7 @@ const CashRegister = () => {
 
                                 adjustCloseCashSessionMutation.mutate({
                                     dateYMD: selectedYMD,
-                                    registerId: REGISTER_ID,
+                                    registerId: activeRegisterId,
                                     countedTotal,
                                     note: adjustNote,
                                     managerCode: adjustManagerCode.trim(),

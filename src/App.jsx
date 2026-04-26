@@ -226,14 +226,26 @@ function Layout() {
 
     const todayYMD = getLocalYMD();
 
-    const registerId = "MAIN";
+    const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+    const getActiveRegisterId = () => {
+        try {
+            return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+                .trim()
+                .toUpperCase();
+        } catch {
+            return "MAIN";
+        }
+    };
 
     const fetchCashSession = async () => {
         setCashGateLoading(true);
         setCashGateError("");
         try {
+            const activeRegisterId = getActiveRegisterId();
+
             const res = await api.get("/api/admin/cash-session/current", {
-                params: { dateYMD: todayYMD, registerId: REGISTER_ID },
+                params: { dateYMD: todayYMD, registerId: activeRegisterId },
             });
             const payload = res?.data ?? null;
             const session =
@@ -288,9 +300,11 @@ function Layout() {
 
         try {
             setCashGateLoading(true);
+            const activeRegisterId = getActiveRegisterId();
+
             await api.post("/api/admin/cash-session/open", {
                 dateYMD: todayYMD,
-                registerId,
+                registerId: activeRegisterId,
                 openingFloat: amount,
                 note: "Apertura por Cajera",
             });

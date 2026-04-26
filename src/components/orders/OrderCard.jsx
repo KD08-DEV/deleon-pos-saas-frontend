@@ -58,17 +58,150 @@ const fetchFreshOrder = async (orderId) => {
     );
 };
 
+const isMongoObjectId = (value) => /^[a-f\d]{24}$/i.test(String(value || "").trim());
+
+const normalizeDisplayOrderNumber = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    if (isMongoObjectId(raw)) return null;
+
+    // evita mostrar sufijos tipo ObjectId como #84C47C
+    if (/^[A-F\d]{6,8}$/i.test(raw) && /[A-F]/i.test(raw)) return null;
+
+    return raw.replace(/^#/, "");
+};
+
 const getShortOrderId = (order) => {
-    if (!order) return "#—";
-    if (order.orderShortId) return `#${order.orderShortId}`;
-    if (order.orderId) return `#${order.orderId}`;
-    if (order._id) return `#${order._id.slice(-6).toUpperCase()}`;
-    return "#—";
+    if (!order) return "#Sin número";
+
+    const candidates = [
+        order?.displayOrderNumber,
+        order?.displayNumber,
+        order?.queueNumber,
+        order?.ticketNumber,
+        order?.orderNumber,
+        order?.orderNo,
+        order?.orderCode,
+        order?.sequenceNumber,
+        order?.serialNumber,
+        order?.facturaNo,
+        order?.invoiceNumber,
+        order?.invoiceNo,
+        order?.orderShortId,
+        order?.orderId,
+        order?.fiscal?.internalNumber,
+        order?.fiscal?.sequenceNumber,
+        order?.fiscal?.invoiceNumber,
+        order?.fiscal?.invoiceNo,
+    ];
+
+    for (const candidate of candidates) {
+        const normalized = normalizeDisplayOrderNumber(candidate);
+        if (normalized) return `#${normalized}`;
+    }
+
+    return "#Sin número";
 };
 
 const getOrderTypeLabel = (orderType) => {
     if (!orderType) return "Dine in";
     return orderType;
+};
+
+const getItemProductType = (item) => {
+    const candidates = [
+        item?.productType,
+        item?.itemType,
+        item?.station,
+        item?.kitchenStation,
+        item?.prepStation,
+        item?.preparationType,
+        item?.productionType,
+        item?.category,
+        item?.dishCategory,
+        item?.dish?.category,
+        item?.dishInfo?.category,
+    ];
+
+    const found = candidates.find((value) => String(value || "").trim());
+    return found ? String(found).trim() : null;
+};
+
+const getOrderProductTypes = (order) => {
+    const unique = new Set();
+
+    for (const item of order?.items || []) {
+        const type = getItemProductType(item);
+        if (type) unique.add(type);
+    }
+
+    return Array.from(unique);
+};
+
+const getWaitTimeConfig = (order) => {
+    const status = String(order?.orderStatus || "");
+    if (["Completado", "Cancelado"].includes(status)) return null;
+
+    const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
+
+    const minutes = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 60000));
+
+    if (minutes < 5) {
+        return {
+            label: "Recién entró",
+            elapsed: `${minutes} min`,
+            badge: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+            cardBorder: "border-emerald-500/25",
+        };
+    }
+
+    if (minutes < 12) {
+        return {
+            label: "Lleva tiempo",
+            elapsed: `${minutes} min`,
+            badge: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+            cardBorder: "border-amber-500/25",
+        };
+    }
+
+    return {
+        label: "Está tardando",
+        elapsed: `${minutes} min`,
+        badge: "bg-red-500/15 text-red-300 border border-red-500/30",
+        cardBorder: "border-red-500/30",
+    };
+};
+
+const getHistoryActorLabel = (entry) =>
+    entry?.changedBy?.name ||
+    entry?.updatedBy?.name ||
+    entry?.user?.name ||
+    entry?.userName ||
+    entry?.updatedByName ||
+    entry?.name ||
+    "Usuario";
+
+const getHistoryDateLabel = (entry) => {
+    const raw = entry?.changedAt || entry?.updatedAt || entry?.createdAt || entry?.at;
+    return raw ? formatDateAndTime(raw) : "N/A";
+};
+
+const buildNextStatusHistory = (history, nextStatus, actor) => {
+    const safeHistory = Array.isArray(history) ? history : [];
+
+    return [
+        ...safeHistory,
+        {
+            status: nextStatus,
+            changedAt: new Date().toISOString(),
+            changedBy: {
+                id: actor?.id || null,
+                name: actor?.name || "Usuario",
+                role: actor?.role || "",
+            },
+        },
+    ];
 };
 
 const isLikelyRnc = (val) => {
@@ -77,6 +210,17 @@ const isLikelyRnc = (val) => {
 };
 const unwrapOrder = (res) => res?.data?.data ?? res?.data?.order ?? res?.data;
 
+const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+const getActiveRegisterId = () => {
+    try {
+        return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+            .trim()
+            .toUpperCase();
+    } catch {
+        return "MAIN";
+    }
+};
 
 const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const { enqueueSnackbar } = useSnackbar();
@@ -85,6 +229,17 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const currentUser = userState?.userData || userState?.user || userState;
     const normalizedRole = String(currentUser?.role || "").trim().toLowerCase();
     const isAdminUser = normalizedRole === "admin";
+    const currentUserName =
+        currentUser?.name ||
+        currentUser?.fullName ||
+        currentUser?.username ||
+        currentUser?.email ||
+        "Usuario";
+    const currentUserId =
+        currentUser?._id ||
+        currentUser?.id ||
+        currentUser?.userId ||
+        null;
     // mantenemos copia local para poder refrescar la tarjeta cuando emitimos NCF
     const [localOrder, setLocalOrder] = useState(order);
     useEffect(() => setLocalOrder(order), [order]);
@@ -117,10 +272,11 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                     split: {
                         ...(bills.split || {}),
                         enabled: true,
-                        accounts: splitPayload?.accounts || [],     // <-- IMPORTANTe para tu label "X cuentas"
-                        splitBills: splitPayload?.splitBills || [], // <-- el array real
+                        accounts: splitPayload?.accounts || [],
+                        splitBills: splitPayload?.splitBills || [],
                     },
                 },
+                registerId: getActiveRegisterId(),
             };
 
             const res = await updateOrder(splitPayload.orderId, payload);
@@ -198,7 +354,8 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
 
 
     const { tenantInfo } = useTenant();
-
+    const chargeMode = tenantInfo?.features?.checkout?.chargeMode || "AT_COMPLETE";
+    const isPaid = String(localOrder?.paymentStatus || "Pendiente") === "Pagado";
     // Solo mostramos botón fiscal si el tenant está habilitado y tiene B01/B02 activos
     const fiscalCapable = Boolean(
         tenantInfo?.fiscal?.enabled &&
@@ -234,6 +391,20 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
         if (!localOrder?.items || localOrder.items.length === 0) return 0;
         return localOrder.items.reduce((sum, item) => sum + (item?.quantity ?? 1), 0);
     }, [localOrder?.items]);
+
+    const productTypes = useMemo(() => getOrderProductTypes(localOrder), [localOrder]);
+    const waitTimeConfig = useMemo(
+        () => getWaitTimeConfig(localOrder),
+        [localOrder?.createdAt, localOrder?.orderStatus]
+    );
+    const statusHistory = useMemo(() => {
+        const safeHistory = Array.isArray(localOrder?.statusHistory) ? [...localOrder.statusHistory] : [];
+        return safeHistory.sort((a, b) => {
+            const aTime = new Date(a?.changedAt || a?.updatedAt || a?.createdAt || a?.at || 0).getTime();
+            const bTime = new Date(b?.changedAt || b?.updatedAt || b?.createdAt || b?.at || 0).getTime();
+            return bTime - aTime;
+        });
+    }, [localOrder?.statusHistory]);
 
     // --- Fiscal state (modal) ---
     const existingFiscal = Boolean(
@@ -369,20 +540,38 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     }, [fiscalRnc, fiscalName, showFiscalModal]);
 
     const handleStatusUpdate = async (nextStatus) => {
+        if (!localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
+
         try {
             setIsUpdating(true);
+
+            const nextStatusHistory = buildNextStatusHistory(localOrder?.statusHistory, nextStatus, {
+                id: currentUserId,
+                name: currentUserName,
+                role: currentUser?.role || "",
+            });
 
             const res = await updateOrder(localOrder._id, {
                 orderStatus: nextStatus,
                 bills: localOrder.bills || [],
                 items: localOrder.items || [],
+                statusHistory: nextStatusHistory,
+                lastStatusChangeAt: new Date().toISOString(),
+                registerId: getActiveRegisterId(),
             });
 
             const updated = unwrapOrder(res);
+            const safeUpdatedOrder = {
+                ...(updated || localOrder),
+                statusHistory:
+                    Array.isArray(updated?.statusHistory) && updated.statusHistory.length > 0
+                        ? updated.statusHistory
+                        : nextStatusHistory,
+            };
 
             // ✅ IMPORTANTÍSIMO: guarda la orden COMPLETA (con fiscal, invoiceUrl, etc.)
-            setLocalOrder(updated);
-            onStatusChanged?.(updated);
+            setLocalOrder(safeUpdatedOrder);
+            onStatusChanged?.(safeUpdatedOrder);
 
         } catch (err) {
             console.error("Error updating status:", err);
@@ -415,6 +604,42 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
         setShowOrderDetails(false);
         if (currentStatus === "Cancelado") return;
         handleStatusUpdate("Cancelado");
+    };
+
+    const handleCompleteNow = () => {
+        setShowOrderDetails(false);
+        if (["Completado", "Cancelado"].includes(currentStatus)) return;
+        handleStatusUpdate("Completado");
+    };
+
+    const handlePayNow = async () => {
+        if (!localOrder?._id) return;
+        if (String(localOrder?.paymentStatus || "Pendiente") === "Pagado") return;
+
+        try {
+            setIsUpdating(true);
+
+            const res = await updateOrder(localOrder._id, {
+                items: localOrder.items || [],
+                bills: localOrder.bills || {},
+                paymentMethod: localOrder.paymentMethod,
+                registerId: getActiveRegisterId(),
+                paymentStatus: "Pagado",
+                markAsPaid: true,
+            });
+
+            const updated = unwrapOrder(res);
+            if (updated) {
+                setLocalOrder(updated);
+                onStatusChanged?.(updated);
+                enqueueSnackbar("Orden cobrada correctamente.", { variant: "success" });
+            }
+        } catch (err) {
+            console.error("Error cobrando orden:", err);
+            enqueueSnackbar("No se pudo cobrar la orden.", { variant: "error" });
+        } finally {
+            setIsUpdating(false);
+        }
     };
 
     const handleNextFromModal = () => {
@@ -495,7 +720,6 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
 
             const payload = {
                 items: localOrder?.items || [],
-                // preservamos bills para evitar sobrescribir con vacío si el backend reemplaza el objeto
                 bills: {
                     ...bills,
                     total: bills.total ?? bills.subtotal ?? 0,
@@ -521,8 +745,15 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                     requested: true,
                     ncfType: ncfTypeToSend,
                 },
+
+                registerId: getActiveRegisterId(),
+                paymentStatus: chargeMode === "AT_INVOICE" ? "Pagado" : "Pendiente",
+                markAsPaid: chargeMode === "AT_INVOICE",
             };
 
+            if (chargeMode === "AT_INVOICE") {
+                payload.paymentStatus = "Pagado";
+            }
             const res = await updateOrder(localOrder._id, payload);
 
             const updated = unwrapOrder(res);
@@ -554,7 +785,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ scale: 1.02, y: -2 }}
-                className="flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50 px-4 py-4 sm:px-5 sm:py-5 h-full min-h-[280px] hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group"
+                className={`flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50 px-4 py-4 sm:px-5 sm:py-5 h-full min-h-[280px] hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group ${waitTimeConfig?.cardBorder || ""}`}
             >
                 {/* HEADER */}
                 <div className="flex items-start gap-3 justify-between mb-4">
@@ -600,6 +831,21 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
 
                             {/* Badges informativos */}
                             <div className="flex flex-wrap gap-1.5 mt-2">
+                                {waitTimeConfig && (
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium ${waitTimeConfig.badge}`}>
+                                        <Clock className="w-3 h-3" />
+                                        {waitTimeConfig.label} · {waitTimeConfig.elapsed}
+                                    </span>
+                                )}
+                                {productTypes.slice(0, 3).map((type) => (
+                                    <span
+                                        key={type}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25 text-[10px] font-medium"
+                                    >
+                                        <Package className="w-3 h-3" />
+                                        {type}
+                                    </span>
+                                ))}
                                 {(localOrder?.ncfNumber || localOrder?.fiscal?.requested) && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-medium">
                                         <Receipt className="w-3 h-3" />
@@ -672,6 +918,14 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                     <div className="flex items-center gap-2 text-xs text-[#ababab]">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{createdAtLabel}</span>
+                        {waitTimeConfig && (
+                            <>
+                                <span className="text-[#666]">•</span>
+                                <span className={waitTimeConfig.badge.replace("bg-emerald-500/15 ", "").replace("bg-amber-500/15 ", "").replace("bg-red-500/15 ", "").replace("border border-emerald-500/30", "").replace("border border-amber-500/30", "").replace("border border-red-500/30", "")}>
+                                    {waitTimeConfig.label}
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -710,6 +964,19 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                         <ArrowRight className="w-3.5 h-3.5" />
                         <span>{primaryButtonLabel}</span>
                     </motion.button>
+
+                    {!["Completado", "Cancelado"].includes(currentStatus) && (
+                        <motion.button
+                            type="button"
+                            onClick={handleCompleteNow}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-200"
+                        >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Completar</span>
+                        </motion.button>
+                    )}
 
                     {/* Botón de Ver Detalles/Opciones */}
                     <motion.button
@@ -826,6 +1093,55 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                         </motion.div>
                                     </div>
 
+                                    {productTypes.length > 0 && (
+                                        <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
+                                            <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">
+                                                Tipos de producto
+                                            </h3>
+                                            <div className="flex flex-wrap gap-2">
+                                                {productTypes.map((type) => (
+                                                    <span
+                                                        key={type}
+                                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25 text-xs font-medium"
+                                                    >
+                                                        <Package className="w-3.5 h-3.5" />
+                                                        {type}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {statusHistory.length > 0 && (
+                                        <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
+                                            <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">
+                                                Historial de estados
+                                            </h3>
+                                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                {statusHistory.map((entry, idx) => (
+                                                    <div
+                                                        key={`${entry?.status || "estado"}-${entry?.changedAt || idx}`}
+                                                        className="flex items-start justify-between gap-3 rounded-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50 bg-black/10 dark:bg-black/10 bg-white/40 px-3 py-2"
+                                                    >
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-sm font-semibold text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
+                                                                    {entry?.status || "Estado"}
+                                                                </span>
+                                                                <span className="text-xs text-[#ababab] dark:text-[#ababab] text-gray-600">
+                                                                    por {getHistoryActorLabel(entry)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[11px] text-[#ababab] dark:text-[#ababab] text-gray-600 shrink-0">
+                                                            {getHistoryDateLabel(entry)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Items */}
                                     <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
                                         <div className="flex items-center justify-between mb-3">
@@ -929,6 +1245,19 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                                 <span>{primaryButtonLabel}</span>
                                             </motion.button>
                                         </div>
+                                        {!["Completado", "Cancelado"].includes(currentStatus) && (
+                                            <motion.button
+                                                type="button"
+                                                onClick={handleCompleteNow}
+                                                whileHover={{ scale: 1.02 }}
+                                                whileTap={{ scale: 0.98 }}
+                                                className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30"
+                                            >
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                <span>Marcar como completado</span>
+                                            </motion.button>
+                                        )}
+
                                         {canAdminRecoverCancelled && (
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <motion.button
