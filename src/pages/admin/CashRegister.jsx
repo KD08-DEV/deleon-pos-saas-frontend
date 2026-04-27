@@ -83,6 +83,33 @@ const safeNumber = (v) => {
     return Number.isFinite(n) ? n : 0;
 };
 
+const getInvoiceNumber = (r) => {
+    const raw =
+        r?.facturaNo ??
+        r?.invoiceNumber ??
+        r?.invoiceNo ??
+        r?.fiscal?.facturaNo ??
+        r?.fiscal?.invoiceNumber ??
+        r?.fiscal?.invoiceNo ??
+        r?.fiscal?.internalNumber ??
+        r?.fiscal?.internalSeq ??
+        r?.fiscal?.internal ??
+        null;
+
+    if (raw === null || raw === undefined || raw === "") return "—";
+
+    if (typeof raw === "number") {
+        return String(raw).padStart(8, "0");
+    }
+
+    const value = String(raw).trim();
+
+    if (/^\d+$/.test(value)) {
+        return value.padStart(8, "0");
+    }
+
+    return value;
+};
 
 const getTodayKey = () => {
     const d = new Date();
@@ -1625,6 +1652,7 @@ const CashRegister = () => {
     const downloadExcel = async (reportsToExport = dayReports, summary = initialCashClosure) => {
         try {
             const rows = reportsToExport.map((r) => ({
+                Factura: getInvoiceNumber(r),
                 Fecha: r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "",
                 Usuario: r?.user?.name || "—",
                 Cliente: getClientName(r),
@@ -2309,6 +2337,7 @@ const CashRegister = () => {
                                 <table className="w-full text-left border-collapse">
                                     <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                     <tr>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">No. Factura</th>
                                         <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
                                         <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
                                         <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
@@ -2331,6 +2360,9 @@ const CashRegister = () => {
                                                 key={r._id}
                                                 className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
                                             >
+                                                <td className="p-3 text-sm font-semibold text-[#f6b100] whitespace-nowrap">
+                                                    {getInvoiceNumber(r)}
+                                                </td>
                                                 <td className="p-3 text-sm text-gray-300">
                                                     {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
                                                 </td>
@@ -2668,6 +2700,7 @@ const CashRegister = () => {
                                     <table className="w-full text-left border-collapse">
                                         <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                         <tr>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">No.Factura</th>
                                             <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
                                             <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
                                             <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
@@ -2679,8 +2712,7 @@ const CashRegister = () => {
                                         <tbody>
                                         {modalFilteredReports.length === 0 ? (
                                             <tr>
-                                                <td colSpan="6" className="text-center py-8 text-gray-500">
-                                                    No hay registros disponibles
+                                                <td colSpan="7" className="text-center py-8 text-gray-500">                                                    No hay registros disponibles
                                                 </td>
                                             </tr>
                                         ) : (
@@ -2689,6 +2721,10 @@ const CashRegister = () => {
                                                     key={r._id}
                                                     className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
                                                 >
+                                                    <td className="p-3 text-sm font-semibold text-[#f6b100] whitespace-nowrap">
+                                                        {getInvoiceNumber(r)}
+                                                    </td>
+
                                                     <td className="p-3 text-sm text-gray-300">
                                                         {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
                                                     </td>

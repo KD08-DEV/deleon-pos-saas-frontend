@@ -305,11 +305,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const printTargetRef = useRef("invoice");
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
+    const [cashReceived, setCashReceived] = useState("");
     useEffect(() => {
         if (isAppDelivery) return; // PedidoYa/UberEats se fuerzan
         if (!order?._id) return;
         setPaymentMethod(order?.paymentMethod || "Efectivo");
     }, [order?._id]);
+    useEffect(() => {
+        if (paymentMethod !== "Efectivo") {
+            setCashReceived("");
+        }
+    }, [paymentMethod]);
 
     const [discountType, setDiscountType] = useState("flat"); // flat | percent
     const [discountValue, setDiscountValue] = useState(0);
@@ -484,8 +490,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const totalToPay = useMemo(() => {
         return isAppDelivery ? num(total) + num(commissionAmountEffective) : num(total);
     }, [isAppDelivery, total, commissionAmountEffective]);
+    const cashReceivedAmount = useMemo(() => num(cashReceived), [cashReceived]);
 
+    const cashChange = useMemo(() => {
+        return Number(Math.max(cashReceivedAmount - num(totalToPay), 0).toFixed(2));
+    }, [cashReceivedAmount, totalToPay]);
 
+    const cashMissing = useMemo(() => {
+        return Number(Math.max(num(totalToPay) - cashReceivedAmount, 0).toFixed(2));
+    }, [cashReceivedAmount, totalToPay]);
+
+    const showCashChangeBox = !isAppDelivery && paymentMethod === "Efectivo";
 
 
     // Si el usuario activa wantsFiscal pero el tenant no puede, lo apagamos y avisamos
@@ -638,7 +653,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         // Bills consistentes
         const bills = {
             subtotal: num(subtotal),
-            discount: num(discount),      // usa tu cálculo actual
+            discount: num(discount),
             tax: num(tax),
             tip: num(tip),
 
@@ -646,6 +661,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             taxEnabled,
             tipEnabled,
             deliveryFee: num(deliveryFeeCalc),
+
+            cashReceived: paymentMethod === "Efectivo" ? num(cashReceivedAmount) : 0,
+            cashChange: paymentMethod === "Efectivo" ? num(cashChange) : 0,
         };
 
         const basePayload = {
@@ -831,6 +849,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 taxEnabled: server.bills?.taxEnabled ?? fallback.bills?.taxEnabled ?? true,
                 tipEnabled: server.bills?.tipEnabled ?? fallback.bills?.tipEnabled ?? true,
                 deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
+                cashReceived: server.bills?.cashReceived ?? fallback.bills?.cashReceived ?? 0,
+                cashChange: server.bills?.cashChange ?? fallback.bills?.cashChange ?? 0,
             };
 
             const fallbackFiscal = fallback?.fiscal ?? null;
@@ -974,6 +994,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     ...(fiscal || {}),
                     expirationDate: resolvedExpirationDate,
                 },
+                cashReceived: bills.cashReceived,
+                cashChange: bills.cashChange,
                 ncfType: resolvedNcfType,
                 ncfNumber: resolvedNcfNumber,
                 facturaNo: resolvedFacturaNo,
@@ -1086,6 +1108,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             });
             return;
         }
+
 
         const previousItems = committedItemsRef.current || [];
         const currentItems = payload.items || [];
@@ -1345,6 +1368,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             </div>
 
             {/* Método de pago */}
+
             <div className="flex items-center justify-between gap-4 px-5 mt-4">
                 {isAppDelivery  ? (
                     <button
@@ -1557,6 +1581,64 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     Actualizar
                 </button>
             </div>
+            {showCashChangeBox && (
+                <div className="px-5 mt-4">
+                    <div className="rounded-2xl border border-[#2b2b2b] bg-gradient-to-br from-[#151515] to-[#0f0f0f] p-4 shadow-lg">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                            <div>
+                                <p className="text-sm text-[#f5f5f5] font-semibold">Cambio en efectivo</p>
+                                <p className="text-xs text-[#ababab]">
+                                    Ingresa cuánto entregó el cliente para calcular la devolución.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setCashReceived(num(totalToPay).toFixed(2))}
+                                className="px-3 py-2 rounded-lg bg-[#f6b100] text-[#111] text-xs font-bold hover:opacity-90"
+                            >
+                                Exacto
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs text-[#ababab] mb-1">Monto recibido</label>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={cashReceived}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/[^\d.]/g, "");
+                                        setCashReceived(val);
+                                    }}
+                                    className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#f6b100]"
+                                    placeholder="Ej: 1000"
+                                />
+                            </div>
+
+                            <div className="rounded-xl bg-[#1f1f1f] border border-[#2b2b2b] px-4 py-3">
+                                <p className="text-xs text-[#ababab]">A devolver</p>
+                                <p className="text-2xl font-bold text-[#f6b100]">
+                                    RD${cashChange.toFixed(2)}
+                                </p>
+
+                                {cashReceivedAmount > 0 && cashMissing > 0 && (
+                                    <p className="text-xs text-red-400 mt-1">
+                                        Falta RD${cashMissing.toFixed(2)}
+                                    </p>
+                                )}
+
+                                {cashReceivedAmount > 0 && cashMissing <= 0 && (
+                                    <p className="text-xs text-green-400 mt-1">
+                                        Monto suficiente para facturar.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showTicket && orderInfo && (
                 <Ticket

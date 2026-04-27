@@ -212,11 +212,13 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const subtotal = Number(order?.subTotal ?? bills?.subtotal ?? bills?.total ?? 0);
 
     const discount = Number(order?.discountAmount ?? bills?.discount ?? 0);
+    const tax = Number(order?.taxAmount ?? bills?.tax ?? 0);
+
     const taxEnabled =
         typeof (order?.taxEnabled ?? bills?.taxEnabled) === "boolean"
             ? (order?.taxEnabled ?? bills?.taxEnabled)
             : tax > 0;
-    const tax = Number(order?.taxAmount ?? bills?.tax ?? 0);
+
     const tip = Number(order?.tipAmount ?? bills?.tipAmount ?? bills?.tip ?? 0);
 
     const grandTotal = Number(order?.totalAmount ?? bills?.totalWithTax ?? bills?.total ?? 0);
@@ -293,6 +295,17 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
             ? (shippingAlreadyIncluded ? grandTotal : (grandTotal + shippingFee))
             : grandTotal;
 
+    const cashReceived = safeNum(order?.cashReceived ?? bills?.cashReceived ?? 0);
+
+    const cashChange = safeNum(
+        order?.cashChange ??
+        bills?.cashChange ??
+        (cashReceived > 0 ? Math.max(cashReceived - totalToPay, 0) : 0)
+    );
+
+    const showCashChange =
+        String(paymentMethod || "").toLowerCase().includes("efect") &&
+        cashReceived > 0;
 
 
     const headerGridClass = taxEnabled
@@ -462,12 +475,6 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
                     {/* Datos orden */}
                     <div className="mt-3 border-t pt-3 text-xs text-gray-800 space-y-1">
-                        {/* ✅ Factura No. */}
-                        {facturaNo && (
-                            <p>
-                                <span className="font-semibold">Factura No.:</span> {facturaNo}
-                            </p>
-                        )}
 
                         {/* ✅ Sucursal / Punto emisión */}
                         {tableName && (
@@ -495,14 +502,18 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                             </p>
                         )}
 
-                        <p>
-                            <span className="font-semibold">Order ID:</span> {order?._id}
-                        </p>
 
                         <p>
                             <span className="font-semibold">Fecha/Hora:</span>{" "}
                             {order?.createdAt ? formatDMYTime(order.createdAt) : "N/A"}
                         </p>
+                        {/* ✅ Factura No. */}
+                        {facturaNo && (
+                            <p>
+                                <span className="font-semibold">Factura No.:</span> {facturaNo}
+                            </p>
+                        )}
+
 
                         {/* ✅ Vence (NCF) */}
                         {isFiscal && (
@@ -541,7 +552,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         <div className={`${headerGridClass} gap-x-3 border-b pb-1 mb-1 font-semibold text-[11px] text-gray-700`}>
                             <span>Descripción</span>
                             <span className="text-right">Cant.</span>
-                            {taxEnabled && <span className="text-right">ITBIS</span>}
+
                             <span className="text-right">Valor</span>
                         </div>
 
@@ -586,7 +597,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                       {itemName}
                     </span>
                                         <span className="text-right">{qty}</span>
-                                        {taxEnabled && <span className="text-right">RD${lineTax.toFixed(2)}</span>}
+
                                         <span className="text-right">RD${unitPrice.toFixed(2)}</span>
                                     </div>
                                 );
@@ -635,6 +646,10 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         <p>
                             <span className="font-semibold">Método de pago:</span> {paymentMethod}
                         </p>
+                        {showCashChange && (
+                            <>
+                            </>
+                        )}
                     </div>
                 </div>
                 <div className="border-t px-4 pt-3 pb-2 bg-gray-50">

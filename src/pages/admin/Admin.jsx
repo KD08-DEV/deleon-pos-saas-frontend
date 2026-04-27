@@ -256,7 +256,7 @@ const Admin = () => {
         },
         {
             id: "fiscal",
-            label: "Configuración Fiscal",
+            label: "Facturación y Configuración",
             icon: Receipt,
             color: "text-orange-400",
             bgColor: "bg-orange-500/10",
@@ -264,9 +264,9 @@ const Admin = () => {
             items: [
                 {
                     id: "fiscal",
-                    label: "NCF / Fiscal",
+                    label: "Facturación / NCF",
                     icon: Receipt,
-                    description: "Configuración de comprobantes fiscales"
+                    description: "Configuración de Facturas"
                 },
                 {
                     id: "printersconfig",
