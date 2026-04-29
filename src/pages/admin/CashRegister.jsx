@@ -1051,10 +1051,7 @@ const CashRegister = () => {
         },
         staleTime: 10_000,
     });
-    console.log("session:", session);
-    console.log("sessionClosed:", sessionClosed);
-    console.log("closedById:", closedById, "myUserId:", myUserId, "closedByMe:", closedByMe);
-    console.log("adminCanSeeSummary:", adminCanSeeSummary, "forceSummary:", forceSummary, "showSummary:", showSummary);
+
 
     const setManagerCodeMutation = useMutation({
         mutationFn: async ({ managerCode }) => {
@@ -1331,10 +1328,26 @@ const CashRegister = () => {
 
 
     // Limpia filtros vacíos antes de enviar (para la query inicial)
+// Limpia filtros vacíos antes de enviar.
+// Importante:
+// - Vista normal: carga solo selectedYMD.
+// - Modal "Registros Completos": si hay rango, carga ese rango desde backend.
     const cleanedParams = useMemo(() => {
+        const modalFromValue = String(modalFilters.from || "").trim();
+        const modalToValue = String(modalFilters.to || "").trim();
+
+        const useModalRange =
+            showFullView &&
+            isValidYMD(modalFromValue);
+
+        const from = useModalRange ? modalFromValue : selectedYMD;
+        const to = useModalRange
+            ? (isValidYMD(modalToValue) ? modalToValue : modalFromValue)
+            : selectedYMD;
+
         const params = {
-            from: selectedYMD,
-            to: selectedYMD,
+            from,
+            to,
         };
 
         if (registerFilterValue) {
@@ -1342,7 +1355,13 @@ const CashRegister = () => {
         }
 
         return params;
-    }, [selectedYMD, registerFilterValue]);
+    }, [
+        selectedYMD,
+        registerFilterValue,
+        showFullView,
+        modalFilters.from,
+        modalFilters.to,
+    ]);
 
 
     const getFiscalType = (r) => {
@@ -1523,6 +1542,17 @@ const CashRegister = () => {
                 if (!c.includes(client)) return false;
             }
 
+            console.log(
+                "REPORTS FISCAL DEBUG",
+                sortedReports.slice(0, 10).map((r) => ({
+                    id: r?._id,
+                    fiscal: r?.fiscal,
+                    ncfType: r?.ncfType,
+                    ncfNumber: r?.ncfNumber,
+                    invoice: r?.invoice,
+                    resolved: getFiscalType(r),
+                }))
+            );
             return true;
         });
     }, [sortedReports, modalFilters]);
