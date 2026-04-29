@@ -6,8 +6,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getOrders } from "../https/index";
 import { enqueueSnackbar } from "notistack";
 import { motion, AnimatePresence } from "framer-motion";
-import { Filter, ListOrdered, ChevronDown, Check } from "lucide-react";
-
+import { Filter, ListOrdered, ChevronDown, Check, Calendar } from "lucide-react";
 const INITIAL_VISIBLE_ORDERS = 24;
 const LOAD_MORE_STEP = 12;
 
@@ -42,12 +41,38 @@ const sortOrdersOldestTopNewestBottom = (orders) => {
         return aTime - bTime;
     });
 };
+const DATE_FILTERS = [
+    { key: "24h", label: "Últimas 24h" },
+    { key: "7d", label: "7 días" },
+    { key: "all", label: "Todos" },
+];
+
+const orderMatchesDateFilter = (order, dateFilter) => {
+    if (dateFilter === "all") return true;
+
+    const createdAt = order?.createdAt ? new Date(order.createdAt).getTime() : 0;
+    if (!createdAt || Number.isNaN(createdAt)) return false;
+
+    const now = Date.now();
+    const diff = now - createdAt;
+
+    if (dateFilter === "24h") {
+        return diff <= 24 * 60 * 60 * 1000;
+    }
+
+    if (dateFilter === "7d") {
+        return diff <= 7 * 24 * 60 * 60 * 1000;
+    }
+
+    return true;
+};
 
 const Orders = () => {
     const [status, setStatus] = useState("all");
     const [orders, setOrders] = useState([]);
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ORDERS);
     const [productTypeFilter, setProductTypeFilter] = useState("all");
+    const [dateFilter, setDateFilter] = useState("24h");
     const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
 
     const audioRef = useRef(null);
@@ -106,7 +131,7 @@ const Orders = () => {
 
     useEffect(() => {
         setVisibleCount(INITIAL_VISIBLE_ORDERS);
-    }, [status, productTypeFilter]);
+    }, [status, productTypeFilter, dateFilter]);
 
     useEffect(() => {
         if (isError) {
@@ -119,10 +144,14 @@ const Orders = () => {
         setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
     };
 
+    const dateFilteredOrders = useMemo(() => {
+        return (orders || []).filter((order) => orderMatchesDateFilter(order, dateFilter));
+    }, [orders, dateFilter]);
+
     const statusFilteredOrders = useMemo(() => {
-        if (status === "all") return orders || [];
-        return (orders || []).filter((order) => order.orderStatus === status);
-    }, [orders, status]);
+        if (status === "all") return dateFilteredOrders || [];
+        return (dateFilteredOrders || []).filter((order) => order.orderStatus === status);
+    }, [dateFilteredOrders, status]);
 
     const availableProductTypes = useMemo(() => {
         const unique = new Set();
@@ -157,13 +186,12 @@ const Orders = () => {
     }, [statusFilteredOrders]);
 
     const filteredOrders = useMemo(() => {
-        const statusFiltered = (orders || []).filter((order) => {
-            if (status !== "all" && order.orderStatus !== status) return false;
-            return orderHasProductType(order, productTypeFilter);
-        });
+        const productFiltered = (statusFilteredOrders || []).filter((order) =>
+            orderHasProductType(order, productTypeFilter)
+        );
 
-        return sortOrdersOldestTopNewestBottom(statusFiltered);
-    }, [orders, status, productTypeFilter]);
+        return sortOrdersOldestTopNewestBottom(productFiltered);
+    }, [statusFilteredOrders, productTypeFilter]);
 
     const visibleOrders = useMemo(() => {
         if (filteredOrders.length <= visibleCount) return filteredOrders;
@@ -182,6 +210,8 @@ const Orders = () => {
 
     const selectedTypeLabel =
         productTypeFilter === "all" ? "Todos" : productTypeFilter;
+    const selectedDateFilterLabel =
+        DATE_FILTERS.find((item) => item.key === dateFilter)?.label || "Todas";
 
     return (
         <section className="relative min-h-screen flex flex-col pb-24 bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f]">
@@ -204,6 +234,32 @@ const Orders = () => {
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                            <div className="flex items-center gap-1 rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1 shadow-lg overflow-x-auto">
+                                <div className="hidden sm:flex items-center gap-1 px-2 text-[#9ca3af] text-xs whitespace-nowrap">
+                                    <Calendar className="w-4 h-4 text-blue-400" />
+                                    Fecha
+                                </div>
+
+                                {DATE_FILTERS.map((item) => {
+                                    const isActive = dateFilter === item.key;
+
+                                    return (
+                                        <button
+                                            key={item.key}
+                                            type="button"
+                                            onClick={() => setDateFilter(item.key)}
+                                            className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
+                                                isActive
+                                                    ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                                                    : "text-[#ababab] hover:bg-[#222] hover:text-white border border-transparent"
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
                             <div className="relative" ref={typeMenuRef}>
                                 <button
                                     type="button"
@@ -325,7 +381,7 @@ const Orders = () => {
                             >
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                                     <p className="text-sm text-[#ababab]">
-                                        Mostrando {visibleOrders.length} de {filteredOrders.length} órdenes.
+                                        Mostrando {visibleOrders.length} de {filteredOrders.length} órdenes · {selectedDateFilterLabel}.
                                     </p>
                                     <p className="text-xs text-[#666]">
                                         Ordenadas con las más recientes abajo.

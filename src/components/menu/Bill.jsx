@@ -1274,38 +1274,40 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                 {/* ✅ PROPINA (siempre visible) */}
                 {tipEnabledByTenant && (
-                <div className="flex items-center justify-between mt-3">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-[#ababab]">Propina</span>
+                    <div className="flex items-center justify-between mt-3">
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs text-[#ababab]">Propina</span>
+
+                            <Switch
+                                checked={tipEnabled}
+                                onChange={setTipEnabled}
+                            />
+                        </div>
+
                         <input
-                            type="checkbox"
-                            checked={tipEnabled}
-                            onChange={(e) => setTipEnabled(e.target.checked)}
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={tipPercent}
+                            disabled={!tipEnabled}
+                            onChange={(e) => setTipPercent(Number(e.target.value) || 0)}
+                            className="w-20 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none disabled:opacity-40"
                         />
                     </div>
-                    <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={tipPercent}
-                        disabled={!tipEnabled}
-                        onChange={(e) => setTipPercent(Number(e.target.value) || 0)}
-                        className="w-20 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none disabled:opacity-40"
-                    />
-                </div>
                 )}
 
                 {/* ✅ ITBIS (solo si el tenant lo permite) */}
                 {taxEnabledByTenant && (
                     <div className="flex items-center justify-between mt-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                             <span className="text-xs text-[#ababab]">Tax (ITBIS)</span>
-                            <input
-                                type="checkbox"
+
+                            <Switch
                                 checked={taxEnabled}
-                                onChange={(e) => setTaxEnabled(e.target.checked)}
+                                onChange={setTaxEnabled}
                             />
                         </div>
+
                         <span className="text-xs text-[#ababab]">{TAX_RATE}%</span>
                     </div>
                 )}

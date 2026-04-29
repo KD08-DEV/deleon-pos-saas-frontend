@@ -251,6 +251,8 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const [isUpdating, setIsUpdating] = useState(false);
     const [invoiceOrderSnapshot, setInvoiceOrderSnapshot] = useState(null);
     const [showOrderDetails, setShowOrderDetails] = useState(false);
+    const [showCancelNoteModal, setShowCancelNoteModal] = useState(false);
+    const [cancelOrderNote, setCancelOrderNote] = useState("");
 
 
 
@@ -539,7 +541,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
         return () => clearTimeout(t);
     }, [fiscalRnc, fiscalName, showFiscalModal]);
 
-    const handleStatusUpdate = async (nextStatus) => {
+    const handleStatusUpdate = async (nextStatus, extraPayload = {}) => {
         if (!localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
 
         try {
@@ -555,6 +557,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                 orderStatus: nextStatus,
                 bills: localOrder.bills || [],
                 items: localOrder.items || [],
+                orderNote: extraPayload?.orderNote ?? localOrder?.orderNote ?? "",
                 statusHistory: nextStatusHistory,
                 lastStatusChangeAt: new Date().toISOString(),
                 registerId: getActiveRegisterId(),
@@ -601,9 +604,20 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     };
 
     const handleCancel = () => {
-        setShowOrderDetails(false);
         if (currentStatus === "Cancelado") return;
-        handleStatusUpdate("Cancelado");
+
+        setCancelOrderNote(String(localOrder?.orderNote || ""));
+        setShowOrderDetails(false);
+        setShowCancelNoteModal(true);
+    };
+    const confirmCancelOrder = async () => {
+        if (currentStatus === "Cancelado") return;
+
+        setShowCancelNoteModal(false);
+
+        await handleStatusUpdate("Cancelado", {
+            orderNote: String(cancelOrderNote || "").trim(),
+        });
     };
 
     const handleCompleteNow = () => {
@@ -1361,6 +1375,78 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                 )}
             </AnimatePresence>
 
+            {/* MODAL NOTA AL CANCELAR */}
+            {showCancelNoteModal && (
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 px-3 sm:px-4"
+                    onClick={() => setShowCancelNoteModal(false)}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                        className="w-full max-w-md rounded-2xl border border-red-500/20 bg-gradient-to-br from-[#151515] to-[#0b0b0b] p-5 shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-white text-lg font-semibold">
+                                    Cancelar orden
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Puedes agregar o editar la nota antes de cancelar esta orden.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setShowCancelNoteModal(false)}
+                                className="text-gray-400 hover:text-white"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="mt-4">
+                            <label className="block text-xs text-gray-400 mb-1">
+                                Nota de la orden
+                            </label>
+
+                            <textarea
+                                value={cancelOrderNote}
+                                onChange={(e) => setCancelOrderNote(e.target.value)}
+                                rows={5}
+                                className="w-full rounded-xl border border-gray-800/70 bg-[#111111] px-4 py-3 text-sm text-white outline-none resize-none focus:border-red-500/40"
+                                placeholder="Ej: Cliente canceló, producto no disponible, pedido duplicado..."
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowCancelNoteModal(false)}
+                                className="rounded-xl border border-white/10 bg-[#1f1f1f] px-4 py-3 text-sm font-semibold text-gray-300 hover:bg-[#2b2b2b] hover:text-white"
+                            >
+                                Volver
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={confirmCancelOrder}
+                                disabled={isUpdating}
+                                className={`rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all ${
+                                    isUpdating
+                                        ? "bg-red-900/50 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-red-500 to-red-600 hover:shadow-lg hover:shadow-red-500/30"
+                                }`}
+                            >
+                                {isUpdating ? "Cancelando..." : "Cancelar orden"}
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
             {/* MODAL FISCAL */}
             {showFiscalModal && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 px-2 sm:px-4">

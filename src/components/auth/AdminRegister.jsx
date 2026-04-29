@@ -333,16 +333,15 @@ const AdminRegister = () => {
 
                                     <div>
                                         <label className="block text-[#ababab] text-sm mb-2">
-                                            Número de teléfono
+                                            Número de teléfono <span className="text-xs text-[#777]">(opcional)</span>
                                         </label>
                                         <input
-                                            type="number"
+                                            type="tel"
                                             name="phone"
                                             value={formData.phone}
                                             onChange={handleChange}
                                             placeholder="Ej: 8095551234"
                                             className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
-                                            required
                                         />
                                     </div>
 
@@ -366,8 +365,7 @@ const AdminRegister = () => {
                                             Rol del empleado
                                         </label>
                                         <div className="grid grid-cols-3 gap-3">
-                                            {["Camarero", "Cajera", "Admin"].map((role) => (
-                                                <button
+                                            {["Camarero", "Cocina", "Cajera", "Admin"].map((role) => (                                                <button
                                                     key={role}
                                                     type="button"
                                                     onClick={() => handleRoleSelection(role)}
