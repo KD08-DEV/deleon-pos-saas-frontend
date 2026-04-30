@@ -32,7 +32,7 @@ import { getUserData } from "./https"; // ajusta si tu export está en otra ruta
 
 
 import { QK } from "./queryKeys";
-import api from "./lib/api";
+import api, { getScope, setScope } from "./lib/api";
 const REGISTER_ID = "MAIN";
 
 
@@ -212,6 +212,8 @@ function Layout() {
     const isCajera = userData?.role === "Cajera";
     const [cashGateLoading, setCashGateLoading] = useState(false);
     const [cashSession, setCashSession] = useState(null);
+    const [pendingCashSession, setPendingCashSession] = useState(null);
+    const [cashGateMode, setCashGateMode] = useState("open"); // "open" | "pending-close"
     const [openModal, setOpenModal] = useState(false);
     const [openingAmount, setOpeningAmount] = useState("");
     const [cashGateError, setCashGateError] = useState("");
@@ -237,47 +239,172 @@ function Layout() {
             return "MAIN";
         }
     };
+    const ensureCashScope = () => {
+        const stored = getScope();
+
+        const tenantId =
+            stored?.tenantId ||
+            userData?.tenantId ||
+            tenant?.tenantId ||
+            "";
+
+        const clientId =
+            stored?.clientId ||
+            userData?.clientId ||
+            userData?.client?._id ||
+            userData?.client?.clientId ||
+            "default";
+
+        if (tenantId) {
+            setScope({
+                tenantId,
+                clientId: clientId || "default",
+            });
+        }
+
+        return {
+            tenantId,
+            clientId: clientId || "default",
+        };
+    };
 
     const fetchCashSession = async () => {
         setCashGateLoading(true);
         setCashGateError("");
+
         try {
             const activeRegisterId = getActiveRegisterId();
+            const cashScope = ensureCashScope();
+            const cashHeaders = {
+                "x-client-id": cashScope.clientId || "default",
+            };
 
-            const res = await api.get("/api/admin/cash-session/current", {
-                params: { dateYMD: todayYMD, registerId: activeRegisterId },
-            });
-            const payload = res?.data ?? null;
-            const session =
-                payload?.data ??
-                payload?.session ??
-                payload?.cashSession ??
-                (payload?._id ? payload : null) ??
-                null;            setCashSession(session);
+            if (cashScope.tenantId) {
+                cashHeaders["x-tenant-id"] = cashScope.tenantId;
+            }
 
-            const isAdminLike = ["Admin", "SuperAdmin"].includes(userData?.role);
+            const role = String(userData?.role || "").trim();
+            const isAdminLike = ["Admin", "Owner", "SuperAdmin"].includes(role);
 
-
-            // Si no hay sesión o no está OPEN => exigir apertura
-            // ADMIN: nunca debe ver este modal
             if (isAdminLike) {
                 setOpenModal(false);
                 return;
             }
 
-                // CAJERA:
-                // - Si no hay sesión => exigir apertura
-                // - Si está OPEN pero sin monto => exigir apertura
-                // - Si está CLOSED => NO exigir apertura (debe ver resumen / vista cerrada)
+            let pending = null;
+
+            try {
+                const pendingRes = await api.get("/api/admin/cash-session/pending-close", {
+                    params: {
+                        dateYMD: todayYMD,
+                        registerId: activeRegisterId,
+                        clientId: cashScope.clientId || "default",
+                    },
+                    headers: cashHeaders,
+                });
+
+                const pendingPayload = pendingRes?.data ?? null;
+
+                pending =
+                    pendingPayload?.data ??
+                    pendingPayload?.session ??
+                    pendingPayload?.cashSession ??
+                    (pendingPayload?._id ? pendingPayload : null) ??
+                    null;
+            } catch (pendingErr) {
+                console.log("[cash-session/pending-close] ERROR", {
+                    status: pendingErr?.response?.status,
+                    data: pendingErr?.response?.data,
+                    message: pendingErr?.message,
+                    url: pendingErr?.config?.url,
+                    params: pendingErr?.config?.params,
+                });
+
+                const isConnectionRefused =
+                    String(pendingErr?.message || "").includes("Network Error") ||
+                    String(pendingErr?.code || "").includes("ERR_NETWORK");
+
+                setCashGateError(
+                    pendingErr?.response?.data?.message ||
+                    pendingErr?.message ||
+                    (isConnectionRefused
+                        ? "No se pudo conectar con el backend. Verifica que el servidor esté corriendo."
+                        : "No se pudo validar si hay una caja pendiente de cierre.")
+                );
+
+                setCashGateMode("open");
+                setOpenModal(true);
+                return;
+            }
+
+            if (isCajera && pending) {
+                setPendingCashSession(pending);
+                setCashGateMode("pending-close");
+                setOpenModal(true);
+                return;
+            }
+
+            setPendingCashSession(null);
+
+            const res = await api.get("/api/admin/cash-session/current", {
+                params: {
+                    dateYMD: todayYMD,
+                    registerId: activeRegisterId,
+                    clientId: cashScope.clientId || "default",
+                },
+                headers: cashHeaders,
+            });
+
+            const payload = res?.data ?? null;
+
+            const session =
+                payload?.data ??
+                payload?.session ??
+                payload?.cashSession ??
+                (payload?._id ? payload : null) ??
+                null;
+
+            setCashSession(session);
+
+            if (String(session?.status || "").toUpperCase() === "CLOSED" || session?.closedAt) {
+                setOpenModal(false);
+                return;
+            }
+
+            const hasOpenMovement =
+                Array.isArray(session?.movements) &&
+                session.movements.some((m) => String(m?.type || "").toUpperCase() === "OPEN");
+
             const opening = Number(session?.openingFloatInitial ?? 0);
 
             const mustOpen =
-                isCajera && (!session || (session.status === "OPEN" && opening <= 0));
+                isCajera &&
+                (
+                    !session ||
+                    (
+                        String(session?.status || "").toUpperCase() === "OPEN" &&
+                        !hasOpenMovement &&
+                        opening <= 0
+                    )
+                );
 
+            setCashGateMode("open");
             setOpenModal(mustOpen);
-
         } catch (e) {
-            setCashGateError("No se pudo validar la caja. Revisa la conexión o el backend.");
+            console.log("[fetchCashSession] ERROR", {
+                status: e?.response?.status,
+                data: e?.response?.data,
+                url: e?.config?.url,
+                params: e?.config?.params,
+            });
+
+            setCashGateError(
+                e?.response?.data?.message ||
+                e?.message ||
+                "No se pudo validar la caja. Revisa la conexión o el backend."
+            );
+
+            setCashGateMode("open");
             setOpenModal(true);
         } finally {
             setCashGateLoading(false);
@@ -287,6 +414,41 @@ function Layout() {
     useEffect(() => {
         if (!isCajera) return;
         fetchCashSession();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isCajera]);
+    useEffect(() => {
+        if (!isCajera) return;
+
+        const handleCashSessionClosed = async (event) => {
+            const closedRegisterId = String(event?.detail?.registerId || "")
+                .trim()
+                .toUpperCase();
+
+            // Si cerraste una caja pendiente, mantenemos esa misma caja activa
+            // para abrir la caja de hoy en la caja correcta.
+            if (closedRegisterId) {
+                localStorage.setItem(REGISTER_STORAGE_KEY, closedRegisterId);
+            }
+
+            localStorage.removeItem("deleonsoft_pending_cash_date");
+            localStorage.removeItem("deleonsoft_pending_cash_register");
+
+            setPendingCashSession(null);
+            setCashGateError("");
+            setCashGateMode("open");
+
+            // Pequeño delay para que React Query/backend terminen de actualizar estado visual.
+            setTimeout(() => {
+                fetchCashSession();
+            }, 250);
+        };
+
+        window.addEventListener("cash-session:closed", handleCashSessionClosed);
+
+        return () => {
+            window.removeEventListener("cash-session:closed", handleCashSessionClosed);
+        };
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isCajera]);
 
@@ -301,16 +463,52 @@ function Layout() {
         try {
             setCashGateLoading(true);
             const activeRegisterId = getActiveRegisterId();
+            const cashScope = ensureCashScope();
 
-            await api.post("/api/admin/cash-session/open", {
-                dateYMD: todayYMD,
-                registerId: activeRegisterId,
-                openingFloat: amount,
-                note: "Apertura por Cajera",
-            });
+            const cashHeaders = {
+                "x-client-id": cashScope.clientId || "default",
+            };
+
+            if (cashScope.tenantId) {
+                cashHeaders["x-tenant-id"] = cashScope.tenantId;
+            }
+
+            await api.post(
+                "/api/admin/cash-session/open",
+                {
+                    dateYMD: todayYMD,
+                    registerId: activeRegisterId,
+                    clientId: cashScope.clientId || "default",
+                    openingFloat: amount,
+                    note: "Apertura por Cajera",
+                },
+                {
+                    headers: cashHeaders,
+                }
+            );
             await fetchCashSession();
         } catch (e) {
-            setCashGateError("No se pudo abrir la caja. Verifica permisos y endpoint /cash-session/open.");
+            const status = e?.response?.status;
+            const msg = e?.response?.data?.message;
+            const pending = e?.response?.data?.data;
+
+            if (status === 409 && msg === "PENDING_CASH_SESSION_CLOSE") {
+                setPendingCashSession(pending || null);
+                setCashGateMode("pending-close");
+                setCashGateError("Tienes una caja anterior pendiente de cierre. Debes cerrarla antes de abrir la caja de hoy.");
+                setOpenModal(true);
+                return;
+            }
+
+            if (status === 409 && msg === "CASH_SESSION_ALREADY_CLOSED") {
+                setCashGateError("La caja de hoy ya fue cerrada. No puedes abrirla otra vez.");
+                return;
+            }
+
+            setCashGateError(
+                e?.response?.data?.message ||
+                "No se pudo abrir la caja. Verifica permisos y endpoint /cash-session/open."
+            );
         } finally {
             setCashGateLoading(false);
         }
@@ -352,40 +550,116 @@ function Layout() {
             <RealtimeTenantConfig />
             <SessionHeartbeat />
 
-            {/* Modal Apertura de Caja (solo Cajera) */}
+            {/* Modal Apertura de Caja / Cierre pendiente (solo Cajera) */}
             {isCajera && openModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
                     <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
-                        <h2 className="text-xl font-semibold text-white">Apertura de caja</h2>
-                        <p className="text-sm text-white/70 mt-1">
-                            Debes registrar el fondo inicial antes de usar el sistema.
-                        </p>
+                        {cashGateMode === "pending-close" ? (
+                            <>
+                                <h2 className="text-xl font-semibold text-white">Cierre pendiente</h2>
 
-                        <div className="mt-4">
-                            <label className="text-sm text-white/70">Monto de apertura</label>
-                            <input
-                                type="number"
-                                min="0"
-                                value={openingAmount}
-                                onChange={(e) => setOpeningAmount(e.target.value)}
-                                className="mt-2 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white outline-none focus:border-white/20"
-                                placeholder="Ej: 2000"
-                            />
-                        </div>
+                                <p className="text-sm text-white/70 mt-1">
+                                    Hay una caja anterior abierta. Debes cerrarla antes de abrir la caja de hoy.
+                                </p>
 
-                        {cashGateError && (
-                            <div className="mt-3 text-sm text-red-400">{cashGateError}</div>
+                                <div className="mt-4 rounded-xl bg-white/5 border border-white/10 p-4">
+                                    <div className="text-sm text-white/60">Fecha pendiente</div>
+                                    <div className="text-lg font-semibold text-white">
+                                        {pendingCashSession?.dateYMD || "N/A"}
+                                    </div>
+
+                                    <div className="text-sm text-white/60 mt-3">Caja</div>
+                                    <div className="text-lg font-semibold text-white">
+                                        {pendingCashSession?.registerId || "MAIN"}
+                                    </div>
+
+                                    <div className="text-sm text-white/60 mt-3">Fondo inicial</div>
+                                    <div className="text-lg font-semibold text-yellow-400">
+                                        RD${Number(pendingCashSession?.openingFloatInitial || 0).toFixed(2)}
+                                    </div>
+                                </div>
+
+                                {cashGateError && (
+                                    <div className="mt-3 text-sm text-red-400">
+                                        {cashGateError}
+                                    </div>
+                                )}
+
+                                <div className="mt-5 flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const pendingDate = pendingCashSession?.dateYMD || "";
+                                            const pendingRegisterId = String(
+                                                pendingCashSession?.registerId || "MAIN"
+                                            ).trim().toUpperCase();
+
+                                            if (pendingDate) {
+                                                localStorage.setItem("deleonsoft_pending_cash_date", pendingDate);
+                                            }
+
+                                            if (pendingRegisterId) {
+                                                localStorage.setItem("deleonsoft_pending_cash_register", pendingRegisterId);
+                                                localStorage.setItem("deleonsoft_active_register_id", pendingRegisterId);
+                                            }
+
+                                            setOpenModal(false);
+
+                                            navigate(
+                                                `/admin${
+                                                    pendingDate
+                                                        ? `?cashDate=${encodeURIComponent(pendingDate)}&registerId=${encodeURIComponent(pendingRegisterId)}`
+                                                        : ""
+                                                }`
+                                            );
+                                        }}
+                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                    >
+                                        Ir a cerrar caja
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h2 className="text-xl font-semibold text-white">Apertura de caja</h2>
+
+                                <p className="text-sm text-white/70 mt-1">
+                                    Debes registrar el fondo inicial antes de usar el sistema.
+                                </p>
+
+                                <div className="mt-4">
+                                    <label className="text-sm text-white/70">
+                                        Monto de apertura
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={openingAmount}
+                                        onChange={(e) => setOpeningAmount(e.target.value)}
+                                        className="mt-2 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white outline-none focus:border-white/20"
+                                        placeholder="Ej: 2000"
+                                    />
+                                </div>
+
+                                {cashGateError && (
+                                    <div className="mt-3 text-sm text-red-400">
+                                        {cashGateError}
+                                    </div>
+                                )}
+
+                                <div className="mt-5 flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenCash}
+                                        disabled={cashGateLoading}
+                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3 disabled:opacity-60"
+                                    >
+                                        {cashGateLoading ? "Guardando..." : "Guardar apertura"}
+                                    </button>
+                                </div>
+                            </>
                         )}
-
-                        <div className="mt-5 flex gap-3">
-                            <button
-                                onClick={handleOpenCash}
-                                disabled={cashGateLoading}
-                                className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3 disabled:opacity-60"
-                            >
-                                {cashGateLoading ? "Guardando..." : "Guardar apertura"}
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}

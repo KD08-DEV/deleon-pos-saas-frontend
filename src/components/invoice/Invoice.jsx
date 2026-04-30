@@ -308,9 +308,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         cashReceived > 0;
 
 
-    const headerGridClass = taxEnabled
-        ? "grid grid-cols-[2fr_0.5fr_1fr_1fr]"
-        : "grid grid-cols-[2fr_0.5fr_1fr]";
+    const headerGridClass = "grid grid-cols-[2fr_0.45fr_0.9fr_0.9fr]";
 
     const browserPrint = useReactToPrint({
         contentRef: receiptRef,
@@ -549,11 +547,11 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                     <div className="mt-4 text-xs">
                         <h3 className="font-semibold mb-2 text-gray-800">Detalle de consumo</h3>
 
-                        <div className={`${headerGridClass} gap-x-3 border-b pb-1 mb-1 font-semibold text-[11px] text-gray-700`}>
+                        <div className={`${headerGridClass} gap-x-2 border-b pb-1 mb-1 font-semibold text-[11px] text-gray-700`}>
                             <span>Descripción</span>
                             <span className="text-right">Cant.</span>
-
-                            <span className="text-right">Valor</span>
+                            <span className="text-right">Precio</span>
+                            <span className="text-right">Importe</span>
                         </div>
 
                         <div className="space-y-0.5">
@@ -592,13 +590,20 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                                         : 0;
 
                                 return (
-                                    <div key={index} className={`${headerGridClass} gap-x-3 text-[11px] text-gray-800`}>
-                    <span className="truncate" title={itemName}>
-                      {itemName}
-                    </span>
+                                    <div key={index} className={`${headerGridClass} gap-x-2 text-[11px] text-gray-800`}>
+                                        <span className="truncate" title={itemName}>
+                                            {itemName}
+                                        </span>
+
                                         <span className="text-right">{qty}</span>
 
-                                        <span className="text-right">RD${unitPrice.toFixed(2)}</span>
+                                        <span className="text-right">
+                                        RD${unitPrice.toFixed(2)}
+                                        </span>
+
+                                        <span className="text-right font-medium">
+                                        RD${lineSubtotal.toFixed(2)}
+                                         </span>
                                     </div>
                                 );
                             })}

@@ -206,12 +206,39 @@ const CashRegister = () => {
 
     const [selectedYMD, setSelectedYMD] = useState(todayYMD);
     const isSelectedToday = selectedYMD === todayYMD;
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+
+        const dateFromUrl = params.get("cashDate");
+        const dateFromStorage = localStorage.getItem("deleonsoft_pending_cash_date");
+
+        const registerFromUrl = params.get("registerId");
+        const registerFromStorage = localStorage.getItem("deleonsoft_pending_cash_register");
+
+        const pendingDate = dateFromUrl || dateFromStorage;
+        const pendingRegisterId = String(registerFromUrl || registerFromStorage || "")
+            .trim()
+            .toUpperCase();
+
+        if (pendingDate && /^\d{4}-\d{2}-\d{2}$/.test(pendingDate)) {
+            setSelectedYMD(pendingDate);
+        }
+
+        if (pendingRegisterId) {
+            setSelectedRegisterId(pendingRegisterId);
+            saveRegisterId(pendingRegisterId);
+        }
+
+        localStorage.removeItem("deleonsoft_pending_cash_date");
+        localStorage.removeItem("deleonsoft_pending_cash_register");
+    }, []);
 
     const [modalFilters, setModalFilters] = useState({
         from: "",
         to: "",
         method: "",
         fiscal: "",
+        registerId: "",
         user: "",
         client: "",
     });
@@ -346,6 +373,15 @@ const CashRegister = () => {
     const [forceSummary, setForceSummary] = useState(false);
     const registerFilterValue = isViewingAllRegisters ? undefined : activeRegisterId;
 
+    const defaultModalRegisterId = useMemo(() => {
+        if (isAdminLike) return activeRegisterId || ALL_REGISTERS_ID;
+        return activeRegisterId || DEFAULT_REGISTER_ID;
+    }, [isAdminLike, activeRegisterId]);
+
+    const modalRegisterId = useMemo(() => {
+        return String(modalFilters.registerId || defaultModalRegisterId || "").trim();
+    }, [modalFilters.registerId, defaultModalRegisterId]);
+
     const {
         data: cashSessionResp,
         isLoading: cashSessionLoading,
@@ -356,11 +392,7 @@ const CashRegister = () => {
         queryFn: async () => {
             const params = { dateYMD: selectedYMD, registerId: registerFilterValue };
 
-            console.log("[GET cash-session] request", {
-                url: "/api/admin/cash-session",
-                params,
-                me: { id: me?._id, role },
-            });
+
 
             const res = await api.get("/api/admin/cash-session", { params });
             return res.data;
@@ -648,6 +680,22 @@ const CashRegister = () => {
 
             // ✅ UX: feedback
             showToast("Cierre registrado correctamente.", "success");
+            // ✅ Avisar al Layout/App que una caja fue cerrada.
+// Esto permite que, si era un cierre pendiente viejo,
+// App.jsx vuelva a validar y muestre la apertura de hoy sin refrescar.
+            try {
+                window.dispatchEvent(
+                    new CustomEvent("cash-session:closed", {
+                        detail: {
+                            dateYMD: selectedYMD,
+                            registerId: activeRegisterId,
+                            closedSessionId: sessionDoc?._id || null,
+                        },
+                    })
+                );
+            } catch {
+                // ignore
+            }
 
             // ✅ UX: llevar al usuario al resumen (opcional pero recomendado)
             setTimeout(() => {
@@ -830,7 +878,6 @@ const CashRegister = () => {
 
     const modalRangeEnabled =
         showFullView &&
-        !modalDay &&
         isValidYMD(modalRangeFrom) &&
         isValidYMD(modalRangeTo) &&
         modalRangeFrom <= modalRangeTo;
@@ -917,18 +964,24 @@ const CashRegister = () => {
     const safeList = Array.isArray(filteredInventoryItems) ? filteredInventoryItems : [];
 
     const { data: modalRangeSessionResp } = useQuery({
-        queryKey: ["admin/cash-session", "modal-range", modalRangeFrom, modalRangeTo, summaryRegisterId],
+        queryKey: [
+            "admin/cash-session",
+            "modal-range",
+            modalRangeFrom,
+            modalRangeTo,
+            modalRegisterId || ALL_REGISTERS_ID,
+        ],
 
         enabled: modalRangeEnabled,
         queryFn: async () => {
-            const params = { from: modalRangeFrom, to: modalRangeTo, registerId: summaryRegisterId };
-            if (registerFilterValue) params.registerId = registerFilterValue;
-            console.log("[GET cash-session/range] request", params);
+            const params = {
+                from: modalRangeFrom,
+                to: modalRangeTo,
+                registerId: modalRegisterId || ALL_REGISTERS_ID,
+            };
 
             const res = await api.get("/api/admin/cash-session/range", { params });
-
-            console.log("[GET cash-session/range] response", res?.data);
-            return res.data; // { success, data: { openingTotal, addedTotal, ... } }
+            return res.data;
         },
         staleTime: 10_000,
         retry: 1,
@@ -995,13 +1048,14 @@ const CashRegister = () => {
     }, [modalDay, modalSession?.openingFloatInitial]);
 
 
-    const modalOpeningInitial = modalDay
-        ? safeNumber(modalSession?.openingFloatInitial)
-        : safeNumber(modalRangeSessionResp?.data?.openingTotal);
+    const modalOpeningInitial = modalRangeEnabled
+        ? safeNumber(modalRangeSessionResp?.data?.openingTotal)
+        : safeNumber(modalSession?.openingFloatInitial);
 
-    const modalAddedTotal = modalDay
-        ? safeNumber(modalSession?.addedFloatTotal)
-        : safeNumber(modalRangeSessionResp?.data?.addedTotal);
+    const modalAddedTotal = modalRangeEnabled
+        ? safeNumber(modalRangeSessionResp?.data?.addedTotal)
+        : safeNumber(modalSession?.addedFloatTotal);
+
 
     const modalMenudoActual = modalOpeningInitial + modalAddedTotal;
 
@@ -1039,7 +1093,14 @@ const CashRegister = () => {
 
     // “Fondo inicial” se considera seteado SOLO si openingInitial > 0
     // (no por el hecho de que exista una sesión)
-    const openingAlreadySet = Number(session?.openingFloatInitial || 0) > 0;
+    const hasOpenMovement =
+        Array.isArray(session?.movements) &&
+        session.movements.some((m) => String(m?.type || "").toUpperCase() === "OPEN");
+
+    const openingAlreadySet =
+        Boolean(session?.openedAt) ||
+        hasOpenMovement ||
+        Number(session?.openingFloatInitial || 0) > 0;
 
 
     const { data: managerCodeStatus } = useQuery({
@@ -1099,10 +1160,17 @@ const CashRegister = () => {
     // - es hoy
     // - NO hay fondo inicial aún
     // - NO hay dinero agregado aún (opcional, pero recomendado para evitar inconsistencias)
-    const cashierCanSetOpening = isSelectedToday && !openingAlreadySet && addedTotal <= 0;
+    const cashierCanSetOpening =
+        isSelectedToday &&
+        !sessionClosed &&
+        !openingAlreadySet &&
+        addedTotal <= 0;
 
     // Admin puede “Guardar” si aún no hay opening, o “Editar” si ya existe
-    const adminCanSetOpening = isSelectedToday && !openingAlreadySet;
+    const adminCanSetOpening =
+        isSelectedToday &&
+        !sessionClosed &&
+        !openingAlreadySet;
     useEffect(() => {
         // Si estoy editando, no sobrescribas el input
         if (isEditingOpening) return;
@@ -1190,7 +1258,8 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
+            queryClient.invalidateQueries({ queryKey: ["admin/reports"] });
         },
         onError: (err) => {
             const status = err?.response?.status;
@@ -1350,8 +1419,12 @@ const CashRegister = () => {
             to,
         };
 
-        if (registerFilterValue) {
-            params.registerId = registerFilterValue;
+        const registerForQuery = showFullView
+            ? modalRegisterId
+            : registerFilterValue;
+
+        if (registerForQuery && registerForQuery !== ALL_REGISTERS_ID) {
+            params.registerId = registerForQuery;
         }
 
         return params;
@@ -1361,6 +1434,7 @@ const CashRegister = () => {
         showFullView,
         modalFilters.from,
         modalFilters.to,
+        modalRegisterId,
     ]);
 
 
@@ -1491,8 +1565,20 @@ const CashRegister = () => {
         const fiscal = normalize(modalFilters.fiscal);
         const user = normalize(modalFilters.user);
         const client = normalize(modalFilters.client);
+        const selectedRegister = String(modalRegisterId || "").trim().toUpperCase();
 
         return sortedReports.filter((r) => {
+            if (selectedRegister && selectedRegister !== ALL_REGISTERS_ID) {
+                const orderRegister = String(r?.registerId || DEFAULT_REGISTER_ID).trim().toUpperCase();
+
+                const isLegacyMain =
+                    selectedRegister === DEFAULT_REGISTER_ID &&
+                    (!r?.registerId || ["MAIN", "DEFAULT", ""].includes(orderRegister));
+
+                if (!isLegacyMain && orderRegister !== selectedRegister) {
+                    return false;
+                }
+            }
             const createdAt = r?.paidAt ? new Date(r.paidAt) : (r?.createdAt ? new Date(r.createdAt) : null);
             if (from && createdAt && createdAt < from) return false;
             if (to && createdAt && createdAt > to) return false;
@@ -1555,7 +1641,7 @@ const CashRegister = () => {
             );
             return true;
         });
-    }, [sortedReports, modalFilters]);
+    }, [sortedReports, modalFilters, modalRegisterId]);
 
     const buildCashClosure = (
         rows,
@@ -1749,6 +1835,7 @@ const CashRegister = () => {
             to: "",
             method: "",
             fiscal: "",
+            registerId: "",
             user: "",
             client: "",
         });
@@ -2518,6 +2605,35 @@ const CashRegister = () => {
                                                     </select>
                                                 </div>
                                                 <div>
+                                                    <label className="text-xs text-gray-400 mb-1 block">Caja</label>
+
+                                                    {isAdminLike ? (
+                                                        <select
+                                                            value={modalRegisterId}
+                                                            onChange={(e) =>
+                                                                setModalFilters((f) => ({
+                                                                    ...f,
+                                                                    registerId: e.target.value,
+                                                                }))
+                                                            }
+                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                            disabled={registersLoading}
+                                                        >
+                                                            <option value={ALL_REGISTERS_ID}>ADMIN — Ver todas las ventas</option>
+
+                                                            {registers.map((r) => (
+                                                                <option key={r._id || r.code} value={r.code}>
+                                                                    {r.name}{r.location ? ` — ${r.location}` : ""}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <div className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm">
+                                                            {activeRegisterLabel}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div>
                                                     <label className="text-xs text-gray-400 mb-1 block">Comprobante fiscal</label>
                                                     <select
                                                         value={modalFilters.fiscal}
@@ -2556,6 +2672,7 @@ const CashRegister = () => {
                                                     modalFilters.to ||
                                                     modalFilters.method ||
                                                     modalFilters.fiscal ||
+                                                    (modalFilters.registerId && modalFilters.registerId !== defaultModalRegisterId) ||
                                                     modalFilters.user ||
                                                     modalFilters.client) && (
                                                     <button
