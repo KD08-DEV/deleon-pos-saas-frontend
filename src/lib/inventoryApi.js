@@ -5,6 +5,7 @@ export const inventoryApi = {
     createItem: (payload) => api.post("/api/inventory/items", payload),
     updateItem: (id, payload) => api.put(`/api/inventory/items/${id}`, payload),
     archiveItem: (id) => api.delete(`/api/inventory/items/${id}`),
+    unarchiveItem: (id) => api.patch(`/api/inventory/items/${id}/unarchive`),
 
     lowStock: () => api.get("/api/inventory/low-stock"),
 

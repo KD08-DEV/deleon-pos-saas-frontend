@@ -58,62 +58,20 @@ import HelpAndSupport from "./HelpAndSupport";
 const Admin = () => {
     const [tab, setTab] = useState("cash-register");
     const location = useLocation();
-    const [expandedMenu, setExpandedMenu] = useState("reportes"); // Menú expandido por defecto
+    const [expandedMenu, setExpandedMenu] = useState("reportes");
     const [showPlanDetails, setShowPlanDetails] = useState(false);
+
     const navigate = useNavigate();
     const { userData, isAuth } = useSelector((state) => state.user);
-    const role = userData?.role;
-    const isCashier = role === "Cajera";
-    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
 
-
-    // 🔐 Redirección segura
-    useEffect(() => {
-        if (!isAuth) {
-            navigate("/");
-            return;
-        }
-        const role = userData?.role;
-
-        const canEnterAdminPanel = ["Owner", "Admin", "Cajera"].includes(role);
-        if (!canEnterAdminPanel) {
-            navigate("/");
-            return;
-        }
-
-        // Si es Cajera, mándala directo a reportes (evita tabs de gestión)
-        if (role === "Cajera") {
-            setTab("cash-register"); // o "sales-reports" si prefieres
-            setExpandedMenu("reportes");
-        }
-    }, [userData, isAuth, navigate]);
-    useEffect(() => {
-        const nextTab = location.state?.tab;
-        if (nextTab) {
-            setTab(nextTab);
-            // opcional: limpia el state para que no se re-aplique en refresh
-            navigate("/admin", { replace: true, state: {} });
-        }
-    }, [location.state, navigate]);
-
-
-    // ⏳ Evitar pantalla en blanco mientras carga el usuario
-    if (!userData) {
-        return (
-            <div className="bg-[#060606] min-h-screen flex items-center justify-center text-white">
-                Loading...
-            </div>
-        );
-    }
-
-
-    // 📊 Traer resumen de uso del plan
+    // 📊 Traer resumen de uso del plan + permisos actuales del membership
     const { data: usageData } = useQuery({
         queryKey: ["admin-usage-summary"],
         queryFn: async () => {
             const res = await api.get("/api/admin/usage");
-            return res.data?.data; // { plan, limits, usage, remaining }
+            return res.data?.data;
         },
+        enabled: Boolean(isAuth && userData),
         staleTime: 0,
         refetchOnMount: "always",
         refetchOnReconnect: true,
@@ -124,7 +82,180 @@ const Admin = () => {
     const usage = usageData?.usage || {};
     const remaining = usageData?.remaining || {};
     const rawPlan = (usageData?.plan || "emprendedor").toLowerCase();
-    const canInventory = ["premium", "estandar"].includes(rawPlan);
+
+    const currentUserFromUsage = usageData?.currentUser || {};
+
+    const role = currentUserFromUsage?.role || userData?.role || "";
+    const isCashier = role === "Cajera";
+    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+
+    const userPermissions =
+        currentUserFromUsage?.permissions ||
+        userData?.permissions ||
+        {};
+
+    const hasUserPermission = (permissionPath) => {
+        return String(permissionPath || "")
+            .split(".")
+            .reduce(
+                (acc, key) =>
+                    acc && acc[key] !== undefined ? acc[key] : undefined,
+                userPermissions
+            ) === true;
+    };
+
+    const canCreateProductsByPermission =
+        isOwnerOrAdmin || hasUserPermission("products.create");
+
+    const canInventoryEntryByPermission =
+        isOwnerOrAdmin || hasUserPermission("inventory.entry");
+    const effectiveUser = {
+        ...(userData || {}),
+        role,
+        permissions: userPermissions,
+    };
+
+    // 🔐 Redirección segura
+    useEffect(() => {
+        if (!isAuth) {
+            navigate("/");
+            return;
+        }
+
+        if (!userData) return;
+
+        const canEnterAdminPanel =
+            ["Owner", "Admin", "Cajera", "Camarero", "Cocina"].includes(role) ||
+            canCreateProductsByPermission ||
+            canInventoryEntryByPermission;
+
+        if (!canEnterAdminPanel) {
+            navigate("/");
+            return;
+        }
+
+        if (role === "Cajera") {
+            if (canCreateProductsByPermission) {
+                setTab("menu-management");
+                setExpandedMenu("restaurante");
+            } else if (canInventoryEntryByPermission) {
+                setTab("inventory-stock");
+                setExpandedMenu("inventario");
+            } else {
+                setTab("cash-register");
+                setExpandedMenu("reportes");
+            }
+        }
+    }, [
+        userData,
+        isAuth,
+        navigate,
+        role,
+        canCreateProductsByPermission,
+        canInventoryEntryByPermission,
+    ]);
+
+    useEffect(() => {
+        const nextTab = location.state?.tab;
+
+        if (nextTab) {
+            setTab(nextTab);
+            navigate("/admin", { replace: true, state: {} });
+        }
+    }, [location.state, navigate]);
+
+    // ⏳ Evitar pantalla en blanco mientras carga el usuario
+    if (!userData) {
+        return (
+            <div className="bg-[#060606] min-h-screen flex items-center justify-center text-white">
+                Loading...
+            </div>
+        );
+    }
+
+    const PLAN_FEATURES_FALLBACK = {
+        emprendedor: {
+            basicReports: true,
+            advancedReports: false,
+            productReports: false,
+            financialAnalysis: false,
+            employees: true,
+            payroll: false,
+            menu: true,
+            tables: true,
+            fiscal: false,
+            printers: true,
+            inventory: false,
+            suppliers: false,
+            inventoryCategories: false,
+            expenses: false,
+            financeSummary: false,
+            notifications: false,
+        },
+        estandar: {
+            basicReports: true,
+            advancedReports: true,
+            productReports: true,
+            financialAnalysis: false,
+            employees: true,
+            payroll: false,
+            menu: true,
+            tables: true,
+            fiscal: false,
+            printers: true,
+            inventory: true,
+            suppliers: true,
+            inventoryCategories: true,
+            expenses: false,
+            financeSummary: false,
+            notifications: false,
+        },
+        premium: {
+            basicReports: true,
+            advancedReports: true,
+            productReports: true,
+            financialAnalysis: true,
+            employees: true,
+            payroll: false,
+            menu: true,
+            tables: true,
+            fiscal: true,
+            printers: true,
+            inventory: true,
+            suppliers: true,
+            inventoryCategories: true,
+            expenses: false,
+            financeSummary: false,
+            notifications: false,
+        },
+        pro: {
+            basicReports: true,
+            advancedReports: true,
+            productReports: true,
+            financialAnalysis: true,
+            employees: true,
+            payroll: true,
+            menu: true,
+            tables: true,
+            fiscal: true,
+            printers: true,
+            inventory: true,
+            suppliers: true,
+            inventoryCategories: true,
+            expenses: true,
+            financeSummary: true,
+            notifications: true,
+        },
+    };
+
+    const planFeatures =
+        usageData?.features ||
+        PLAN_FEATURES_FALLBACK[rawPlan] ||
+        PLAN_FEATURES_FALLBACK.emprendedor;
+
+    const canUseFeature = (feature) => Boolean(planFeatures?.[feature]);
+
+    const canInventory = canUseFeature("inventory");
 
     const totalUsersLimit =
         limits.maxUsers === null || limits.maxUsers === undefined
@@ -154,7 +285,7 @@ const Admin = () => {
     };
 
     // Configuración de menú con submenús organizados
-    const menuSectionsBase  = [
+    const menuSectionsBase = [
         {
             id: "reportes",
             label: "Reportes y Análisis",
@@ -167,27 +298,35 @@ const Admin = () => {
                     id: "cash-register",
                     label: "Cierre de Caja",
                     icon: Wallet,
-                    description: "Control de cierre de caja diario"
+                    description: "Control de cierre de caja diario",
                 },
                 {
                     id: "sales-reports",
                     label: "Reportes de Ventas",
                     icon: DollarSign,
-                    description: "Análisis de ventas y facturación"
+                    description: "Reporte básico de ventas y facturación",
                 },
-                {
-                    id: "product-reports",
-                    label: "Reportes de Productos",
-                    icon: PieChart,
-                    description: "Productos más vendidos"
-                },
-                {
-                    id: "financial-analysis",
-                    label: "Análisis Financiero",
-                    icon: TrendingUp,
-                    description: "Análisis detallado de finanzas"
-                },
-            ]
+                ...(canUseFeature("productReports")
+                    ? [
+                        {
+                            id: "product-reports",
+                            label: "Reportes de Productos",
+                            icon: PieChart,
+                            description: "Productos más vendidos y análisis por producto",
+                        },
+                    ]
+                    : []),
+                ...(canUseFeature("financialAnalysis")
+                    ? [
+                        {
+                            id: "financial-analysis",
+                            label: "Análisis Financiero",
+                            icon: TrendingUp,
+                            description: "Análisis detallado de finanzas",
+                        },
+                    ]
+                    : []),
+            ],
         },
         {
             id: "personal",
@@ -201,30 +340,33 @@ const Admin = () => {
                     id: "employees",
                     label: "Empleados",
                     icon: Users,
-                    description: "Gestionar empleados"
+                    description: "Gestionar empleados",
                 },
-                {
-                    id: "payroll",
-                    label: "Nómina",
-                    icon: Users,
-                    description: "Crear corridas y postear gasto"
-                },
-
+                ...(canUseFeature("payroll")
+                    ? [
+                        {
+                            id: "payroll",
+                            label: "Nómina",
+                            icon: Users,
+                            description: "Crear corridas y postear gasto",
+                        },
+                    ]
+                    : []),
                 {
                     id: "schedules",
                     label: "Horarios y Turnos",
                     icon: Calendar,
                     description: "Gestionar horarios de trabajo",
-                    comingSoon: true
+                    comingSoon: true,
                 },
                 {
                     id: "attendance",
                     label: "Asistencia",
                     icon: Clock,
                     description: "Control de asistencia",
-                    comingSoon: true
-                }
-            ]
+                    comingSoon: true,
+                },
+            ],
         },
         {
             id: "restaurante",
@@ -238,24 +380,28 @@ const Admin = () => {
                     id: "menu-management",
                     label: "Gestión de Menú",
                     icon: ShoppingBag,
-                    description: "Administrar platos y categorías"
+                    description: "Administrar platos, productos y categorías básicas",
                 },
                 {
                     id: "tables-management",
                     label: "Gestión de Mesas",
                     icon: Table2,
-                    description: "Administrar mesas del restaurante"
+                    description: "Administrar mesas del restaurante",
                 },
-                {
-                    id: "categories-inv",
-                    label: "Categorías",
-                    icon: ShoppingBag,
-                    description: "Organizar categorías"
-                },
-            ]
+                ...(canUseFeature("inventoryCategories")
+                    ? [
+                        {
+                            id: "categories-inv",
+                            label: "Categorías de inventario",
+                            icon: ShoppingBag,
+                            description: "Organizar categorías de inventario",
+                        },
+                    ]
+                    : []),
+            ],
         },
         {
-            id: "fiscal",
+            id: "facturacion-config",
             label: "Facturación y Configuración",
             icon: Receipt,
             color: "text-orange-400",
@@ -264,18 +410,17 @@ const Admin = () => {
             items: [
                 {
                     id: "fiscal",
-                    label: "Facturación / NCF",
+                    label: "Facturación / Configuración",
                     icon: Receipt,
-                    description: "Configuración de Facturas"
+                    description: "ITBIS, propina, descuentos, delivery, PreFactura y NCF según el plan",
                 },
                 {
                     id: "printersconfig",
                     label: "Configuración de impresoras",
                     icon: Receipt,
-                    description: "Gestionar impuestos y tasas",
-
-                }
-            ]
+                    description: "Gestionar impresoras de tickets y facturas",
+                },
+            ],
         },
         ...(canInventory
             ? [
@@ -287,53 +432,66 @@ const Admin = () => {
                     bgColor: "bg-cyan-500/10",
                     borderColor: "border-cyan-500/20",
                     items: [
+                        ...(canUseFeature("suppliers")
+                            ? [
+                                {
+                                    id: "suppliers",
+                                    label: "Proveedores",
+                                    icon: Store,
+                                    description: "Gestionar proveedores",
+                                },
+                            ]
+                            : []),
                         {
-                            id: "suppliers",
-                            label: "Proveedores",
-                            icon: Store,
-                            description: "Gestionar proveedores",
-                        },
-                        {
-                            id: "inventory-stock", // <-- id único
+                            id: "inventory-stock",
                             label: "Control de Stock",
                             icon: Package,
-                            description: "Inventario y stock de ingredientes"
+                            description: "Inventario y stock de ingredientes",
                         },
-
                     ],
                 },
             ]
             : []),
-
-        ...(canInventory ? [] : []),
-        {
-            id: "gestion-financiera",
-            label: "Gestión Financiera",
-            icon: Wallet,
-            color: "text-emerald-400",
-            bgColor: "bg-emerald-500/10",
-            borderColor: "border-emerald-500/20",
-            items: [
+        ...(canUseFeature("expenses") || canUseFeature("financeSummary")
+            ? [
                 {
-                    id: "expense-categories",
-                    label: "Categorías de gasto",
-                    icon: FileText,
-                    description: "Crear/editar categorías de gasto"
-                },
-                {
-                    id: "expenses",
-                    label: "Registro de gastos",
-                    icon: Receipt,
-                    description: "Registrar gastos operativos"
-                },
-                {
-                    id: "expenses-summary",
-                    label: "Reporte de gastos",
-                    icon: TrendingUp,
-                    description: "Resumen y análisis de gastos"
+                    id: "gestion-financiera",
+                    label: "Gestión Financiera",
+                    icon: Wallet,
+                    color: "text-emerald-400",
+                    bgColor: "bg-emerald-500/10",
+                    borderColor: "border-emerald-500/20",
+                    items: [
+                        ...(canUseFeature("expenses")
+                            ? [
+                                {
+                                    id: "expense-categories",
+                                    label: "Categorías de gasto",
+                                    icon: FileText,
+                                    description: "Crear/editar categorías de gasto",
+                                },
+                                {
+                                    id: "expenses",
+                                    label: "Registro de gastos",
+                                    icon: Receipt,
+                                    description: "Registrar gastos operativos",
+                                },
+                            ]
+                            : []),
+                        ...(canUseFeature("financeSummary")
+                            ? [
+                                {
+                                    id: "expenses-summary",
+                                    label: "Reporte de gastos",
+                                    icon: TrendingUp,
+                                    description: "Resumen y análisis de gastos",
+                                },
+                            ]
+                            : []),
+                    ],
                 },
             ]
-        },
+            : []),
         {
             id: "configuracion",
             label: "Configuración",
@@ -342,39 +500,69 @@ const Admin = () => {
             bgColor: "bg-gray-500/10",
             borderColor: "border-gray-500/20",
             items: [
-                {
-                    id: "notifications",
-                    label: "Notificaciones",
-                    icon: Bell,
-                    description: "Configurar notificaciones",
-                    comingSoon: true
-                },
+                ...(canUseFeature("notifications")
+                    ? [
+                        {
+                            id: "notifications",
+                            label: "Notificaciones",
+                            icon: Bell,
+                            description: "Configurar notificaciones",
+                            comingSoon: true,
+                        },
+                    ]
+                    : []),
                 {
                     id: "help",
                     label: "Ayuda y Soporte",
                     icon: HelpCircle,
-                    description: "Documentación y ayuda"
-                }
-            ]
-        }
-    ];
+                    description: "Documentación y ayuda",
+                },
+            ],
+        },
+    ].filter((section) => Array.isArray(section.items) && section.items.length > 0);
 
     const menuSections = useMemo(() => {
-        // Cajera: solo puede ver Reportes y Análisis → Cierre de Caja
-        if (isCashier) {
-            const reportes = menuSectionsBase.find((s) => s.id === "reportes");
-            if (!reportes) return [];
-            return [
-                {
-                    ...reportes,
-                    items: (reportes.items || []).filter((i) => i.id === "cash-register"),
-                },
-            ];
+        if (isOwnerOrAdmin) return menuSectionsBase;
+
+        const sections = [];
+
+        const reportes = menuSectionsBase.find((s) => s.id === "reportes");
+        if (reportes) {
+            sections.push({
+                ...reportes,
+                items: (reportes.items || []).filter((i) => i.id === "cash-register"),
+            });
         }
 
-        // Owner/Admin: todo normal
-        return menuSectionsBase;
-    }, [isCashier, menuSectionsBase]);
+        if (canCreateProductsByPermission) {
+            const restaurante = menuSectionsBase.find((s) => s.id === "restaurante");
+            if (restaurante) {
+                sections.push({
+                    ...restaurante,
+                    items: (restaurante.items || []).filter((i) => i.id === "menu-management"),
+                });
+            }
+        }
+
+        if (canInventory && canInventoryEntryByPermission) {
+            const inventario = menuSectionsBase.find((s) => s.id === "inventario");
+            if (inventario) {
+                sections.push({
+                    ...inventario,
+                    items: (inventario.items || []).filter((i) => i.id === "inventory-stock"),
+                });
+            }
+        }
+
+
+        return sections.filter((section) => Array.isArray(section.items) && section.items.length > 0);
+    }, [
+        isOwnerOrAdmin,
+        menuSectionsBase,
+        canInventory,
+        canCreateProductsByPermission,
+        canInventoryEntryByPermission,
+    ]);
 
 
 
@@ -632,7 +820,12 @@ const Admin = () => {
                             {/* CONTENIDO DINÁMICO CON ANIMACIÓN */}
                             <div className="transition-opacity duration-300">
                                 {tab === "cash-register" && <CashRegister />}
-                                {tab === "inventory-stock" && <Inventory plan={rawPlan} />}
+                                {tab === "inventory-stock" && (
+                                    <Inventory
+                                        plan={rawPlan}
+                                        currentUser={effectiveUser}
+                                    />
+                                )}
                                 {tab === "reports" && <Reports />}
                                 {tab === "employees" && <Employees />}
                                 {tab === "fiscal" && <FiscalConfig />}
@@ -646,7 +839,9 @@ const Admin = () => {
                                 {tab === "printersconfig" && <PrintersConfig />}
 
 
-                                {tab === "menu-management" && <MenuManagement />}
+                                {tab === "menu-management" && (
+                                    <MenuManagement currentUser={effectiveUser} />
+                                )}
                                 {tab === "tables-management" && <TablesManagement />}
                                 {tab === "suppliers" && <Suppliers />}
                                 {tab === "categories-inv" && <InventoryCategories />}

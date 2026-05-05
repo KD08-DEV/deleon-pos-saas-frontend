@@ -271,7 +271,9 @@ const CashRegister = () => {
     const [managerCodeInput, setManagerCodeInput] = useState("");
     const [closeManagerCode, setCloseManagerCode] = useState("");
     const me = getUserFromStorage();
-    const userData = useSelector((state) => state.auth?.userData);
+    const userData = useSelector(
+        (state) => state.user?.userData || state.auth?.userData || null
+    );
 
     const role = String(
         me?.role ||
@@ -316,6 +318,15 @@ const CashRegister = () => {
         "GERENTE",
         "ADMINISTRADOR",
     ]);
+    const currentUserId =
+        me?._id ||
+        me?.id ||
+        userData?._id ||
+        userData?.id ||
+        userData?.user?._id ||
+        userData?.user?.id ||
+        getUserIdFromToken?.() ||
+        "";
     const { data: registersResp, isLoading: registersLoading } = useQuery({
         queryKey: ["admin/registers"],
         queryFn: async () => {
@@ -387,7 +398,12 @@ const CashRegister = () => {
         isLoading: cashSessionLoading,
         isError: cashSessionIsError,
     } = useQuery({
-        queryKey: ["admin/cash-session", selectedYMD, registerFilterValue || "ALL"],
+        queryKey: [
+            "admin/cash-session",
+            currentUserId || "NO_USER",
+            selectedYMD,
+            registerFilterValue || "ALL",
+        ],
         enabled: !isViewingAllRegisters,
         queryFn: async () => {
             const params = { dateYMD: selectedYMD, registerId: registerFilterValue };
@@ -426,7 +442,13 @@ const CashRegister = () => {
         : activeRegisterId;
 
     const { data: summaryRangeResp } = useQuery({
-        queryKey: ["admin/cash-session", "summary-range", selectedYMD, summaryRegisterId],
+        queryKey: [
+            "admin/cash-session",
+            "summary-range",
+            currentUserId || "NO_USER",
+            selectedYMD,
+            summaryRegisterId,
+        ],
         queryFn: async () => {
             const res = await api.get("/api/admin/cash-session/range", {
                 params: {
@@ -506,6 +528,9 @@ const CashRegister = () => {
         (sessionClosed && (isCajera || isCashier));
 
     const queryClient = useQueryClient();
+    useEffect(() => {
+        queryClient.removeQueries({ queryKey: ["admin/cash-session"] });
+    }, [currentUserId, queryClient]);
 
 
 // Usa todas las fuentes posibles (storage, redux, token)
@@ -539,9 +564,29 @@ const CashRegister = () => {
 
 
 
+    const { data: usageResp } = useQuery({
+        queryKey: ["admin/usage"],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/usage");
+            return res.data;
+        },
+        staleTime: 60_000,
+        retry: 0,
+    });
+
+    const planFeatures = usageResp?.data?.features || {};
+
+    const canUseExpenses = Boolean(planFeatures.expenses);
+
+// Merma pertenece al módulo avanzado de inventario.
+// En nuestra distribución, merma debe estar en Premium / Pro.
+    const canUseMerma = Boolean(planFeatures.waste);
+
     const { data: expensesRows = [], refetch: refetchExpenses } = useQuery({
         queryKey: ["admin/expenses/day", selectedYMD, registerFilterValue || "ALL"],
         queryFn: async () => {
+            if (!canUseExpenses) return [];
+
             const params = { from: selectedYMD, to: selectedYMD };
             if (registerFilterValue) {
                 params.registerId = registerFilterValue;
@@ -550,8 +595,9 @@ const CashRegister = () => {
             const r = await listExpenses(params);
             return r.data || [];
         },
-        enabled: !!selectedYMD,
+        enabled: Boolean(selectedYMD && canUseExpenses),
         staleTime: 10000,
+        retry: 0,
     });
 
     const expensesSummary = useMemo(() => {
@@ -578,8 +624,12 @@ const CashRegister = () => {
 
     const { data: mermaBatchesResp, refetch: refetchMermaBatches } = useQuery({
         queryKey: ["merma/batches", selectedYMD],
-        enabled: !!selectedYMD,
+        enabled: Boolean(selectedYMD && canUseMerma),
         queryFn: async () => {
+            if (!canUseMerma) {
+                return { success: false, batches: [] };
+            }
+
             try {
                 const res = await api.get("/api/inventory/merma/batches", {
                     params: { dateYMD: selectedYMD },
@@ -895,13 +945,13 @@ const CashRegister = () => {
 
     const { data: dishesResp, isLoading: dishesLoading } = useQuery({
         queryKey: ["dishes-for-merma"],
-        enabled: mermaModalOpen || batchesModalOpen, // <- IMPORTANTE
+        enabled: Boolean(canUseMerma && (mermaModalOpen || batchesModalOpen)),
         queryFn: async () => {
             const res = await api.get("/api/dishes");
             return res.data;
         },
         staleTime: 30_000,
-        retry: 1,
+        retry: 0,
     });
 
 
@@ -992,19 +1042,34 @@ const CashRegister = () => {
     const { data: mermaRes } = useQuery({
         queryKey: ["inventory/merma/summary", selectedYMD],
         queryFn: async () => {
+            if (!canUseMerma) {
+                return {
+                    success: false,
+                    data: {
+                        mermaQty: 0,
+                        mermaCost: 0,
+                    },
+                };
+            }
+
             try {
                 const res = await api.get("/api/inventory/merma/summary", {
                     params: { dateYMD: selectedYMD },
                 });
                 return res.data;
             } catch (e) {
-                // Si no tienes plan/permiso o falla, no rompas el cierre
-                return { success: false, data: { mermaQty: 0, mermaCost: 0 } };
+                return {
+                    success: false,
+                    data: {
+                        mermaQty: 0,
+                        mermaCost: 0,
+                    },
+                };
             }
         },
-        enabled: !!selectedYMD,
-        staleTime: 30_000,
-        refetchOnWindowFocus: false,
+        enabled: Boolean(selectedYMD && canUseMerma),
+        staleTime: 10_000,
+        retry: 0,
     });
 
     const mermaQty = Number(mermaRes?.data?.mermaQty || 0);
@@ -1512,11 +1577,25 @@ const CashRegister = () => {
     const { data: mermaDayResp } = useQuery({
         queryKey: ["inventory/merma-summary", selectedYMD],
         queryFn: async () => {
-            const res = await api.get("/api/inventory/merma/summary", { params: { dateYMD: selectedYMD } });
+            if (!canUseMerma) {
+                return {
+                    success: false,
+                    data: {
+                        mermaQty: 0,
+                        mermaCost: 0,
+                    },
+                };
+            }
+
+            const res = await api.get("/api/inventory/merma/summary", {
+                params: { dateYMD: selectedYMD },
+            });
+
             return res.data;
         },
+        enabled: Boolean(selectedYMD && canUseMerma),
         staleTime: 10_000,
-        retry: 1,
+        retry: 0,
     });
 
     const mermaDay = mermaDayResp?.data || { mermaQty: 0, mermaCost: 0 };
@@ -1524,15 +1603,26 @@ const CashRegister = () => {
 // Para el modal (si hay rango válido)
     const { data: mermaRangeResp } = useQuery({
         queryKey: ["inventory/merma-summary", "range", modalRangeFrom, modalRangeTo],
-        enabled: modalRangeEnabled,
+        enabled: Boolean(modalRangeEnabled && canUseMerma),
         queryFn: async () => {
+            if (!canUseMerma) {
+                return {
+                    success: false,
+                    data: {
+                        mermaQty: 0,
+                        mermaCost: 0,
+                    },
+                };
+            }
+
             const res = await api.get("/api/inventory/merma/summary", {
                 params: { from: modalRangeFrom, to: modalRangeTo },
             });
+
             return res.data;
         },
         staleTime: 10_000,
-        retry: 1,
+        retry: 0,
     });
 
 

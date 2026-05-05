@@ -168,12 +168,13 @@ const SuperAdminTenants = () => {
 
                                 <select
                                     onChange={(e) => changePlan(t.tenantId, e.target.value)}
-                                    value={t.plan}
+                                    value={t.plan || "emprendedor"}
                                     className="bg-gray-800 px-2 py-1 rounded text-sm text-gray-100"
                                 >
                                     <option value="emprendedor">emprendedor</option>
-                                    <option value="premium">premium</option>
                                     <option value="estandar">estandar</option>
+                                    <option value="premium">premium</option>
+                                    <option value="pro">pro</option>
                                 </select>
                             </div>
                         </td>

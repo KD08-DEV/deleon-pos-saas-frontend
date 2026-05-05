@@ -33,6 +33,35 @@ const selectCls =
 
 const UNIT_OPTIONS = ["unidad", "lb", "kg", "g", "oz", "ml", "l"];
 const PAGE_SIZE = 10;
+const INVENTORY_ITEM_TYPES = [
+    {
+        value: "ingredient",
+        title: "Ingrediente / insumo",
+        desc: "No se vende como plato. Se usa para recetas y puede recibir entrada/salida.",
+    },
+    {
+        value: "direct",
+        title: "Producto con stock directo",
+        desc: "Producto del menú que maneja su propio stock.",
+    },
+    {
+        value: "recipe",
+        title: "Plato con receta",
+        desc: "Plato del menú que descuenta ingredientes.",
+    },
+];
+
+const normalizeInventoryType = (value) => {
+    const v = String(value || "").trim();
+    return ["none", "direct", "ingredient", "recipe"].includes(v) ? v : "ingredient";
+};
+
+const getInventoryTypeLabel = (type) => {
+    return (
+        INVENTORY_ITEM_TYPES.find((item) => item.value === type)?.title ||
+        "Ingrediente / insumo"
+    );
+};
 
 const num = (v) => {
     const n = Number(v);
@@ -96,13 +125,31 @@ async function fetchSuppliersSafe() {
 // Plantillas: platos existentes para modo "Basado en plato"
 async function fetchDishTemplates() {
     try {
-        const res = await api.get("/api/dishes");
+        const res = await api.get("/api/dishes", {
+            params: {
+                page: 1,
+                limit: 1000,
+            },
+        });
+
         const raw = res.data;
-        if (Array.isArray(raw)) return raw;
-        if (Array.isArray(raw?.dishes)) return raw.dishes;
-        if (Array.isArray(raw?.data)) return raw.data;
-        return [];
-    } catch {
+
+        const list =
+            raw?.data?.items ||
+            raw?.items ||
+            raw?.dishes ||
+            raw?.data ||
+            raw;
+
+        if (!Array.isArray(list)) return [];
+
+        return list
+            .filter((d) => d?._id && d?.name)
+            .filter((d) => String(d.category || "").toLowerCase() !== "inventario")
+            .filter((d) => normalizeInventoryType(d.inventoryType) !== "ingredient")
+            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    } catch (error) {
+        console.error("[Inventory] Error cargando platos para inventario:", error);
         return [];
     }
 }
@@ -166,7 +213,7 @@ function markYieldProcessed(itemId) {
 }
 
 
-export default function Inventory({ plan }) {
+export default function Inventory({ plan, currentUser }) {
     const queryClient = useQueryClient();
     function getTodayYMDLocal() {
         const d = new Date();
@@ -177,16 +224,52 @@ export default function Inventory({ plan }) {
     }
     const { enqueueSnackbar, closeSnackbar } = useSnackbar();
 
-    // SOLO premium y estandar
-    const rawPlan = String(plan || "").toLowerCase();
-    const canUseInventory = ["premium", "estandar"].includes(rawPlan);
+    const reduxUserData = useSelector((state) => state.user.userData);
 
-    const userData = useSelector((state) => state.user.userData);
-    const tenantId = userData?.tenantId;
+    const effectiveUser = currentUser || reduxUserData || {};
+    const tenantId = effectiveUser?.tenantId || reduxUserData?.tenantId;
+
+// Plan actual
+    const rawPlan = String(plan || "").toLowerCase();
+    const canUseInventory = ["premium", "estandar", "pro"].includes(rawPlan);
+
+// Permisos del usuario
+    const role = effectiveUser?.role;
+    const userPermissions = effectiveUser?.permissions || {};
+
+    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+    const isCashier = role === "Cajera";
+
+// Solo Owner/Admin pueden crear, editar, archivar o administrar artículos directos.
+    const canManageInventoryItems = isOwnerOrAdmin;
+
+// Permisos individuales para Cajera.
+    const canInventoryEntry =
+        isOwnerOrAdmin || (isCashier && userPermissions?.inventory?.entry === true);
+
+    const canInventoryExit =
+        isOwnerOrAdmin || (isCashier && userPermissions?.inventory?.exit === true);
+
+    const canInventoryAdjust =
+        isOwnerOrAdmin || (isCashier && userPermissions?.inventory?.adjust === true);
+
+    const canInventoryWaste =
+        isOwnerOrAdmin || (isCashier && userPermissions?.inventory?.waste === true);
+
+// Proceso de merma/yield sigue solo para Owner/Admin.
+    const canUseYieldProcess = isOwnerOrAdmin;
+
+// Tabs avanzados siguen solo para Owner/Admin.
+    const canViewAdvancedInventoryTabs = isOwnerOrAdmin;
 
     const qc = useQueryClient();
 
     const [tab, setTab] = useState("stock"); // stock | movements | consumption | merma | suppliers | categories
+    React.useEffect(() => {
+        if (!canViewAdvancedInventoryTabs && tab !== "stock") {
+            setTab("stock");
+        }
+    }, [canViewAdvancedInventoryTabs, tab]);
 
     // STOCK filters
     const [stockFilters, setStockFilters] = useState({
@@ -212,11 +295,20 @@ export default function Inventory({ plan }) {
         to: getTodayYMD(),
         inventoryCategoryId: "",
     });
+    const [consPage, setConsPage] = useState(1);
+    const CONS_LIMIT = 20;
 
     // reset page when filters change
     React.useEffect(() => {
         setPage(1);
     }, [stockFilters.q, stockFilters.inventoryCategoryId, stockFilters.supplierId, stockFilters.includeArchived]);
+    React.useEffect(() => {
+        setConsPage(1);
+    }, [
+        consFilters.from,
+        consFilters.to,
+        consFilters.inventoryCategoryId,
+    ]);
 
     // Queries: categories & suppliers
     const { data: categories = [] } = useQuery({
@@ -241,22 +333,42 @@ export default function Inventory({ plan }) {
         staleTime: 60_000,
     });
 
-// ✅ INGREDIENTES (deben vivir en el padre para evitar ReferenceError y evitar doble fetch)
+// ✅ INGREDIENTES PARA RECETAS
+// Fuente principal: /api/inventory/items porque los ingredientes reales viven ahí.
     const { data: ingredientsResp } = useQuery({
         queryKey: ["ingredients", tenantId],
         enabled: canUseInventory && Boolean(tenantId),
         queryFn: async () => {
-            const res = await api.get("/api/dishes/ingredients");
+            const res = await api.get("/api/inventory/items", {
+                params: {
+                    includeArchived: false,
+                    limit: 1000,
+                },
+            });
+
             return res.data;
         },
-        staleTime: 60_000,
+        staleTime: 0,
+        refetchOnMount: "always",
     });
 
     const ingredientsList = useMemo(() => {
-        const raw = ingredientsResp?.data ?? ingredientsResp;
-        if (Array.isArray(raw)) return raw;
-        if (Array.isArray(raw?.data)) return raw.data;
-        return [];
+        const raw =
+            ingredientsResp?.items ||
+            ingredientsResp?.data?.items ||
+            ingredientsResp?.data ||
+            ingredientsResp ||
+            [];
+
+        if (!Array.isArray(raw)) return [];
+
+        return raw
+            .filter((item) => {
+                const type = normalizeInventoryType(item?.inventoryType);
+                return type === "ingredient" || item?.isInventoryItem === true;
+            })
+            .filter((item) => item?._id && item?.name)
+            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }, [ingredientsResp]);
 
 // ✅ ITEMS (esto faltaba en tu archivo, pero itemsResp se usa abajo)
@@ -286,7 +398,17 @@ export default function Inventory({ plan }) {
 
     const availableIngredients = useMemo(() => {
         return (ingredientsList || [])
-            .map((x) => ({ _id: String(x._id), name: x.name }))
+            .filter((x) => {
+                const type = normalizeInventoryType(x?.inventoryType);
+                return type === "ingredient" || x?.isInventoryItem === true;
+            })
+            .map((x) => ({
+                _id: String(x._id),
+                name: x.name,
+                unit: x.unit || "unidad",
+                stockCurrent: x.stockCurrent ?? 0,
+            }))
+            .filter((x) => x._id && x.name)
             .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }, [ingredientsList]);
 
@@ -476,7 +598,7 @@ export default function Inventory({ plan }) {
 
     // CONSUMPTION report
     const { data: consResp, isLoading: consLoading } = useQuery({
-        queryKey: ["inventory/consumption", tenantId, consFilters],
+        queryKey: ["inventory/consumption", tenantId, consFilters, consPage],
         enabled: canUseInventory && Boolean(tenantId) && tab === "consumption",
         queryFn: async () => {
             const res = await api.get("/api/inventory/consumption", {
@@ -484,8 +606,11 @@ export default function Inventory({ plan }) {
                     from: consFilters.from ? toISOStartOfDayLocal(consFilters.from) : undefined,
                     to: consFilters.to ? toISOMiddayLocal(consFilters.to) : undefined,
                     inventoryCategoryId: consFilters.inventoryCategoryId || undefined,
+                    page: consPage,
+                    limit: CONS_LIMIT,
                 },
             });
+
             return res.data;
         },
         staleTime: 10_000,
@@ -495,6 +620,14 @@ export default function Inventory({ plan }) {
         const raw = consResp?.data || consResp?.rows || consResp?.items || [];
         return Array.isArray(raw) ? raw : [];
     }, [consResp]);
+    const consPagination = consResp?.pagination || {
+        page: consPage,
+        limit: CONS_LIMIT,
+        total: consumptionRows.length,
+        totalPages: 1,
+        hasPrev: false,
+        hasNext: false,
+    };
 
     // Low stock endpoint (si lo tienes activo)
     const { data: lowResp } = useQuery({
@@ -514,8 +647,23 @@ export default function Inventory({ plan }) {
     const lowStockItems = useMemo(() => (Array.isArray(lowResp?.items) ? lowResp.items : []), [lowResp]);
 
     // ---------- UI helpers ----------
-    const openNewItem = () => setItemModal({ open: true, mode: "create", item: null });
-    const openEditItem = (it) => setItemModal({ open: true, mode: "edit", item: it });
+    const openNewItem = () => {
+        if (!canManageInventoryItems) {
+            enqueueSnackbar("No tienes permiso para crear artículos directos de inventario.", { variant: "warning" });
+            return;
+        }
+
+        setItemModal({ open: true, mode: "create", item: null });
+    };
+
+    const openEditItem = (it) => {
+        if (!canManageInventoryItems) {
+            enqueueSnackbar("No tienes permiso para editar artículos de inventario.", { variant: "warning" });
+            return;
+        }
+
+        setItemModal({ open: true, mode: "edit", item: it });
+    };
 
     // Aviso moderno (notistack) si ya se procesó yield antes
     const maybeWarnYield = (item, onProceed) => {
@@ -627,9 +775,47 @@ export default function Inventory({ plan }) {
     };
 
     const openMovement = (type, item, useYield = false) => {
-        if (type === "purchase" && useYield) {
-            return maybeWarnYield(item, () => setMvModal({ open: true, type, item, yield: true }));
+        if (type === "purchase" && useYield && !canUseYieldProcess) {
+            enqueueSnackbar("No tienes permiso para procesar rendimiento/merma.", {
+                variant: "warning",
+            });
+            return;
         }
+
+        if (type === "purchase" && !canInventoryEntry) {
+            enqueueSnackbar("No tienes permiso para registrar entradas.", {
+                variant: "warning",
+            });
+            return;
+        }
+
+        if (type === "sale" && !canInventoryExit) {
+            enqueueSnackbar("No tienes permiso para registrar salidas.", {
+                variant: "warning",
+            });
+            return;
+        }
+
+        if (type === "adjust" && !canInventoryAdjust) {
+            enqueueSnackbar("No tienes permiso para realizar ajustes.", {
+                variant: "warning",
+            });
+            return;
+        }
+
+        if (type === "waste" && !canInventoryWaste) {
+            enqueueSnackbar("No tienes permiso para registrar merma.", {
+                variant: "warning",
+            });
+            return;
+        }
+
+        if (type === "purchase" && useYield) {
+            return maybeWarnYield(item, () =>
+                setMvModal({ open: true, type, item, yield: true })
+            );
+        }
+
         setMvModal({ open: true, type, item, yield: Boolean(useYield) });
     };
 
@@ -677,11 +863,16 @@ export default function Inventory({ plan }) {
 
                 <div className="flex flex-wrap gap-2">
                     <TabBtn id="stock" icon={Package} label="Stock" />
-                    <TabBtn id="movements" icon={History} label="Movimientos" />
-                    <TabBtn id="consumption" icon={BarChart3} label="Consumo" />
-                    <TabBtn id="merma" icon={Trash2} label="Merma" />
-                    <TabBtn id="suppliers" icon={SlidersHorizontal} label="Proveedores" />
-                    <TabBtn id="categories" icon={SlidersHorizontal} label="Categorías" />
+
+                    {canViewAdvancedInventoryTabs && (
+                        <>
+                            <TabBtn id="movements" icon={History} label="Movimientos" />
+                            <TabBtn id="consumption" icon={BarChart3} label="Consumo" />
+                            <TabBtn id="merma" icon={Trash2} label="Merma" />
+                            <TabBtn id="suppliers" icon={SlidersHorizontal} label="Proveedores" />
+                            <TabBtn id="categories" icon={SlidersHorizontal} label="Categorías" />
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -764,13 +955,15 @@ export default function Inventory({ plan }) {
                                 {stockFilters.includeArchived ? "Mostrando archivados" : "Ocultando archivados"}
                             </button>
 
-                            <button
-                                onClick={openNewItem}
-                                className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center gap-2"
-                            >
-                                <Plus className="w-4 h-4" />
-                                Nuevo artículo
-                            </button>
+                            {canManageInventoryItems && (
+                                <button
+                                    onClick={openNewItem}
+                                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center gap-2"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Nuevo artículo
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -833,59 +1026,80 @@ export default function Inventory({ plan }) {
                                             <td className="py-4 pr-0">
                                                 <div className="flex flex-col items-end gap-2">
                                                     <div className="flex flex-wrap gap-2 justify-end">
-                                                        <button
-                                                            onClick={() => openMovement("purchase", it, false)}
-                                                            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                        >
-                                                            <ArrowDownCircle className="w-4 h-4" />
-                                                            Entrada
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => openMovement("purchase", it, true)}
-                                                            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                        >
-                                                            Proceso merma
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => openMovement("adjust", it, false)}
-                                                            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                        >
-                                                            <SlidersHorizontal className="w-4 h-4" />
-                                                            Ajuste
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => openMovement("waste", it, false)}
-                                                            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                        >
-                                                            <ArrowUpCircle className="w-4 h-4" />
-                                                            Merma
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => openEditItem(it)}
-                                                            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                        >
-                                                            Editar
-                                                        </button>
-
-                                                        {it.isArchived ? (
+                                                        {canInventoryEntry && (
                                                             <button
-                                                                onClick={() => unarchiveItemMutation.mutate(it._id)}
-                                                                className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center gap-2"
+                                                                onClick={() => openMovement("purchase", it, false)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                             >
-                                                                Desarchivar
+                                                                <ArrowDownCircle className="w-4 h-4" />
+                                                                Entrada
                                                             </button>
-                                                        ) : (
+                                                        )}
+                                                        {canInventoryExit && (
                                                             <button
-                                                                onClick={() => archiveItemMutation.mutate(it._id)}
-                                                                className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center gap-2"
+                                                                onClick={() => openMovement("sale", it, false)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                             >
-                                                                <Trash2 className="w-4 h-4" />
-                                                                Archivar
+                                                                <ArrowUpCircle className="w-4 h-4" />
+                                                                Salida
                                                             </button>
+                                                        )}
+
+                                                        {canUseYieldProcess && (
+                                                            <button
+                                                                onClick={() => openMovement("purchase", it, true)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
+                                                            >
+                                                                Proceso merma
+                                                            </button>
+                                                        )}
+
+                                                        {canInventoryAdjust && (
+                                                            <button
+                                                                onClick={() => openMovement("adjust", it, false)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                            >
+                                                                <SlidersHorizontal className="w-4 h-4" />
+                                                                Ajuste
+                                                            </button>
+                                                        )}
+
+                                                        {canInventoryWaste && (
+                                                            <button
+                                                                onClick={() => openMovement("waste", it, false)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                            >
+                                                                <ArrowUpCircle className="w-4 h-4" />
+                                                                Merma
+                                                            </button>
+                                                        )}
+
+                                                        {canManageInventoryItems && (
+                                                            <button
+                                                                onClick={() => openEditItem(it)}
+                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
+                                                            >
+                                                                Editar
+                                                            </button>
+                                                        )}
+
+                                                        {canManageInventoryItems && (
+                                                            it.isArchived ? (
+                                                                <button
+                                                                    onClick={() => unarchiveItemMutation.mutate(it._id)}
+                                                                    className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center gap-2"
+                                                                >
+                                                                    Desarchivar
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => archiveItemMutation.mutate(it._id)}
+                                                                    className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center gap-2"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                    Archivar
+                                                                </button>
+                                                            )
                                                         )}
                                                     </div>
                                                 </div>
@@ -925,50 +1139,69 @@ export default function Inventory({ plan }) {
                                         </div>
 
                                         <div className="mt-3 flex flex-wrap gap-2">
-                                            <button
-                                                onClick={() => openMovement("purchase", it, false)}
-                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                            >
-                                                Entrada
-                                            </button>
-                                            <button
-                                                onClick={() => openMovement("purchase", it, true)}
-                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                            >
-                                                Proceso merma
-                                            </button>
-                                            <button
-                                                onClick={() => openMovement("adjust", it, false)}
-                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                            >
-                                                Ajuste
-                                            </button>
-                                            <button
-                                                onClick={() => openMovement("waste", it, false)}
-                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                            >
-                                                Merma
-                                            </button>
-                                            <button
-                                                onClick={() => openEditItem(it)}
-                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                            >
-                                                Editar
-                                            </button>
-                                            {it.isArchived ? (
+                                            {canUseYieldProcess && (
                                                 <button
-                                                    onClick={() => unarchiveItemMutation.mutate(it._id)}
-                                                    className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200"
+                                                    onClick={() => openMovement("purchase", it, true)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
                                                 >
-                                                    Desarchivar
+                                                    Proceso merma
                                                 </button>
-                                            ) : (
+                                            )}
+
+                                            {isOwnerOrAdmin && (
                                                 <button
-                                                    onClick={() => archiveItemMutation.mutate(it._id)}
-                                                    className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+                                                    onClick={() => openMovement("purchase", it, true)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
                                                 >
-                                                    Archivar
+                                                    Proceso merma
                                                 </button>
+                                            )}
+
+                                            {canInventoryAdjust && (
+                                                <button
+                                                    onClick={() => openMovement("adjust", it, false)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                >
+                                                    <SlidersHorizontal className="w-4 h-4" />
+                                                    Ajuste
+                                                </button>
+                                            )}
+
+                                            {canInventoryWaste && (
+                                                <button
+                                                    onClick={() => openMovement("waste", it, false)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                >
+                                                    <ArrowUpCircle className="w-4 h-4" />
+                                                    Merma
+                                                </button>
+                                            )}
+
+                                            {canManageInventoryItems && (
+                                                <button
+                                                    onClick={() => openEditItem(it)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
+                                                >
+                                                    Editar
+                                                </button>
+                                            )}
+
+                                            {canManageInventoryItems && (
+                                                it.isArchived ? (
+                                                    <button
+                                                        onClick={() => unarchiveItemMutation.mutate(it._id)}
+                                                        className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200"
+                                                    >
+                                                        Desarchivar
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => archiveItemMutation.mutate(it._id)}
+                                                        className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+                                                    >
+                                                        Archivar
+                                                    </button>
+                                                )
                                             )}
                                         </div>
                                     </div>
@@ -1074,19 +1307,20 @@ export default function Inventory({ plan }) {
                                 <th className="py-3 pr-4">Antes</th>
                                 <th className="py-3 pr-4">Después</th>
                                 <th className="py-3 pr-4">Costo</th>
+                                <th className="py-3 pr-4 min-w-[140px]">Usuario</th>
                                 <th className="py-3 pr-4">Nota</th>
                             </tr>
                             </thead>
                             <tbody>
                             {mvLoading ? (
                                 <tr>
-                                    <td colSpan={8} className="py-6 text-white/60">
+                                    <td colSpan={9} className="py-6 text-white/60">
                                         Cargando...
                                     </td>
                                 </tr>
                             ) : movements.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="py-6 text-white/60">
+                                    <td colSpan={9} className="py-6 text-white/60">
                                         No hay movimientos.
                                     </td>
                                 </tr>
@@ -1101,7 +1335,19 @@ export default function Inventory({ plan }) {
                                         <td className="py-3 pr-4 text-white/80">{num(m.qty)}</td>
                                         <td className="py-3 pr-4 text-white/80">{num(m.beforeStock)}</td>
                                         <td className="py-3 pr-4 text-white/80">{num(m.afterStock)}</td>
-                                        <td className="py-3 pr-4 text-white/80">{moneyRD(num(m.costAmount) || 0)}</td>
+                                        <td className="py-3 pr-4 text-white/80">
+                                            {moneyRD(num(m.costAmount) || 0)}
+                                        </td>
+
+                                        <td className="py-3 pr-4 text-white/80">
+                                            {m?.createdBy?.name || m?.createdByName || "Sistema"}
+                                            {m?.createdBy?.role && (
+                                                <div className="text-xs text-white/40">
+                                                    {m.createdBy.role}
+                                                </div>
+                                            )}
+                                        </td>
+
                                         <td className="py-3 pr-4 text-white/60">{m.note || "—"}</td>
                                     </tr>
                                 ))
@@ -1181,6 +1427,35 @@ export default function Inventory({ plan }) {
                             )}
                             </tbody>
                         </table>
+                        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-white/10 pt-4">
+                            <div className="text-sm text-white/60">
+                                Mostrando página{" "}
+                                <span className="text-white font-semibold">{consPagination.page}</span>{" "}
+                                de{" "}
+                                <span className="text-white font-semibold">{consPagination.totalPages}</span>
+                                {" "}·{" "}
+                                <span className="text-white font-semibold">{consPagination.total}</span>{" "}
+                                registros
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    disabled={!consPagination.hasPrev || consLoading}
+                                    onClick={() => setConsPage((p) => Math.max(p - 1, 1))}
+                                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    Anterior
+                                </button>
+
+                                <button
+                                    disabled={!consPagination.hasNext || consLoading}
+                                    onClick={() => setConsPage((p) => p + 1)}
+                                    className="px-4 py-2 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    Siguiente
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1544,6 +1819,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
 
     const [createMode, setCreateMode] = useState("new"); // new | fromDish
     const [selectedDishId, setSelectedDishId] = useState("");
+    const [selectedDishInventoryType, setSelectedDishInventoryType] = useState("direct");
 
     const selectedDish = useMemo(() => {
         return (dishTemplates || []).find((d) => String(d._id) === String(selectedDishId)) || null;
@@ -1564,6 +1840,8 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
     const [form, setForm] = useState({
         name: "",
         unit: "unidad",
+        inventoryType: "ingredient",
+        allowNegativeStock: true,
         stockMin: 0,
         lastCost: "",
         avgCost: "",
@@ -1596,13 +1874,16 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
         if (!open) return;
         setCreateMode("new");
         setSelectedDishId("");
+        setSelectedDishInventoryType("direct");
         setForm({
             name: item?.name || "",
             unit: item?.unit || "unidad",
+            inventoryType: normalizeInventoryType(item?.inventoryType || "ingredient"),
+            allowNegativeStock: item?.allowNegativeStock !== false,
             stockMin: item?.stockMin ?? 0,
             lastCost: item?.lastCost ?? "",
             avgCost: item?.avgCost ?? "",
-            inventoryCategoryId: item?.inventoryCategoryId || "",
+            inventoryCategoryId: item?.inventoryCategoryId?._id || item?.inventoryCategoryId || "",
             supplierId: item?.supplierId?._id || item?.supplierId || "",
         });
     }, [open, item]);
@@ -1619,8 +1900,13 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
         if (Array.isArray(raw)) {
             const mapped = raw
                 .map((r) => {
-                    const ingredientId = r?.ingredientId || r?.dishId || r?._id || null;
-                    const qty = r?.qty ?? r?.quantity ?? null;
+                    const ingredientId =
+                        r?.ingredientDishId ||
+                        r?.ingredientId ||
+                        r?.dishId ||
+                        r?.inventoryItemId ||
+                        r?._id ||
+                        null;                    const qty = r?.qty ?? r?.quantity ?? null;
                     if (!ingredientId || qty == null) return null;
                     const q = normalizeQty(qty);
                     if (!q) return null;
@@ -1650,14 +1936,40 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
             return;
         }
 
+        const normalizedType = isEdit
+            ? normalizeInventoryType(form.inventoryType)
+            : createMode === "fromDish"
+                ? selectedDishInventoryType
+                : "ingredient";
+
         const payload = {
             name,
             unit: form.unit,
-            stockMin: Number(form.stockMin || 0),
-            lastCost: form.lastCost === "" ? null : Number(form.lastCost),
-            avgCost: form.avgCost === "" ? null : Number(form.avgCost),
-            inventoryCategoryId: form.inventoryCategoryId || null,
-            supplierId: form.supplierId || null,
+            inventoryType: normalizedType,
+            allowNegativeStock:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? form.allowNegativeStock !== false
+                    : false,
+            stockMin:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? Number(form.stockMin || 0)
+                    : null,
+            lastCost:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? form.lastCost === "" ? null : Number(form.lastCost)
+                    : null,
+            avgCost:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? form.avgCost === "" ? null : Number(form.avgCost)
+                    : null,
+            inventoryCategoryId:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? form.inventoryCategoryId || null
+                    : null,
+            supplierId:
+                normalizedType === "direct" || normalizedType === "ingredient"
+                    ? form.supplierId || null
+                    : null,
         };
 
         // Si es "basado en plato existente", NO creamos otro Dish.
@@ -1665,6 +1977,19 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
         if (!isEdit && createMode === "fromDish") {
             if (!selectedDishId) {
                 enqueueSnackbar("Selecciona un plato primero.", { variant: "warning" });
+                return;
+            }
+            if (!["direct", "recipe"].includes(selectedDishInventoryType)) {
+                enqueueSnackbar("Selecciona si el plato será stock directo o plato con receta.", {
+                    variant: "warning",
+                });
+                return;
+            }
+
+            if (selectedDishInventoryType === "recipe" && recipeLines.length === 0) {
+                enqueueSnackbar("Agrega al menos un ingrediente para crear un plato con receta.", {
+                    variant: "warning",
+                });
                 return;
             }
 
@@ -1688,7 +2013,9 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                             if (!id || !qty || qty <= 0) return null;
 
                             return {
-                                dishId: String(id),     // ✅ backend espera dishId (y lo mapea a ingredientDishId)
+                                ingredientDishId: String(id),
+                                dishId: String(id),
+                                inventoryItemId: String(id),
                                 qty,
                                 unit: r?.unit || "unidad",
                             };
@@ -1713,6 +2040,8 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
             }
 
             // 2) Guardar habilitación inventario del plato (tu flujo actual)
+            payload.inventoryType = selectedDishInventoryType;
+            payload.allowNegativeStock = selectedDishInventoryType === "direct";
             payload.existingDishId = selectedDishId;
         }
 
@@ -1724,27 +2053,50 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
     return (
         <Modal open={open} title={isEdit ? "Editar artículo" : "Nuevo artículo"} onClose={onClose}>
             {!isEdit && (
-                <div className="mb-4 flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setCreateMode("new")}
-                        className={`px-3 py-2 rounded-xl border text-sm ${
-                            createMode === "new"
-                                ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
-                                : "bg-white/5 border-white/10 text-white/80"
-                        }`}
-                    >
-                        Crear artículo nuevo
-                    </button>
-                    <button
-                        onClick={() => setCreateMode("fromDish")}
-                        className={`px-3 py-2 rounded-xl border text-sm ${
-                            createMode === "fromDish"
-                                ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
-                                : "bg-white/5 border-white/10 text-white/80"
-                        }`}
-                    >
-                        Basado en plato existente
-                    </button>
+                <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <div className="text-white font-semibold mb-3">
+                        ¿Qué estás creando?
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setCreateMode("new");
+                                setSelectedDishInventoryType("direct");
+                                setForm((s) => ({
+                                    ...s,
+                                    inventoryType: "ingredient",
+                                    allowNegativeStock: true,
+                                }));
+                            }}
+                            className={`text-left rounded-2xl border p-4 transition-all ${
+                                createMode === "new"
+                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
+                            }`}
+                        >
+                            <div className="font-bold">Ingrediente / insumo</div>
+                            <div className="text-xs text-white/50 mt-1">
+                                Para recetas, compras, entradas y salidas de inventario.
+                            </div>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setCreateMode("fromDish")}
+                            className={`text-left rounded-2xl border p-4 transition-all ${
+                                createMode === "fromDish"
+                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
+                            }`}
+                        >
+                            <div className="font-bold">Basado en plato existente</div>
+                            <div className="text-xs text-white/50 mt-1">
+                                Convierte un plato del menú en stock directo o plato con receta.
+                            </div>
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -1759,6 +2111,54 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                             </option>
                         ))}
                     </select>
+                    {selectedDish && (
+                        <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+                            <div className="text-sm font-semibold text-yellow-200">
+                                Plato seleccionado: {selectedDish.name}
+                            </div>
+                            <div className="text-xs text-gray-300 mt-1">
+                                Categoría: {selectedDish.category || "Sin categoría"} · Precio: RD${Number(selectedDish.price || 0).toFixed(2)}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-4">
+                        <div className="text-white/70 text-xs mb-2">
+                            Tipo de inventario para este plato
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedDishInventoryType("direct")}
+                                className={`text-left rounded-2xl border p-4 transition-all ${
+                                    selectedDishInventoryType === "direct"
+                                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                                        : "bg-white/5 border-white/10 text-white/80"
+                                }`}
+                            >
+                                <div className="font-bold">Producto con stock directo</div>
+                                <div className="text-xs text-white/50 mt-1">
+                                    Se vende y descuenta su propio stock. Puede quedar negativo.
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setSelectedDishInventoryType("recipe")}
+                                className={`text-left rounded-2xl border p-4 transition-all ${
+                                    selectedDishInventoryType === "recipe"
+                                        ? "bg-blue-500/15 border-blue-500/30 text-blue-200"
+                                        : "bg-white/5 border-white/10 text-white/80"
+                                }`}
+                            >
+                                <div className="font-bold">Plato con receta</div>
+                                <div className="text-xs text-white/50 mt-1">
+                                    No tiene stock directo. Descuenta ingredientes.
+                                </div>
+                            </button>
+                        </div>
+                    </div>
 
                     <div className="text-white/40 text-[11px] mt-1">
                         Esto habilita el MISMO plato para inventario (sin duplicar).
@@ -1768,7 +2168,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
 
                     {/* ----------------------------- */}
                     {/* Receta (Opcional) */}
-                    {selectedDishId && (
+                    {selectedDishId && selectedDishInventoryType === "recipe" && (
                         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
                             <div className="flex items-center justify-between gap-2">
                                 <div className="text-white/80 text-sm font-semibold">Receta (opcional)</div>
@@ -1789,7 +2189,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                                         <option value="">— Selecciona ingrediente —</option>
                                         {availableIngredients.map((ing) => (
                                             <option key={ing._id} value={ing._id}>
-                                                {ing.name}
+                                                {ing.name} · {ing.unit || "unidad"} · Stock: {ing.stockCurrent ?? 0}
                                             </option>
                                         ))}
                                     </select>
@@ -1894,6 +2294,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
 
                                                 const created = res?.data?.data || res?.data;
                                                 enqueueSnackbar("Ingrediente creado.", { variant: "success" });
+
 
                                                 // refrescar ingredientes disponibles (viene de dishTemplates)
                                                 // Nota: esta queryKey existe arriba en Inventory.jsx
@@ -2099,11 +2500,12 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
         type === "purchase"
             ? useYield
                 ? "Proceso de merma (yield)"
-                : "Entrada (purchase)"
-            : type === "waste"
-                ? "Merma (waste)"
-                : "Ajuste (adjust)";
-
+                : "Entrada de inventario"
+            : type === "sale"
+                ? "Salida de inventario"
+                : type === "waste"
+                    ? "Merma"
+                    : "Ajuste de inventario";
     const canYield = type === "purchase";
 
     const parseN = (v) => {

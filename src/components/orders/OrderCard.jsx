@@ -229,6 +229,11 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
     const currentUser = userState?.userData || userState?.user || userState;
     const normalizedRole = String(currentUser?.role || "").trim().toLowerCase();
     const isAdminUser = normalizedRole === "admin";
+    const canCancelOrder =
+        isAdminUser ||
+        normalizedRole === "owner" ||
+        Boolean(currentUser?.permissions?.orders?.cancel);
+
     const currentUserName =
         currentUser?.name ||
         currentUser?.fullName ||
@@ -605,6 +610,13 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
 
     const handleCancel = () => {
         if (currentStatus === "Cancelado") return;
+
+        if (!canCancelOrder) {
+            enqueueSnackbar("No tienes permiso para cancelar órdenes.", {
+                variant: "warning",
+            });
+            return;
+        }
 
         setCancelOrderNote(String(localOrder?.orderNote || ""));
         setShowOrderDetails(false);
@@ -1355,11 +1367,11 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                         <motion.button
                                             type="button"
                                             onClick={handleCancel}
-                                            disabled={currentStatus === "Cancelado"}
-                                            whileHover={currentStatus !== "Cancelado" ? { scale: 1.02 } : {}}
-                                            whileTap={currentStatus !== "Cancelado" ? { scale: 0.98 } : {}}
+                                            disabled={currentStatus === "Cancelado" || !canCancelOrder}
+                                            whileHover={currentStatus !== "Cancelado" && canCancelOrder ? { scale: 1.02 } : {}}
+                                            whileTap={currentStatus !== "Cancelado" && canCancelOrder ? { scale: 0.98 } : {}}
                                             className={`w-full flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 ${
-                                                currentStatus === "Cancelado"
+                                                currentStatus === "Cancelado" || !canCancelOrder
                                                     ? "bg-red-900/40 text-red-400 cursor-not-allowed opacity-50"
                                                     : "bg-gradient-to-r from-red-500 to-red-600 text-white hover:shadow-lg hover:shadow-red-500/30"
                                             }`}

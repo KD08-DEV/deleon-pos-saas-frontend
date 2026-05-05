@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
+import { clearDraftContext } from "../../redux/slices/customerSlice";
 import { updateOrder, addOrder } from "../../https";
 import Invoice from "../invoice/Invoice";
 import Ticket from "../ticket/Ticket";
@@ -196,6 +197,46 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const dispatch = useDispatch();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
+    useEffect(() => {
+        if (!orderId || !order?._id) return;
+
+        const status = String(order?.orderStatus || "").trim();
+        const paymentStatus = String(order?.paymentStatus || "").trim();
+
+        const hasInvoiceNumber =
+            order?.facturaNo ||
+            order?.invoiceNumber ||
+            order?.fiscal?.internalNumber ||
+            order?.fiscal?.internalSeq;
+
+        const isClosedOrder =
+            status === "Completado" ||
+            status === "Cancelado" ||
+            paymentStatus === "Pagado" ||
+            Boolean(hasInvoiceNumber);
+
+        if (!isClosedOrder) return;
+
+        dispatch(removeAllItems());
+        dispatch(clearDraftContext());
+
+        enqueueSnackbar("La orden anterior ya estaba cerrada. Se limpió el carrito para iniciar una nueva venta.", {
+            variant: "info",
+        });
+
+        navigate("/menu", { replace: true });
+    }, [
+        orderId,
+        order?._id,
+        order?.orderStatus,
+        order?.paymentStatus,
+        order?.facturaNo,
+        order?.invoiceNumber,
+        order?.fiscal?.internalNumber,
+        order?.fiscal?.internalSeq,
+        dispatch,
+        navigate,
+    ]);
     const draft = useSelector((state) => state.customer);
     const draftTable = draft?.table || null;
     const draftOrderSource = draft?.orderSource || "DINE_IN";
@@ -802,8 +843,16 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 console.log("[BILL] No pude refrescar el order por GET:", e?.message);
             }
 
-            if (!orderId && createdId) {
+            const currentPrintTarget = printTargetRef.current;
+
+            // Solo dejamos /menu?orderId=... cuando NO es factura final.
+            // Para factura final, no queremos que el POS se quede pegado a esa orden cerrada.
+            if (!orderId && createdId && currentPrintTarget !== "invoice") {
                 navigate(`/menu?orderId=${createdId}`, { replace: true });
+            }
+
+            if (!orderId && createdId && currentPrintTarget === "invoice") {
+                navigate("/menu", { replace: true });
             }
 
             const fallback = buildOrderPayload();
@@ -908,7 +957,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 server?.fiscal?.internal ||
                 null;
 
-            const currentPrintTarget = printTargetRef.current;
 
 
 
@@ -1056,7 +1104,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }            enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
             setShowInvoice(true);
+
+            // Limpieza inmediata del estado local para evitar que una factura cerrada
+            // se quede como carrito activo al día siguiente.
             dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
+            queryClient.invalidateQueries({ queryKey: ["cash-session"] });
         },
     });
     const paymentMethodMutation = useMutation({
@@ -1137,7 +1193,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const handleInvoiceClose = () => {
         setShowInvoice(false);
         setIsOrderModalOpen(false);
-        navigate("/orders");
+
+        dispatch(removeAllItems());
+        dispatch(clearDraftContext());
+
+        queryClient.invalidateQueries({ queryKey: ["orders"] });
+        queryClient.invalidateQueries({ queryKey: ["tables"] });
+        queryClient.invalidateQueries({ queryKey: ["cash-session"] });
+
+        navigate("/orders", { replace: true });
     };
 
     return (

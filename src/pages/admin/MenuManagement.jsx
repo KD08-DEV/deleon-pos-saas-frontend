@@ -36,15 +36,59 @@ const extractDishList = (response) => {
     return Array.isArray(raw) ? raw : [];
 };
 
-const MenuManagement = () => {
-    const userData = useSelector((state) => state.user.userData);
-    const tenantId = userData?.tenantId || localStorage.getItem("tenantId") || "";
+const MENU_PRODUCT_TYPES = [
+    {
+        value: "none",
+        title: "Plato normal",
+        desc: "Se vende en el menú, pero no descuenta inventario.",
+    },
+    {
+        value: "direct",
+        title: "Producto con stock directo",
+        desc: "Se vende y descuenta su propio stock. Puede quedar negativo.",
+    },
+    {
+        value: "recipe",
+        title: "Plato con receta",
+        desc: "Se vende en el menú y descuenta ingredientes configurados.",
+    },
+];
+
+const normalizeInventoryType = (value) => {
+    const v = String(value || "none").trim();
+    return ["none", "direct", "ingredient", "recipe"].includes(v) ? v : "none";
+};
+
+const MenuManagement = ({ currentUser }) => {
+    const reduxUserData = useSelector((state) => state.user.userData);
+
+    const effectiveUser = currentUser || reduxUserData || {};
+
+    const tenantId =
+        effectiveUser?.tenantId ||
+        reduxUserData?.tenantId ||
+        localStorage.getItem("tenantId") ||
+        "";
+
+    const role = effectiveUser?.role;
+    const userPermissions = effectiveUser?.permissions || {};
+
+    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+
+    const canCreateProduct =
+        isOwnerOrAdmin || userPermissions?.products?.create === true;
+
+    const canEditProduct =
+        isOwnerOrAdmin || userPermissions?.products?.update === true;
+
+    const canDeleteProduct =
+        isOwnerOrAdmin || userPermissions?.products?.delete === true;
 
     useEffect(() => {
-        if (userData?.tenantId) {
-            localStorage.setItem("tenantId", userData.tenantId);
+        if (tenantId) {
+            localStorage.setItem("tenantId", tenantId);
         }
-    }, [userData?.tenantId]);
+    }, [tenantId]);
 
     const queryClient = useQueryClient();
 
@@ -75,6 +119,8 @@ const MenuManagement = () => {
         lastCost: "",
         pricePerLb: "",
         imageFile: null,
+        inventoryType: "none",
+        allowNegativeStock: true,
     });
     const [showInvCatModal, setShowInvCatModal] = useState(false);
     const [invCatForm, setInvCatForm] = useState({
@@ -127,18 +173,7 @@ const MenuManagement = () => {
         1;
     const [invCats, setInvCats] = useState([]);
     const getDishCategoryLabel = (dish) => {
-        // si viene poblado (objeto)
-        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
-
-        // si viene como string ObjectId
-        const id = dish?.inventoryCategoryId;
-        if (id) {
-            const found = invCats.find((c) => String(c._id) === String(id));
-            if (found?.name) return found.name;
-        }
-
-        // fallback
-        return dish?.category || "Sin categoría";
+        return String(dish?.category || "").trim() || "Sin categoría";
     };
 
     // Obtener categorías únicas
@@ -172,6 +207,8 @@ const MenuManagement = () => {
         setDishForm({
             name: "",
             category: "",
+            inventoryType: "none",
+            allowNegativeStock: true,
             inventoryCategoryId: "",
             productionArea: "kitchen",
             isInventoryItem: false,
@@ -184,32 +221,52 @@ const MenuManagement = () => {
             lastCost: "",
             imageFile: null,
         });
+
         setEditingDish(null);
     };
 
     const openAddModal = () => {
+        if (!canCreateProduct) {
+            enqueueSnackbar("No tienes permiso para crear productos.", { variant: "warning" });
+            return;
+        }
+
         resetForm();
         setShowDishModal(true);
     };
 
     const openEditModal = (dish) => {
-        const invId = dish?.inventoryCategoryId?._id || dish?.inventoryCategoryId || "";
-        const invObj = invCats.find((c) => String(c._id) === String(invId));
-        const invName = invObj?.name ? String(invObj.name).trim() : "";
+        if (!canEditProduct) {
+            enqueueSnackbar("No tienes permiso para editar productos.", { variant: "warning" });
+            return;
+        }
+        const categoryName = String(dish?.category || "").trim();
 
+        const invIdFromDish =
+            dish?.inventoryCategoryId?._id ||
+            dish?.inventoryCategoryId ||
+            "";
+
+        const invByName = invCats.find(
+            (cat) =>
+                String(cat?.name || "").trim().toLowerCase() ===
+                categoryName.toLowerCase()
+        );
+
+        const invId = invIdFromDish || invByName?._id || "";
         setEditingDish(dish);
         setDishForm({
             name: dish.name || "",
-            // ✅ category siempre será la del inventario si existe
-            category: invName || dish.category || "",
+            category: categoryName,
+            inventoryType: normalizeInventoryType(dish.inventoryType),
+            allowNegativeStock: dish.allowNegativeStock !== false,
             productionArea: dish.productionArea || "kitchen",
-
             allowCustomPrice: Boolean(dish.allowCustomPrice),
             inventoryCategoryId: invId,
             price: dish.price?.toString() || "",
             sellMode: dish.sellMode || "unit",
             weightUnit: dish.weightUnit || "lb",
-            isInventoryItem: Boolean(dish.isInventoryItem),
+            isInventoryItem: false,
             pricePerLb: dish.pricePerLb?.toString() || "",
             avgCost: dish.avgCost != null ? String(dish.avgCost) : "",
             lastCost: dish.lastCost != null ? String(dish.lastCost) : "",
@@ -231,7 +288,11 @@ const MenuManagement = () => {
             await reloadInvCats();
 
             // Si el backend devuelve la categoría creada, la seleccionamos automáticamente
-            const created = res?.data?.data;
+            const created =
+                res?.data?.data ||
+                res?.data?.category ||
+                res?.data?.item ||
+                res?.data;
             if (created?._id) {
                 setDishForm((f) => ({
                     ...f,
@@ -311,11 +372,46 @@ const MenuManagement = () => {
             enqueueSnackbar("TenantId no encontrado", { variant: "warning" });
             return;
         }
+        if (editingDish && !canEditProduct) {
+            enqueueSnackbar("No tienes permiso para editar productos.", { variant: "warning" });
+            return;
+        }
+
+        if (!editingDish && !canCreateProduct) {
+            enqueueSnackbar("No tienes permiso para crear productos.", { variant: "warning" });
+            return;
+        }
+        const normalizedInventoryType = normalizeInventoryType(dishForm.inventoryType);
+        const isDirectStockProduct = normalizedInventoryType === "direct";
+        const isRecipeProduct = normalizedInventoryType === "recipe";
+        const category = String(dishForm.category || "").trim();
+
+        if (!category) {
+            enqueueSnackbar("La categoría es requerida para todos los productos.", {
+                variant: "warning",
+            });
+            return;
+        }
+
+        if (!dishForm.inventoryCategoryId) {
+            enqueueSnackbar("Debes seleccionar una categoría.", {
+                variant: "warning",
+            });
+            return;
+        }
 
         const formData = new FormData();
 
         formData.append("name", String(dishForm.name || "").trim());
-        formData.append("category", String(dishForm.category || "").trim());
+        formData.append("category", category);
+
+        if (dishForm.inventoryCategoryId) {
+            formData.append("inventoryCategoryId", String(dishForm.inventoryCategoryId));
+        } else {
+            formData.append("inventoryCategoryId", "");
+        }
+
+
         formData.append("productionArea", String(dishForm.productionArea || "kitchen").trim());
         const sellMode = dishForm.sellMode || "unit";
         const weightUnit = dishForm.weightUnit || "lb";
@@ -325,12 +421,14 @@ const MenuManagement = () => {
         formData.append("allowCustomPrice", dishForm.allowCustomPrice ? "true" : "false");
 
         // ✅ Recomendado: explícito
-        formData.append("isInventoryItem", dishForm.isInventoryItem ? "true" : "false");
+        formData.append("inventoryType", normalizedInventoryType);
+        formData.append("allowNegativeStock", isDirectStockProduct ? "true" : "false");
 
+// En gestión de menú no creamos ingredientes.
+// direct y recipe siguen siendo productos vendibles del menú.
+        formData.append("isInventoryItem", "false");
         // ✅ NO mandar vacío
-        if (dishForm.inventoryCategoryId && String(dishForm.inventoryCategoryId).trim() !== "") {
-            formData.append("inventoryCategoryId", String(dishForm.inventoryCategoryId).trim());
-        }
+
 
         const basePrice =
             sellMode === "weight" ? Number(dishForm.pricePerLb || 0) : Number(dishForm.price || 0);
@@ -383,13 +481,15 @@ const MenuManagement = () => {
                     </h2>
                     <p className="text-sm text-gray-400 mt-1">Crea, edita y gestiona los platos del menú</p>
                 </div>
-                <button
-                    onClick={openAddModal}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
-                >
-                    <Plus className="w-4 h-4" />
-                    Agregar Plato
-                </button>
+                {canCreateProduct && (
+                    <button
+                        onClick={openAddModal}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Agregar Plato
+                    </button>
+                )}
             </div>
 
             {/* Filtros */}
@@ -443,22 +543,29 @@ const MenuManagement = () => {
                                     <ImageIcon className="w-12 h-12 text-gray-600" />
                                 </div>
                             )}
-                            <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                    onClick={() => openEditModal(dish)}
-                                    className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-[#f6b100] transition-colors"
-                                    title="Editar"
-                                >
-                                    <Edit className="w-4 h-4 text-white" />
-                                </button>
-                                <button
-                                    onClick={() => setConfirmDelete({ open: true, dish })}
-                                    className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-red-500 transition-colors"
-                                    title="Eliminar"
-                                >
-                                    <Trash2 className="w-4 h-4 text-white" />
-                                </button>
-                            </div>
+                            {(canEditProduct || canDeleteProduct) && (
+                                <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {canEditProduct && (
+                                        <button
+                                            onClick={() => openEditModal(dish)}
+                                            className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-[#f6b100] transition-colors"
+                                            title="Editar"
+                                        >
+                                            <Edit className="w-4 h-4 text-white" />
+                                        </button>
+                                    )}
+
+                                    {canDeleteProduct && (
+                                        <button
+                                            onClick={() => setConfirmDelete({ open: true, dish })}
+                                            className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-red-500 transition-colors"
+                                            title="Eliminar"
+                                        >
+                                            <Trash2 className="w-4 h-4 text-white" />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Información */}
@@ -550,47 +657,59 @@ const MenuManagement = () => {
                                     Esto define a qué impresora de producción se enviará el ticket.
                                 </p>
                             </div>
+                            {/* Categoría */}
+                            <div className="rounded-2xl border border-gray-800/60 bg-[#111111] p-4">
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                    <div>
+                                        <label className="text-sm font-semibold text-white flex items-center gap-2">
+                                            <Tag className="w-4 h-4 text-[#f6b100]" />
+                                            Categoría *
+                                        </label>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Selecciona una categoría existente o crea una nueva.
+                                        </p>
+                                    </div>
 
-                            {/* Categoría de inventario (para stock) */}
-                            <div>
-                                <label className="text-sm text-gray-400 mb-1 block flex items-center gap-2">
-                                    <Package className="w-4 h-4" />
-                                    Categoría de inventario (para stock)
-                                </label>
+                                    {dishForm.category && (
+                                        <span className="px-2.5 py-1 rounded-full text-xs border border-[#f6b100]/30 bg-[#f6b100]/10 text-[#f6b100]">
+                {dishForm.category}
+            </span>
+                                    )}
+                                </div>
 
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                     <select
                                         value={dishForm.inventoryCategoryId || ""}
                                         onChange={(e) => {
-                                            const val = e.target.value;
+                                            const selectedId = e.target.value;
 
-                                            // si selecciona "Sin categoría"
-                                            if (!val) {
+                                            if (!selectedId) {
                                                 setDishForm((f) => ({
                                                     ...f,
                                                     inventoryCategoryId: "",
-                                                    // si quieres limpiar también la category del plato, descomenta:
-                                                    // category: "",
+                                                    category: "",
                                                 }));
                                                 return;
                                             }
 
-                                            const invObj = invCats.find((c) => String(c._id) === String(val));
-                                            const invName = invObj?.name ? String(invObj.name).trim() : "";
+                                            const selectedCategory = invCats.find(
+                                                (cat) => String(cat._id) === String(selectedId)
+                                            );
 
                                             setDishForm((f) => ({
                                                 ...f,
-                                                inventoryCategoryId: val,
-                                                category: invName || f.category, // ✅ aquí se copia el nombre
-                                                isInventoryItem: false,          // ✅ importante: no convertirlo en inventario directo
+                                                inventoryCategoryId: selectedId,
+                                                category: String(selectedCategory?.name || "").trim(),
                                             }));
                                         }}
                                         className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        required
                                     >
-                                        <option value="">Sin categoría</option>
-                                        {invCats.map((c) => (
-                                            <option key={c._id} value={c._id}>
-                                                {c.name}
+                                        <option value="">Selecciona categoría</option>
+
+                                        {invCats.map((cat) => (
+                                            <option key={cat._id} value={cat._id}>
+                                                {cat.name}
                                             </option>
                                         ))}
                                     </select>
@@ -598,15 +717,94 @@ const MenuManagement = () => {
                                     <button
                                         type="button"
                                         onClick={() => setShowInvCatModal(true)}
-                                        className="px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                                        className="px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all whitespace-nowrap"
                                     >
                                         Crear
                                     </button>
                                 </div>
 
                                 <p className="text-xs text-gray-500 mt-2">
-                                    Esta es la categoría de inventario (reportes/control de stock).
+                                    Esta categoría se usará para organizar el menú y clasificar el producto dentro del inventario.
                                 </p>
+                            </div>
+
+                            {/* Tipo de producto */}
+                            <div className="rounded-2xl border border-gray-800/60 bg-[#111111] p-4">
+                                <div className="flex items-start justify-between gap-3 mb-4">
+                                    <div>
+                                        <label className="text-sm font-semibold text-white flex items-center gap-2">
+                                            <Package className="w-4 h-4 text-[#f6b100]" />
+                                            Tipo de producto
+                                        </label>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Define cómo este producto se comporta frente al inventario.
+                                        </p>
+                                    </div>
+
+                                    <span className="px-2.5 py-1 rounded-full text-xs border border-[#f6b100]/30 bg-[#f6b100]/10 text-[#f6b100]">
+            {MENU_PRODUCT_TYPES.find((t) => t.value === dishForm.inventoryType)?.title || "Plato normal"}
+        </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    {MENU_PRODUCT_TYPES.map((type) => {
+                                        const active = dishForm.inventoryType === type.value;
+
+                                        return (
+                                            <button
+                                                key={type.value}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDishForm((f) => ({
+                                                        ...f,
+                                                        inventoryType: type.value,
+                                                        allowNegativeStock: type.value === "direct",
+                                                        isInventoryItem: false,
+                                                        avgCost: type.value === "direct" ? f.avgCost : "",
+                                                        lastCost: type.value === "direct" ? f.lastCost : "",
+                                                    }));
+                                                }}
+                                                className={`text-left rounded-2xl border p-4 transition-all ${
+                                                    active
+                                                        ? "border-[#f6b100]/60 bg-[#f6b100]/10 text-white"
+                                                        : "border-white/10 bg-black/20 text-gray-300 hover:border-white/20"
+                                                }`}
+                                            >
+                                                <div className="text-sm font-bold">{type.title}</div>
+                                                <div className="text-xs text-gray-400 mt-1 leading-relaxed">
+                                                    {type.desc}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {dishForm.inventoryType === "direct" && (
+                                    <div className="mt-4 rounded-2xl border border-[#f6b100]/20 bg-[#f6b100]/5 p-4">
+                                        <div className="text-sm font-semibold text-[#f6b100]">
+                                            Producto con stock directo
+                                        </div>
+                                        <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                                            Este producto aparecerá en Control de Stock usando la misma categoría del menú:
+                                            <span className="text-white font-semibold">
+                                                {" "}
+                                                {dishForm.category || "Sin categoría"}
+                                            </span>
+                                            . Podrá recibir entradas, salidas y quedar en negativo si se vende sin existencia.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {dishForm.inventoryType === "recipe" && (
+                                    <div className="mt-4 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                                        <div className="text-sm font-semibold text-blue-200">
+                                            Plato con receta
+                                        </div>
+                                        <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                                            Este plato no manejará stock directo. Al venderlo, el sistema descontará los ingredientes configurados en su receta.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             {/* Precio Manual (estilo UberEats / botones tipo método de pago) */}
                             {!dishForm.isInventoryItem && (
@@ -840,6 +1038,11 @@ const MenuManagement = () => {
                                     type="button"
                                     onClick={() => {
                                         const id = confirmDelete.dish?._id;
+                                        if (!canDeleteProduct) {
+                                            enqueueSnackbar("No tienes permiso para eliminar productos.", { variant: "warning" });
+                                            return;
+                                        }
+
                                         if (id) deleteMutation.mutate(id);
                                         setConfirmDelete({ open: false, dish: null });
                                     }}

@@ -137,6 +137,11 @@ export default function FiscalConfig() {
         refetchOnReconnect: true,
     });
 
+    const currentPlan = String(data?.plan || "").trim().toLowerCase();
+
+    const canUseFiscal =
+        Boolean(data?.planFeatures?.fiscal) ||
+        ["premium", "pro"].includes(currentPlan);
     const initial = useMemo(() => {
         const b01 = data?.fiscal?.ncfConfig?.B01 || {};
         const b02 = data?.fiscal?.ncfConfig?.B02 || {};
@@ -153,7 +158,7 @@ export default function FiscalConfig() {
                 preInvoiceEnabled: !!data?.features?.preInvoice?.enabled,
                 chargeMode: String(data?.features?.checkout?.chargeMode || "AT_COMPLETE"),
             },
-            fiscalEnabled: !!data?.fiscal?.enabled,
+            fiscalEnabled: canUseFiscal ? !!data?.fiscal?.enabled : false,
             B01: {
                 active: data?.fiscal?.ncfConfig?.B01?.active !== false,
                 start: b01.start ?? 1,
@@ -169,7 +174,7 @@ export default function FiscalConfig() {
                 expiresAt: asDateInputValue(b02.expiresAt),
             },
         };
-    }, [data]);
+    }, [data, canUseFiscal]);
 
     const [form, setForm] = useState(null);
 
@@ -215,7 +220,7 @@ export default function FiscalConfig() {
         setMsg(null);
         try {
             const payload = {
-                fiscalEnabled: !!form.fiscalEnabled,
+                fiscalEnabled: canUseFiscal ? !!form.fiscalEnabled : false,
                 features: {
                     tax: { enabled: !!form.features.taxEnabled },
                     tip: { enabled: !!form.features.tipEnabled },
@@ -236,25 +241,29 @@ export default function FiscalConfig() {
                         delivery: {
                             enabled: !!form.features.deliveryEnabled,
                         },
+                    },
+                },
 
-                    },
-                },
-                ncfConfig: {
-                    B01: {
-                        active: !!form.B01.active,
-                        start: Number(form.B01.start),
-                        current: Number(form.B01.current),
-                        max: Number(form.B01.max),
-                        expiresAt: form.B01.expiresAt || null,
-                    },
-                    B02: {
-                        active: !!form.B02.active,
-                        start: Number(form.B02.start),
-                        current: Number(form.B02.current),
-                        max: Number(form.B02.max),
-                        expiresAt: form.B02.expiresAt || null,
-                    },
-                },
+                ...(canUseFiscal
+                    ? {
+                        ncfConfig: {
+                            B01: {
+                                active: !!form.B01.active,
+                                start: Number(form.B01.start),
+                                current: Number(form.B01.current),
+                                max: Number(form.B01.max),
+                                expiresAt: form.B01.expiresAt || null,
+                            },
+                            B02: {
+                                active: !!form.B02.active,
+                                start: Number(form.B02.start),
+                                current: Number(form.B02.current),
+                                max: Number(form.B02.max),
+                                expiresAt: form.B02.expiresAt || null,
+                            },
+                        },
+                    }
+                    : {}),
             };
 
             const res = await api.patch("/api/admin/fiscal-config", payload);
@@ -325,9 +334,17 @@ export default function FiscalConfig() {
                     <div className="space-y-1">
                         <ToggleRow
                             label="NCF (Comprobante Fiscal)"
-                            desc="Habilita la emisión y visualización de comprobantes fiscales electrónicos"
+                            desc={
+                                canUseFiscal
+                                    ? "Habilita la emisión y visualización de comprobantes fiscales"
+                                    : "Disponible solo en Plan Premium o Pro"
+                            }
                             checked={!!form.fiscalEnabled}
-                            onChange={(v) => setForm((f) => ({ ...f, fiscalEnabled: v }))}
+                            onChange={(v) => {
+                                if (!canUseFiscal) return;
+                                setForm((f) => ({ ...f, fiscalEnabled: v }));
+                            }}
+                            disabled={!canUseFiscal}
                             icon={Receipt}
                         />
                         <ToggleRow
@@ -730,6 +747,7 @@ export default function FiscalConfig() {
             </div>
 
             {/* Configuración NCF */}
+            {canUseFiscal ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 {/* B01 */}
                 <Section title="NCF Tipo B01" icon={Receipt} description="Comprobante de Crédito Fiscal">
@@ -953,6 +971,21 @@ export default function FiscalConfig() {
                     </div>
                 </Section>
             </div>
+            ) : (
+                <div className="mb-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                    <div className="flex items-start gap-3">
+                        <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <h3 className="text-sm font-semibold text-yellow-200">
+                                NCF disponible en Plan Premium o Pro
+                            </h3>
+                            <p className="text-xs text-gray-300 mt-1">
+                                Puedes seguir configurando ITBIS, propina, descuentos, PreFactura, Delivery, PedidosYa, Uber Eats, modo de cobro e impresión. Solo los comprobantes fiscales NCF están limitados por plan.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Botón guardar */}
             <div className="flex justify-end">
