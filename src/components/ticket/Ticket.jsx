@@ -89,15 +89,19 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
     const total = safeNum(order?.totalAmount ?? bills?.totalWithTax ?? bills?.total ?? 0);
 
     const operation =
+        order?.facturaNo ||
+        order?.invoiceNumber ||
+        order?.invoiceNo ||
+        order?.fiscal?.internalNumber ||
+        order?.fiscal?.internalSeq ||
+        order?.internalNumber ||
         order?.operationNumber ||
         order?.operationNo ||
         order?.operation ||
         order?.orderNumber ||
-        order?.internalNumber ||
-        order?.fiscal?.internalNumber ||
         (() => {
-            // fallback: 9 dígitos basado en timestamp
-            const n = Date.now() % 1000000000; // 0..999,999,999
+            // fallback solo si el backend todavía no devolvió número
+            const n = Date.now() % 1000000000;
             return String(n).padStart(9, "0");
         })();
 

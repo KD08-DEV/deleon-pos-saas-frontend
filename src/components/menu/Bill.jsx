@@ -7,7 +7,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
 import { clearDraftContext } from "../../redux/slices/customerSlice";
-import { updateOrder, addOrder } from "../../https";
+import { updateOrder, addOrder, updateTable } from "../../https";
 import Invoice from "../invoice/Invoice";
 import Ticket from "../ticket/Ticket";
 
@@ -193,6 +193,19 @@ const getActiveRegisterId = () => {
 };
 
 
+const getTableIdFromAny = (value) => {
+    if (!value) return null;
+
+    if (typeof value === "string") return value;
+
+    return (
+        value?._id ||
+        value?.id ||
+        value?.tableId ||
+        null
+    );
+};
+
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const dispatch = useDispatch();
     const queryClient = useQueryClient();
@@ -201,26 +214,21 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         if (!orderId || !order?._id) return;
 
         const status = String(order?.orderStatus || "").trim();
-        const paymentStatus = String(order?.paymentStatus || "").trim();
 
-        const hasInvoiceNumber =
-            order?.facturaNo ||
-            order?.invoiceNumber ||
-            order?.fiscal?.internalNumber ||
-            order?.fiscal?.internalSeq;
-
-        const isClosedOrder =
+        // IMPORTANTE:
+        // No considerar "Pagado" ni "invoiceNumber" como cerrado.
+        // En tu flujo, Facturar puede generar factura y pago,
+        // pero la mesa debe seguir ocupada hasta presionar "Desocupar mesa".
+        const isReallyClosedOrder =
             status === "Completado" ||
-            status === "Cancelado" ||
-            paymentStatus === "Pagado" ||
-            Boolean(hasInvoiceNumber);
+            status === "Cancelado";
 
-        if (!isClosedOrder) return;
+        if (!isReallyClosedOrder) return;
 
         dispatch(removeAllItems());
         dispatch(clearDraftContext());
 
-        enqueueSnackbar("La orden anterior ya estaba cerrada. Se limpió el carrito para iniciar una nueva venta.", {
+        enqueueSnackbar("La orden ya estaba cerrada. Se limpió el carrito para iniciar una nueva venta.", {
             variant: "info",
         });
 
@@ -229,17 +237,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         orderId,
         order?._id,
         order?.orderStatus,
-        order?.paymentStatus,
-        order?.facturaNo,
-        order?.invoiceNumber,
-        order?.fiscal?.internalNumber,
-        order?.fiscal?.internalSeq,
         dispatch,
         navigate,
     ]);
     const draft = useSelector((state) => state.customer);
     const draftTable = draft?.table || null;
     const draftOrderSource = draft?.orderSource || "DINE_IN";
+    const effectiveOrderSource = String(
+        order?.orderSource ||
+        draftOrderSource ||
+        draft?.virtualType ||
+        ""
+    ).toUpperCase();
+
+    const isQuickChannel =
+        effectiveOrderSource === "QUICK" ||
+        effectiveOrderSource === "CANAL_RAPIDO" ||
+        effectiveOrderSource === "RAPIDO";
 
     const cart = useSelector((state) => state.cart);
     const subtotalFromStore = useSelector(getTotalPrice);
@@ -629,7 +643,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     // Construye payload multi-tenant seguro (backend debe validar tenantId)
-    const buildOrderPayload = () => {
+    const buildOrderPayload = (target = submitActionRef.current || "invoice") => {
         // Items desde el carrito
         const raw = Array.isArray(cart) ? cart : cart?.items;
         const itemsArray = Array.isArray(raw) ? raw : [];
@@ -707,18 +721,47 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             cashChange: paymentMethod === "Efectivo" ? num(cashChange) : 0,
         };
 
+        const action = String(target || "").trim().toLowerCase();
+        const isInvoiceSubmit = action === "invoice";
+        const shouldGenerateInternalInvoiceNumber =
+            action === "ticket" || action === "invoice";
+
+        const resolvedTableId =
+            (typeof draftTable === "string" ? draftTable : null) ||
+            draftTable?._id ||
+            draftTable?.id ||
+            (typeof order?.table === "string" ? order.table : null) ||
+            order?.table?._id ||
+            order?.table?.id ||
+            null;
         const basePayload = {
             orderStatus: "En Progreso",
             items,
+
+            // IMPORTANTE: enviar siempre el ID de la mesa
+            table: resolvedTableId,
+
             paymentMethod: isAppDelivery
                 ? (orderSource === "PEDIDOSYA" ? "Pedido Ya" : "Uber Eats")
                 : paymentMethod,
+
             discount: { type: discountType, value: num(discountValue) || 0 },
             bills,
             orderNote: String(orderNote || "").trim(),
             registerId: getActiveRegisterId(),
-            paymentStatus: chargeMode === "AT_INVOICE" ? "Pagado" : "Pendiente",
-            markAsPaid: chargeMode === "AT_INVOICE",
+
+            // IMPORTANTE:
+            // Solo marcar como pagado cuando realmente se presiona FACTURAR.
+            // Ticket y Actualizar deben quedar Pendiente.
+            paymentStatus:
+                chargeMode === "AT_INVOICE" && isInvoiceSubmit
+                    ? "Pagado"
+                    : "Pendiente",
+
+// IMPORTANTE:
+// Ticket también debe generar número interno de factura,
+// pero NO debe cerrar la orden ni marcarla como pagada.
+            markAsPaid: shouldGenerateInternalInvoiceNumber,
         };
 
         // customerDetails (si hay data)
@@ -758,8 +801,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 requested: true,
                 ncfType: safeNcfType,
             };
-            if (chargeMode === "AT_INVOICE") {
+            if (chargeMode === "AT_INVOICE" && isInvoiceSubmit) {
                 basePayload.paymentStatus = "Pagado";
+                basePayload.markAsPaid = true;
             }
 
         }
@@ -804,7 +848,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             return addOrder({
                 ...payload,
                 registerId,
-                table: payload?.table ?? draftTable ?? null,
+                table:
+                    payload?.table ||
+                    (typeof draftTable === "string" ? draftTable : null) ||
+                    draftTable?._id ||
+                    draftTable?.id ||
+                    null,
                 orderSource: payload?.orderSource ?? draftOrderSource,
             });
         },
@@ -852,10 +901,30 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             }
 
             if (!orderId && createdId && currentPrintTarget === "invoice") {
-                navigate("/menu", { replace: true });
+                navigate(`/menu?orderId=${createdId}`, { replace: true });
             }
 
-            const fallback = buildOrderPayload();
+            const fallback = buildOrderPayload(submitActionRef.current);
+            const tableIdToSync =
+                getTableIdFromAny(server?.table) ||
+                getTableIdFromAny(fallback?.table) ||
+                getTableIdFromAny(draftTable) ||
+                getTableIdFromAny(order?.table);
+
+            const shouldOccupyTable =
+                tableIdToSync &&
+                effectiveId;
+
+            try {
+                if (shouldOccupyTable) {
+                    await updateTable(tableIdToSync, {
+                        status: "Ocupada",
+                        orderId: effectiveId,
+                    });
+                }
+            } catch (e) {
+                console.error("[BILL] No pude sincronizar la mesa:", e?.response?.data || e);
+            }
 
             try {
                 if (effectiveId) {
@@ -1062,8 +1131,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 itemsToPrintRef.current = [];
                 setItemsToPrint([]);
             }
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
+
+            if (effectiveId) {
+                queryClient.invalidateQueries({ queryKey: ["order", effectiveId] });
+            }
 
             if (currentPrintTarget === "update") {
+                dispatch(removeAllItems());
+                dispatch(clearDraftContext());
+
                 setIsOrderModalOpen(false);
                 navigate("/orders");
                 return;
@@ -1101,14 +1179,19 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     });
                 }
 
+                // La orden ya quedó guardada en la mesa.
+                // Limpiamos el carrito local para que no se copie a otra mesa.
+                dispatch(removeAllItems());
+                dispatch(clearDraftContext());
+
                 return;
-            }            enqueueSnackbar("Orden actualizada correctamente.", { variant: "success" });
+            }
+            enqueueSnackbar("Factura generada correctamente.", { variant: "success" });
             setShowInvoice(true);
 
-            // Limpieza inmediata del estado local para evitar que una factura cerrada
-            // se quede como carrito activo al día siguiente.
-            dispatch(removeAllItems());
-            dispatch(clearDraftContext());
+// NO limpiar carrito ni draft aquí.
+// Si limpias aquí, la mesa pierde el contexto inmediatamente.
+// La limpieza debe pasar solo cuando realmente se cierre/desocupe la mesa.
 
             queryClient.invalidateQueries({ queryKey: ["orders"] });
             queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -1155,7 +1238,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             }
         }
 
-        const payload = buildOrderPayload();
+        const payload = buildOrderPayload(target);
         payload.submitAction = target;
 
         if (!payload.items?.length) {
@@ -1180,9 +1263,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         setSubmitAction(target);
         setLastPayloadItems(payload.items || []);
 
-        const nextTarget = wantsFiscal && fiscalCapable ? "invoice" : target;
+        const normalizedTarget = String(target || "").toLowerCase();
 
-        submitActionRef.current = target;
+// Ticket siempre debe ser ticket.
+// Facturar siempre debe ser invoice.
+// Esto evita que Ticket se comporte como factura sin número.
+        const nextTarget = normalizedTarget === "invoice" ? "invoice" : normalizedTarget;
+
+        submitActionRef.current = normalizedTarget;
         printTargetRef.current = nextTarget;
 
         setPrintTarget(nextTarget);
@@ -1194,14 +1282,55 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         setShowInvoice(false);
         setIsOrderModalOpen(false);
 
-        dispatch(removeAllItems());
-        dispatch(clearDraftContext());
+        // No completar la orden aquí.
+        // No liberar la mesa aquí.
+        // No limpiar el carrito aquí.
+        // La mesa queda ocupada hasta presionar "Desocupar mesa".
 
         queryClient.invalidateQueries({ queryKey: ["orders"] });
         queryClient.invalidateQueries({ queryKey: ["tables"] });
         queryClient.invalidateQueries({ queryKey: ["cash-session"] });
 
-        navigate("/orders", { replace: true });
+        navigate("/mesas", { replace: true });
+    };
+    const handleFinishAndReleaseTable = async () => {
+        const invoiceOrderId =
+            orderInfo?._id ||
+            orderId ||
+            null;
+
+        const tableIdToRelease =
+            getTableIdFromAny(orderInfo?.table) ||
+            getTableIdFromAny(draftTable) ||
+            getTableIdFromAny(order?.table);
+
+        try {
+            if (invoiceOrderId) {
+                await updateOrder(invoiceOrderId, {
+                    orderStatus: "Completado",
+                    submitAction: "invoice",
+                });
+            }
+
+            if (tableIdToRelease) {
+                await updateTable(tableIdToRelease, {
+                    status: "Disponible",
+                    orderId: null,
+                });
+            }
+
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
+            queryClient.invalidateQueries({ queryKey: ["cash-session"] });
+
+            navigate("/orders", { replace: true });
+        } catch (e) {
+            console.error("[BILL] No pude cerrar/liberar mesa:", e?.response?.data || e);
+            enqueueSnackbar("No se pudo cerrar y liberar la mesa.", { variant: "error" });
+        }
     };
 
     return (
@@ -1634,18 +1763,20 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     Facturar
                 </button>
 
-                {/* 3) Actualizar (solo actualizar y enviar a /orders) */}
-                <button
-                    type="button"
-                    onClick={() => {
-                        setSubmitAction("update");
-                        handlePlaceOrder("update");
-                    }}
-                    disabled={orderMutation.isPending}
-                    className="px-4 py-3 w-full rounded-lg bg-[#1f1f1f] text-white font-semibold text-lg border border-gray-800/50 hover:bg-[#2b2b2b]"
-                >
-                    Actualizar
-                </button>
+                {/* 3) Actualizar: oculto en canal rápido */}
+                {!isQuickChannel && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSubmitAction("update");
+                            handlePlaceOrder("update");
+                        }}
+                        disabled={orderMutation.isPending}
+                        className="px-4 py-3 w-full rounded-lg bg-[#1f1f1f] text-white font-semibold text-lg border border-gray-800/50 hover:bg-[#2b2b2b]"
+                    >
+                        Actualizar
+                    </button>
+                )}
             </div>
             {showCashChangeBox && (
                 <div className="px-5 mt-4">

@@ -21,6 +21,8 @@ const Menu = () => {
     const dispatch = useDispatch();
     const draft = useSelector((state) => state.customer);
     const hasDraftContext = !!draft?.table || !!draft?.isVirtual || !!draft?.orderSource;
+    const draftKey = `${draft?.table || "no-table"}|${draft?.isVirtual ? "virtual" : "real"}|${draft?.orderSource || "DINE_IN"}`;
+    const lastDraftKeyRef = useRef(null);
 
     const { data: orderRes } = useQuery({
         queryKey: ["order", orderId],
@@ -34,6 +36,17 @@ const Menu = () => {
         document.title = "POS | Menu";
     }, []);
 
+    useEffect(() => {
+        // Si abrimos una mesa/canal nuevo SIN orderId, limpiamos el carrito viejo.
+        // Esto evita que Mesa 2 vea los platos que quedaron de Mesa 1.
+        if (orderId) return;
+        if (!hasDraftContext) return;
+
+        if (lastDraftKeyRef.current === draftKey) return;
+
+        dispatch(removeAllItems());
+        lastDraftKeyRef.current = draftKey;
+    }, [orderId, hasDraftContext, draftKey, dispatch]);
     useEffect(() => {
         if (!isOrderOpen) {
             // limpia draft y carrito al salir SIN importar si era draft o order real
@@ -81,14 +94,34 @@ const Menu = () => {
                 0
             );
 
+            const safeUnitPrice = Number(
+                it.unitPrice ??
+                it.pricePerQuantity ??
+                it.pricePerLb ??
+                it?.dish?.pricePerLb ??
+                it?.dish?.price ??
+                0
+            );
+
+            const lineTotal = Number(
+                it.price ??
+                safeUnitPrice * quantity
+            );
+
             return {
-                id: dishId,
-                dishId,
+                id: String(dishId),
+                dishId: String(dishId),
+                lineId: it.lineId || null,
                 name,
                 qtyType,
                 weightUnit,
                 quantity,
-                price: unitPrice,
+                unitPrice: safeUnitPrice,
+                price: Number(lineTotal.toFixed(2)),
+                productionArea: it.productionArea || "kitchen",
+                note: it.note || "",
+                addons: Array.isArray(it.addons) ? it.addons : [],
+                modifiers: Array.isArray(it.modifiers) ? it.modifiers : [],
             };
         });
 

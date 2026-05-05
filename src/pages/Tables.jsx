@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import { setDraftContext, clearDraftContext } from "../redux/slices/customerSlice";
+import { setDraftContext, clearDraftContext, removeCustomer } from "../redux/slices/customerSlice";
+import { removeAllItems } from "../redux/slices/cartSlice";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -195,6 +196,11 @@ export default function Tables() {
             queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
         }
 
+        // Mesa nueva sin orden activa: limpiar carrito anterior antes de abrir menú
+        dispatch(removeAllItems());
+        dispatch(removeCustomer());
+        dispatch(clearDraftContext());
+
         dispatch(
             setDraftContext({
                 table: tableId,
@@ -207,12 +213,73 @@ export default function Tables() {
         navigate("/menu");
     };
 
+    const getOrderIdFromTable = (table) => {
+        const currentOrder = table?.currentOrder;
+
+        return (
+            currentOrder?._id ||
+            currentOrder?.id ||
+            (typeof currentOrder === "string" ? currentOrder : null) ||
+            null
+        );
+    };
+
+    const handleReleaseTable = async (table) => {
+        const tableId = table?._id || table?.id || null;
+        const currentOrderId = getOrderIdFromTable(table);
+
+        if (!tableId) {
+            enqueueSnackbar("No se encontró el ID de la mesa.", { variant: "error" });
+            return;
+        }
+
+        try {
+            // 1) Si la mesa tiene una orden activa, primero la completamos/cerramos
+            if (currentOrderId) {
+                await updateOrder(currentOrderId, {
+                    orderStatus: "Completado",
+                    submitAction: "invoice",
+                });
+            }
+
+            // 2) Luego liberamos la mesa
+            await updateTable(tableId, {
+                status: "Disponible",
+                orderId: null,
+            });
+
+            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
+            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
+            queryClient.invalidateQueries({ queryKey: ["cash-session"] });
+
+            queryClient.refetchQueries({
+                queryKey: QK.TABLES,
+                exact: true,
+                type: "active",
+            });
+
+            enqueueSnackbar("Mesa desocupada correctamente.", { variant: "success" });
+            closeTableActionModal();
+        } catch (e) {
+            console.error("[TABLES] No pude desocupar la mesa:", e?.response?.data || e);
+
+            enqueueSnackbar(
+                e?.response?.data?.message || "No se pudo desocupar la mesa.",
+                { variant: "error" }
+            );
+        }
+    };
     const handlePickTable = (table) => {
         // 1) CANALES VIRTUALES
         if (table?.isVirtual) {
             const vtRaw = (table?.virtualType || "QUICK").toString().trim().toUpperCase();
             const allowed = new Set(["PEDIDOSYA", "UBEREATS", "DELIVERY", "QUICK"]);
             const vt = allowed.has(vtRaw) ? vtRaw : "QUICK";
+
+            // Canal virtual nuevo: limpiar carrito anterior
+            dispatch(removeAllItems());
+            dispatch(removeCustomer());
+            dispatch(clearDraftContext());
 
             dispatch(
                 setDraftContext({
@@ -364,7 +431,7 @@ export default function Tables() {
                                     <div className="flex items-center justify-between text-sm mt-2">
                                         <span className="text-white/60">Orden actual</span>
                                         <span className="text-white font-medium">
-                                {tableActionModal.table?.currentOrder?._id ? "Sí" : "No"}
+                                {tableActionModal.table?.currentOrder ? "Sí" : "No"}
                             </span>
                                     </div>
                                 </div>
@@ -378,40 +445,20 @@ export default function Tables() {
                                     }}
                                     className="w-full px-4 py-3 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all"
                                 >
-                                    {tableActionModal.table?.currentOrder?._id ? "Abrir orden" : "Ir al menú"}
+                                    {tableActionModal.table?.currentOrder ? "Abrir orden" : "Ir al menú"}
                                 </button>
 
                                 {tableActionModal.table?.status !== "Disponible" && (
                                     <button
                                         type="button"
-                                        onClick={() =>
-                                            mUpdateTable.mutate({
-                                                id: tableActionModal.table._id,
-                                                body: { status: "Disponible" },
-                                            })
-                                        }
-                                        disabled={mUpdateTable.isPending}
+                                        onClick={() => handleReleaseTable(tableActionModal.table)}
                                         className="w-full px-4 py-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 font-semibold hover:bg-red-500/20 transition-all disabled:opacity-60"
                                     >
-                                        {mUpdateTable.isPending ? "Guardando..." : "Desocupar mesa"}
+                                        Desocupar mesa
                                     </button>
                                 )}
 
-                                {tableActionModal.table?.status !== "Ocupada" && (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            mUpdateTable.mutate({
-                                                id: tableActionModal.table._id,
-                                                body: { status: "Ocupada" },
-                                            })
-                                        }
-                                        disabled={mUpdateTable.isPending}
-                                        className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white font-semibold hover:bg-white/10 transition-all disabled:opacity-60"
-                                    >
-                                        {mUpdateTable.isPending ? "Guardando..." : "Marcar ocupada"}
-                                    </button>
-                                )}
+
 
                                 <button
                                     type="button"
