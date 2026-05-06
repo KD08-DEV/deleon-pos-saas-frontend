@@ -412,15 +412,37 @@ export default function Inventory({ plan, currentUser }) {
             .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }, [ingredientsList]);
 
-    const rawItems = useMemo(() => (Array.isArray(itemsResp?.items) ? itemsResp.items : []), [itemsResp]);
-
-// ✅ Solo artículos reales de inventario (evita platos de menú con stock null)
+    const rawItems = useMemo(() => {
+        return Array.isArray(itemsResp?.items) ? itemsResp.items : [];
+    }, [itemsResp]);
+// ✅ Solo artículos reales de inventario
+// Incluye ingredientes, productos directos y platos con receta.
+// Antes se estaban ocultando platos nuevos porque no siempre tienen inventoryCategoryId.
     const inventoryOnly = useMemo(() => {
         return (rawItems || []).filter((it) => {
             const cat = String(it?.category || "").trim().toLowerCase();
-            const isIngredient = it?.isInventoryItem === true || cat === "inventario";
-            const isMenuStockItem = it?.inventoryCategoryId != null; // ✅ plato del menú habilitado como stock propio
-            return isIngredient || isMenuStockItem;
+            const type = String(it?.inventoryType || "none").trim().toLowerCase();
+
+            const isIngredient =
+                it?.isInventoryItem === true ||
+                cat === "inventario" ||
+                type === "ingredient";
+
+            const isDirectStockProduct = type === "direct";
+            const isRecipeProduct = type === "recipe";
+
+            // Plato normal visible para poder activarlo con Entrada.
+            const isInactiveMenuDish =
+                type === "none" &&
+                it?.isInventoryItem !== true &&
+                cat !== "inventario";
+
+            return (
+                isIngredient ||
+                isDirectStockProduct ||
+                isRecipeProduct ||
+                isInactiveMenuDish
+            );
         });
     }, [rawItems]);
 
@@ -435,9 +457,8 @@ export default function Inventory({ plan, currentUser }) {
     }, [inventoryOnly, page, totalFromBackend]);
 
     const totalItems = useMemo(() => {
-        if (totalFromBackend !== null) return inventoryOnly.length;
         return inventoryOnly.length;
-    }, [inventoryOnly.length, totalFromBackend]);
+    }, [inventoryOnly.length]);
 
     const pageCount = useMemo(() => Math.max(1, Math.ceil(totalItems / PAGE_SIZE)), [totalItems]);
 
@@ -472,9 +493,13 @@ export default function Inventory({ plan, currentUser }) {
         onSuccess: async () => {
             enqueueSnackbar("Guardado", { variant: "success" });
             setItemModal({ open: false, mode: "create", item: null });
+
             await qc.invalidateQueries({ queryKey: ["inventory/items"] });
             await qc.invalidateQueries({ queryKey: ["inventory/movements"] });
             await qc.invalidateQueries({ queryKey: ["inventory/low-stock"] });
+            await qc.invalidateQueries({ queryKey: ["ingredients"] });
+            await qc.invalidateQueries({ queryKey: ["dish-templates"] });
+            await qc.invalidateQueries({ queryKey: ["dishes"] });
         },
         onError: (e) => {
             const status = e?.response?.status;
@@ -998,7 +1023,16 @@ export default function Inventory({ plan, currentUser }) {
                                 </tr>
                             ) : (
                                 items.map((it) => {
-                                    const isLow = num(it.stockCurrent) <= num(it.stockMin);
+                                    const type = String(it?.inventoryType || "none").trim().toLowerCase();
+
+                                    const isInactiveInventory =
+                                        type === "none" &&
+                                        it?.isInventoryItem !== true &&
+                                        String(it?.category || "").trim().toLowerCase() !== "inventario";
+
+                                    const isLow =
+                                        !isInactiveInventory &&
+                                        num(it.stockCurrent) <= num(it.stockMin);
                                     const providerName =
                                         it?.supplierId?.name ||
                                         it?.supplierId?.companyName ||
@@ -1021,7 +1055,13 @@ export default function Inventory({ plan, currentUser }) {
                                             </td>
                                             <td className="py-4 pr-4 text-white/80">{providerName}</td>
                                             <td className="py-4 pr-4">
-                                                {isLow ? <Badge tone="warning">Bajo stock</Badge> : <Badge>OK</Badge>}
+                                                {isInactiveInventory ? (
+                                                    <Badge tone="warning">Sin inventario</Badge>
+                                                ) : isLow ? (
+                                                    <Badge tone="warning">Bajo stock</Badge>
+                                                ) : (
+                                                    <Badge>OK</Badge>
+                                                )}
                                             </td>
                                             <td className="py-4 pr-0">
                                                 <div className="flex flex-col items-end gap-2">
@@ -1035,7 +1075,7 @@ export default function Inventory({ plan, currentUser }) {
                                                                 Entrada
                                                             </button>
                                                         )}
-                                                        {canInventoryExit && (
+                                                        {canInventoryExit && !isInactiveInventory && (
                                                             <button
                                                                 onClick={() => openMovement("sale", it, false)}
                                                                 className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
@@ -1045,7 +1085,7 @@ export default function Inventory({ plan, currentUser }) {
                                                             </button>
                                                         )}
 
-                                                        {canUseYieldProcess && (
+                                                        {canUseYieldProcess && !isInactiveInventory && (
                                                             <button
                                                                 onClick={() => openMovement("purchase", it, true)}
                                                                 className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
@@ -1054,7 +1094,7 @@ export default function Inventory({ plan, currentUser }) {
                                                             </button>
                                                         )}
 
-                                                        {canInventoryAdjust && (
+                                                        {canInventoryAdjust && !isInactiveInventory && (
                                                             <button
                                                                 onClick={() => openMovement("adjust", it, false)}
                                                                 className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
@@ -1064,7 +1104,7 @@ export default function Inventory({ plan, currentUser }) {
                                                             </button>
                                                         )}
 
-                                                        {canInventoryWaste && (
+                                                        {canInventoryWaste && !isInactiveInventory && (
                                                             <button
                                                                 onClick={() => openMovement("waste", it, false)}
                                                                 className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
@@ -2137,9 +2177,9 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                                         : "bg-white/5 border-white/10 text-white/80"
                                 }`}
                             >
-                                <div className="font-bold">Producto con stock directo</div>
+                                <div className="font-bold">Producto con Inventario</div>
                                 <div className="text-xs text-white/50 mt-1">
-                                    Se vende y descuenta su propio stock. Puede quedar negativo.
+                                    Se vende y descuenta su propio Inventario. Puede quedar negativo.
                                 </div>
                             </button>
 
@@ -2154,7 +2194,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                             >
                                 <div className="font-bold">Plato con receta</div>
                                 <div className="text-xs text-white/50 mt-1">
-                                    No tiene stock directo. Descuenta ingredientes.
+                                    No tiene Inventario directo. Descuenta ingredientes.
                                 </div>
                             </button>
                         </div>

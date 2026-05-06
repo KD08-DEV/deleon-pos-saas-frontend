@@ -44,8 +44,8 @@ const MENU_PRODUCT_TYPES = [
     },
     {
         value: "direct",
-        title: "Producto con stock directo",
-        desc: "Se vende y descuenta su propio stock. Puede quedar negativo.",
+        title: "Producto con inventario",
+        desc: "Se vende y descuenta su propio inventario. Puede quedar negativo.",
     },
     {
         value: "recipe",
@@ -62,18 +62,38 @@ const normalizeInventoryType = (value) => {
 const MenuManagement = ({ currentUser }) => {
     const reduxUserData = useSelector((state) => state.user.userData);
 
-    const effectiveUser = currentUser || reduxUserData || {};
+    const effectiveUser = {
+        ...(reduxUserData || {}),
+        ...(currentUser || {}),
+        permissions: {
+            ...(reduxUserData?.permissions || {}),
+            ...(currentUser?.permissions || {}),
+            products: {
+                ...(reduxUserData?.permissions?.products || {}),
+                ...(currentUser?.permissions?.products || {}),
+            },
+            inventory: {
+                ...(reduxUserData?.permissions?.inventory || {}),
+                ...(currentUser?.permissions?.inventory || {}),
+            },
+            orders: {
+                ...(reduxUserData?.permissions?.orders || {}),
+                ...(currentUser?.permissions?.orders || {}),
+            },
+        },
+    };
 
     const tenantId =
         effectiveUser?.tenantId ||
-        reduxUserData?.tenantId ||
         localStorage.getItem("tenantId") ||
         "";
 
-    const role = effectiveUser?.role;
+    const role = effectiveUser?.membershipRole || effectiveUser?.role;
+    const normalizedRole = String(role || "").trim().toLowerCase();
+
     const userPermissions = effectiveUser?.permissions || {};
 
-    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+    const isOwnerOrAdmin = ["owner", "admin"].includes(normalizedRole);
 
     const canCreateProduct =
         isOwnerOrAdmin || userPermissions?.products?.create === true;
@@ -83,6 +103,18 @@ const MenuManagement = ({ currentUser }) => {
 
     const canDeleteProduct =
         isOwnerOrAdmin || userPermissions?.products?.delete === true;
+
+    console.log("[MENU PERMISSIONS DEBUG]", {
+        currentUser,
+        reduxUserData,
+        effectiveUser,
+        role,
+        normalizedRole,
+        userPermissions,
+        canCreateProduct,
+        canEditProduct,
+        canDeleteProduct,
+    });
 
     useEffect(() => {
         if (tenantId) {
@@ -315,6 +347,8 @@ const MenuManagement = ({ currentUser }) => {
         onSuccess: () => {
             enqueueSnackbar("Plato agregado exitosamente", { variant: "success" });
             queryClient.invalidateQueries({ queryKey: ["dishes", tenantId] });
+            queryClient.invalidateQueries({ queryKey: ["inventory/items"] });
+            queryClient.invalidateQueries({ queryKey: ["inventory/low-stock"] });
             closeModal();
         },
         onError: (error) => {
@@ -327,6 +361,8 @@ const MenuManagement = ({ currentUser }) => {
         onSuccess: () => {
             enqueueSnackbar("Plato actualizado exitosamente", { variant: "success" });
             queryClient.invalidateQueries({ queryKey: ["dishes", tenantId] });
+            queryClient.invalidateQueries({ queryKey: ["inventory/items"] });
+            queryClient.invalidateQueries({ queryKey: ["inventory/low-stock"] });
             closeModal();
         },
         onError: (error) => {
@@ -422,26 +458,43 @@ const MenuManagement = ({ currentUser }) => {
 
         // ✅ Recomendado: explícito
         formData.append("inventoryType", normalizedInventoryType);
-        formData.append("allowNegativeStock", isDirectStockProduct ? "true" : "false");
 
-// En gestión de menú no creamos ingredientes.
-// direct y recipe siguen siendo productos vendibles del menú.
+        if (isDirectStockProduct) {
+            formData.append("stockMin", "0");
+            formData.append(
+                "allowNegativeStock",
+                dishForm.allowNegativeStock !== false ? "true" : "false"
+            );
+        } else {
+            formData.append("stockMin", "");
+            formData.append("allowNegativeStock", "false");
+        }
+
         formData.append("isInventoryItem", "false");
         // ✅ NO mandar vacío
 
 
-        const basePrice =
-            sellMode === "weight" ? Number(dishForm.pricePerLb || 0) : Number(dishForm.price || 0);
+        const priceRaw =
+            sellMode === "weight" ? dishForm.pricePerLb : dishForm.price;
+
+        const basePrice = Math.round(Number(priceRaw || 0) * 100) / 100;
+
 
         formData.append("price", String(basePrice));
 
         if (sellMode === "weight") {
             formData.append("pricePerLb", String(basePrice));
+        } else {
+            formData.append("pricePerLb", "");
         }
 
-        formData.append("avgCost", dishForm.avgCost ?? "");
-        formData.append("lastCost", dishForm.lastCost ?? "");
-
+        if (isDirectStockProduct) {
+            formData.append("avgCost", dishForm.avgCost ?? "");
+            formData.append("lastCost", dishForm.lastCost ?? "");
+        } else {
+            formData.append("avgCost", "");
+            formData.append("lastCost", "");
+        }
         if (dishForm.imageFile) {
             formData.append("image", dishForm.imageFile);
         }
@@ -900,6 +953,7 @@ const MenuManagement = ({ currentUser }) => {
                                                 step="0.01"
                                                 min="0"
                                                 value={dishForm.pricePerLb}
+                                                onWheel={(e) => e.currentTarget.blur()}
                                                 onChange={(e) => setDishForm((f) => ({ ...f, pricePerLb: e.target.value }))}
                                                 className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                                 required
@@ -917,6 +971,7 @@ const MenuManagement = ({ currentUser }) => {
                                             step="0.01"
                                             min="0"
                                             value={dishForm.price}
+                                            onWheel={(e) => e.currentTarget.blur()}
                                             onChange={(e) => setDishForm((f) => ({ ...f, price: e.target.value }))}
                                             className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                             required

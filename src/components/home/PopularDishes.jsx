@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef } from "react";
+import React, { memo, useRef } from "react";
 import api from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
@@ -58,7 +58,14 @@ const PopularDishItem = memo(({ dish, index, getDishCategoryLabel }) => {
                 </p>
 
                 <p className="text-yellow-400 text-xs sm:text-sm font-bold mt-1">
-                    ${dish.price}
+                    Vendidos: {Number(dish.qtySold || 0)}
+                </p>
+
+                <p className="text-[#ababab] text-xs sm:text-sm font-medium">
+                    Ingresos: RD$ {Number(dish.revenue || 0).toLocaleString("es-DO", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                })}
                 </p>
             </div>
         </motion.div>
@@ -74,54 +81,24 @@ const PopularDishes = memo(({ fill = false }) => {
     const warned401Ref = useRef(false);
 
     // ✅ 1) Categorías (1 sola vez, no por item)
-    const { data: invCatsData = [], isError: invCatsError } = useQuery({
-        queryKey: ["inventoryCategories", userData?.tenantId],
-        enabled: Boolean(localStorage.getItem("token")), // evita request si no hay sesión
-        queryFn: async () => {
-            const res = await api.get("/api/admin/inventory/categories");
-            return res.data?.data ?? [];
-        },
-        retry: (failureCount, err) => {
-            const status = err?.response?.status;
-            if (status === 401) return false;
-            return failureCount < 2;
-        },
-        onError: (err) => {
-            const status = err?.response?.status;
-            if (status === 401 && !warned401Ref.current) {
-                warned401Ref.current = true;
-                enqueueSnackbar("Tu sesión expiró. Inicia sesión nuevamente.", { variant: "warning" });
-            }
-        },
-        staleTime: 60_000,
-    });
-
-    const invCatsMap = useMemo(() => {
-        const map = new Map();
-        (Array.isArray(invCatsData) ? invCatsData : []).forEach((c) => {
-            map.set(String(c._id), c?.name);
-        });
-        return map;
-    }, [invCatsData]);
-
     const getDishCategoryLabel = (dish) => {
-        if (dish?.inventoryCategoryId?.name) return dish.inventoryCategoryId.name;
-        const id = dish?.inventoryCategoryId;
-        if (id) {
-            const name = invCatsMap.get(String(id));
-            if (name) return name;
-        }
-        return dish?.category || "Sin categoría";
+        return (
+            dish?.inventoryCategoryName ||
+            dish?.inventoryCategoryId?.name ||
+            dish?.category ||
+            "Sin categoría"
+        );
     };
 
     // ✅ 2) Platos
     const { data, isLoading, isError } = useQuery({
-        queryKey: ["dishes", userData?.tenantId],
+        queryKey: ["popularDishes", userData?.tenantId],
         enabled: !!userData?.tenantId,
         queryFn: async () => {
-            const response = await api.get("/api/dishes?page=1&limit=10");
-            return Array.isArray(response?.data?.data?.items)
-                ? response.data.data.items
+            const response = await api.get("/api/inventory/consumption?page=1&limit=10");
+
+            return Array.isArray(response?.data?.rows)
+                ? response.data.rows
                 : [];
         },
         staleTime: 20_000,
@@ -150,11 +127,6 @@ const PopularDishes = memo(({ fill = false }) => {
                         </h1>
                     </div>
 
-                    {invCatsError && (
-                        <p className="text-xs text-yellow-300">
-                            No se pudieron cargar categorías (verifica sesión).
-                        </p>
-                    )}
                 </div>
 
                 <div
@@ -190,7 +162,7 @@ const PopularDishes = memo(({ fill = false }) => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
                             {dishes.map((dish, index) => (
                                 <PopularDishItem
-                                    key={dish._id}
+                                    key={dish.dishId || dish._id}
                                     dish={dish}
                                     index={index}
                                     getDishCategoryLabel={getDishCategoryLabel}
