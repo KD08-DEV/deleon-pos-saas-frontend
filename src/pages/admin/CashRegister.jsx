@@ -1677,17 +1677,6 @@ const CashRegister = () => {
                 const pm = normalize(r?.paymentMethod || "Efectivo");
                 if (!pm.includes(method)) return false;
             }
-            console.log(
-                "REPORTS FISCAL DEBUG",
-                sortedReports.slice(0, 10).map((r) => ({
-                    id: r?._id,
-                    fiscal: r?.fiscal,
-                    ncfType: r?.ncfType,
-                    ncfNumber: r?.ncfNumber,
-                    invoice: r?.invoice,
-                    resolved: getFiscalType(r),
-                }))
-            );
             if (fiscal) {
                 const fiscalType = getFiscalType(r);
 
@@ -1718,17 +1707,6 @@ const CashRegister = () => {
                 if (!c.includes(client)) return false;
             }
 
-            console.log(
-                "REPORTS FISCAL DEBUG",
-                sortedReports.slice(0, 10).map((r) => ({
-                    id: r?._id,
-                    fiscal: r?.fiscal,
-                    ncfType: r?.ncfType,
-                    ncfNumber: r?.ncfNumber,
-                    invoice: r?.invoice,
-                    resolved: getFiscalType(r),
-                }))
-            );
             return true;
         });
     }, [sortedReports, modalFilters, modalRegisterId]);

@@ -51,8 +51,27 @@ const ProductReports = () => {
             toYMD = tmp;
         }
 
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
+        const buildDateRangeParams = (sourceFilters = {}) => {
+            const obj = { ...sourceFilters };
+
+            let fromYMD = String(obj.from || obj.to || "").slice(0, 10);
+            let toYMD = String(obj.to || obj.from || "").slice(0, 10);
+
+            if (fromYMD && toYMD && toYMD < fromYMD) {
+                const tmp = fromYMD;
+                fromYMD = toYMD;
+                toYMD = tmp;
+            }
+
+            if (fromYMD) obj.from = fromYMD;
+            if (toYMD) obj.to = toYMD;
+
+            Object.keys(obj).forEach((k) => {
+                if (obj[k] === "" || obj[k] == null) delete obj[k];
+            });
+
+            return obj;
+        };
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];

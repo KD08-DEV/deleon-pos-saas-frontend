@@ -68,8 +68,8 @@ const SalesReports = () => {
     const buildDateRangeParams = (sourceFilters = {}) => {
         const obj = { ...sourceFilters };
 
-        let fromYMD = obj.from || obj.to || "";
-        let toYMD = obj.to || obj.from || "";
+        let fromYMD = String(obj.from || obj.to || "").slice(0, 10);
+        let toYMD = String(obj.to || obj.from || "").slice(0, 10);
 
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
@@ -77,8 +77,8 @@ const SalesReports = () => {
             toYMD = tmp;
         }
 
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
+        if (fromYMD) obj.from = fromYMD;
+        if (toYMD) obj.to = toYMD;
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];

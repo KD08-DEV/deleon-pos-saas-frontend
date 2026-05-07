@@ -52,24 +52,12 @@ const FinancialAnalysis = () => {
         return getItemPrice(item) * qty;
     };
 
-    const addDaysISOStart = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
-        // devolvemos ISO sin timezone raro: YYYY-MM-DDTHH:mm:ss.000
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}T00:00:00.000`;
-    };
 
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
-        const hasFrom = !!obj.from;
-        const hasTo = !!obj.to;
-
-        let fromYMD = obj.from || obj.to || "";
-        let toYMD = obj.to || obj.from || "";
+        let fromYMD = String(obj.from || obj.to || "").slice(0, 10);
+        let toYMD = String(obj.to || obj.from || "").slice(0, 10);
 
         // Evita rango invertido
         if (fromYMD && toYMD && toYMD < fromYMD) {
@@ -78,9 +66,11 @@ const FinancialAnalysis = () => {
             toYMD = tmp;
         }
 
-        // Normaliza rango (días completos):
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo
+        // Importante:
+        // Mandamos solo YYYY-MM-DD.
+        // El backend se encarga de convertir a 00:00:00 y 23:59:59.999 con timezone RD.
+        if (fromYMD) obj.from = fromYMD;
+        if (toYMD) obj.to = toYMD;
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -122,7 +112,8 @@ const FinancialAnalysis = () => {
         // Agrupar por fecha para tendencias
         const byDate = {};
         orders.forEach((order) => {
-            const date = new Date(order.createdAt).toISOString().split("T")[0];
+            const refDate = order.paidAt || order.createdAt;
+            const date = new Date(refDate).toISOString().split("T")[0];
             if (!byDate[date]) {
                 byDate[date] = {
                     revenue: 0,
@@ -159,7 +150,8 @@ const FinancialAnalysis = () => {
         // Análisis por hora del día
         const byHour = {};
         orders.forEach((order) => {
-            const hour = new Date(order.createdAt).getHours();
+            const refDate = order.paidAt || order.createdAt;
+            const hour = new Date(refDate).getHours();
             if (!byHour[hour]) {
                 byHour[hour] = { revenue: 0, orders: 0 };
             }
