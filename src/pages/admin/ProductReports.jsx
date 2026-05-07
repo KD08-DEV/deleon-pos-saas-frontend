@@ -42,8 +42,8 @@ const ProductReports = () => {
     const buildDateRangeParams = (sourceFilters = {}) => {
         const obj = { ...sourceFilters };
 
-        let fromYMD = obj.from || obj.to || "";
-        let toYMD = obj.to || obj.from || "";
+        let fromYMD = String(obj.from || obj.to || "").slice(0, 10);
+        let toYMD = String(obj.to || obj.from || "").slice(0, 10);
 
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
@@ -51,27 +51,8 @@ const ProductReports = () => {
             toYMD = tmp;
         }
 
-        const buildDateRangeParams = (sourceFilters = {}) => {
-            const obj = { ...sourceFilters };
-
-            let fromYMD = String(obj.from || obj.to || "").slice(0, 10);
-            let toYMD = String(obj.to || obj.from || "").slice(0, 10);
-
-            if (fromYMD && toYMD && toYMD < fromYMD) {
-                const tmp = fromYMD;
-                fromYMD = toYMD;
-                toYMD = tmp;
-            }
-
-            if (fromYMD) obj.from = fromYMD;
-            if (toYMD) obj.to = toYMD;
-
-            Object.keys(obj).forEach((k) => {
-                if (obj[k] === "" || obj[k] == null) delete obj[k];
-            });
-
-            return obj;
-        };
+        if (fromYMD) obj.from = fromYMD;
+        if (toYMD) obj.to = toYMD;
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -86,10 +67,13 @@ const ProductReports = () => {
 
 
 
-    async function fetchProductDetail({ from, to }) {
+    async function fetchProductDetail({ from, to, category }) {
         const params = new URLSearchParams();
+
         params.append("from", from);
         params.append("to", to);
+
+        if (category) params.append("category", category);
 
         const res = await api.get(`/api/order/report/sales-by-product?${params.toString()}`);
         return res.data?.data || [];
@@ -101,6 +85,7 @@ const ProductReports = () => {
             return fetchProductDetail({
                 from: cleanedParams.from,
                 to: cleanedParams.to,
+                category: cleanedParams.category,
             });
         },
         enabled: !!cleanedParams.from && !!cleanedParams.to,
