@@ -85,15 +85,7 @@ const ProductReports = () => {
 
 
 
-    const { data, isLoading, isError, error } = useQuery({
-        queryKey: ["admin/reports", cleanedParams],
-        queryFn: async () => {
-            const res = await api.get("/api/admin/reports", { params: cleanedParams });
-            return res.data;
-        },
-        keepPreviousData: true,
-        staleTime: 30_000,
-    });
+
     async function fetchProductDetail({ from, to }) {
         const params = new URLSearchParams();
         params.append("from", from);
@@ -116,17 +108,62 @@ const ProductReports = () => {
         staleTime: 30_000,
     });
 
-    const detailRows = productReportQuery.data || [];
+    const detailRows = useMemo(() => {
+        return (productReportQuery.data || []).map((r) => {
+            const name =
+                r?.product ||
+                r?.productName ||
+                r?.dishName ||
+                r?.itemName ||
+                r?.name ||
+                "Producto Desconocido";
 
-    const categoryByProductName = useMemo(() => {
-        const m = new Map();
-        for (const r of detailRows) {
-            const name = (r?.name || "").toString().trim();   // en SalesReports el campo es r.name
-            const cat = (r?.category || "Sin Categoría").toString().trim();
-            if (name) m.set(name, cat);
-        }
-        return m;
-    }, [detailRows]);
+            const category =
+                r?.categoryName ||
+                r?.menuCategory ||
+                r?.inventoryCategoryName ||
+                r?.dishCategory ||
+                r?.dish?.category ||
+                r?.productCategory ||
+                r?.category ||
+                "Sin Categoría";
+
+            const quantity = Number(
+                r?.totalQuantity ??
+                r?.qty ??
+                r?.quantity ??
+                r?.count ??
+                0
+            );
+
+            const revenue = Number(
+                r?.totalRevenue ??
+                r?.revenue ??
+                r?.sales ??
+                r?.total ??
+                0
+            );
+
+            const orderCount = Number(
+                r?.orderCount ??
+                r?.orders ??
+                r?.ordersCount ??
+                r?.countOrders ??
+                1
+            );
+
+            return {
+                ...r,
+                name: String(name || "Producto Desconocido").trim(),
+                category: String(category || "Sin Categoría").trim(),
+                totalQuantity: quantity,
+                totalRevenue: revenue,
+                orderCount,
+                avgPrice: quantity > 0 ? revenue / quantity : 0,
+            };
+        });
+    }, [productReportQuery.data]);
+
 
     const orders = data?.data || [];
 
@@ -135,68 +172,62 @@ const ProductReports = () => {
         const productStats = {};
         const categoryStats = {};
 
-        orders.forEach((order) => {
-            const items = order.items || [];
-            items.forEach((item) => {
-                const productName = item.name || "Producto Desconocido";
-                const category =
-                    categoryByProductName.get((item.name || "").toString().trim()) ||
-                    getItemCategory(item);
-                const quantity = Number(item.quantity || 0);
-                const price = Number(item.price || 0);
-                const total = quantity * price;
+        detailRows.forEach((row) => {
+            const productName = row.name || "Producto Desconocido";
+            const category = row.category || "Sin Categoría";
 
-                // Estadísticas por producto
-                if (!productStats[productName]) {
-                    productStats[productName] = {
-                        name: productName,
-                        category: category,
-                        totalQuantity: 0,
-                        totalRevenue: 0,
-                        orderCount: 0,
-                        avgPrice: 0,
-                    };
-                }
-                productStats[productName].totalQuantity += quantity;
-                productStats[productName].totalRevenue += total;
-                productStats[productName].orderCount += 1;
+            const quantity = Number(row.totalQuantity || 0);
+            const revenue = Number(row.totalRevenue || 0);
+            const orderCount = Number(row.orderCount || 0);
 
-                // Estadísticas por categoría
-                if (!categoryStats[category]) {
-                    categoryStats[category] = {
-                        name: category,
-                        totalQuantity: 0,
-                        totalRevenue: 0,
-                        productCount: 0,
-                        orders: new Set(),
-                    };
-                }
-                categoryStats[category].totalQuantity += quantity;
-                categoryStats[category].totalRevenue += total;
-                if (!categoryStats[category].orders.has(order._id)) {
-                    categoryStats[category].orders.add(order._id);
-                }
-            });
+            if (!productStats[productName]) {
+                productStats[productName] = {
+                    name: productName,
+                    category,
+                    totalQuantity: 0,
+                    totalRevenue: 0,
+                    orderCount: 0,
+                    avgPrice: 0,
+                };
+            }
+
+            productStats[productName].totalQuantity += quantity;
+            productStats[productName].totalRevenue += revenue;
+            productStats[productName].orderCount += orderCount;
+
+            if (!categoryStats[category]) {
+                categoryStats[category] = {
+                    name: category,
+                    totalQuantity: 0,
+                    totalRevenue: 0,
+                    productCount: 0,
+                    orderCount: 0,
+                };
+            }
+
+            categoryStats[category].totalQuantity += quantity;
+            categoryStats[category].totalRevenue += revenue;
+            categoryStats[category].orderCount += orderCount;
         });
 
-        // Calcular precio promedio por producto
         Object.keys(productStats).forEach((productName) => {
             const stats = productStats[productName];
-            stats.avgPrice = stats.orderCount > 0 ? stats.totalRevenue / stats.totalQuantity : 0;
+            stats.avgPrice =
+                stats.totalQuantity > 0
+                    ? stats.totalRevenue / stats.totalQuantity
+                    : 0;
         });
 
-        // Convertir Set a número para categorías
-        Object.keys(categoryStats).forEach((cat) => {
-            categoryStats[cat].orderCount = categoryStats[cat].orders.size;
-            delete categoryStats[cat].orders;
+        Object.keys(categoryStats).forEach((categoryName) => {
+            categoryStats[categoryName].productCount = Object.values(productStats).filter(
+                (p) => p.category === categoryName
+            ).length;
         });
 
-        // Productos más vendidos (por cantidad)
         const topProductsByQuantity = Object.values(productStats)
             .sort((a, b) => b.totalQuantity - a.totalQuantity)
             .slice(0, 10);
 
-        // Productos más vendidos (por revenue)
         const topProductsByRevenue = Object.values(productStats)
             .sort((a, b) => b.totalRevenue - a.totalRevenue)
             .slice(0, 10);
@@ -208,7 +239,7 @@ const ProductReports = () => {
             topProductsByRevenue,
             totalProducts: Object.keys(productStats).length,
         };
-    }, [orders]);
+    }, [detailRows]);
 
     const allProducts = useMemo(() => {
         const products = Object.values(productAnalysis.productStats || {});
@@ -258,7 +289,7 @@ const ProductReports = () => {
         }
     };
 
-    if (isLoading) {
+    if (productReportQuery.isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
@@ -267,10 +298,10 @@ const ProductReports = () => {
         );
     }
 
-    if (isError) {
+    if (productReportQuery.isError) {
         return (
             <div className="text-center py-8 text-red-400">
-                Error al cargar reportes{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
+                Error al cargar reportes{productReportQuery.error?.response?.status ? ` (HTTP ${productReportQuery.error.response.status})` : ""}.
             </div>
         );
     }
