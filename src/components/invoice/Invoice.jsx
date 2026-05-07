@@ -7,6 +7,20 @@ import { printWithTenantConfig } from "../../lib/tenantPrint";
 import usePrinterOptions from "../../hooks/usePrinterOptions";
 const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
 
+    const formatPhoneDO = (value = "") => {
+        const digits = String(value || "").replace(/\D/g, "");
+
+        if (digits.length === 10) {
+            return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+        }
+
+        if (digits.length === 11 && digits.startsWith("1")) {
+            return `1-${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+        }
+
+        return String(value || "").trim();
+    };
+
 const formatDMY = (dateLike) => {
     if (!dateLike) return "N/A";
     const d = new Date(dateLike);
@@ -60,7 +74,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const businessName = tenantInfo?.business?.name || tenantInfo?.name || "";
     const businessAddress = tenantInfo?.business?.address || "";
     const businessRnc = tenantInfo?.business?.rnc || tenantInfo?.fiscal?.rnc || "";
-    const businessPhone = tenantInfo?.business?.phone || "";
+    const businessPhone = formatPhoneDO(tenantInfo?.business?.phone || "");
 
     // ===== Fiscal =====
     const resolvedFiscalRequested = order?.fiscal?.requested === true;
@@ -163,10 +177,11 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         order?.customerRnc ||
         order?.customerRNC ||
         "";
-    const clientPhone =
+    const clientPhone = formatPhoneDO(
         order?.customerDetails?.phone ||
         order?.customerPhone ||
-        "";
+        ""
+    );
 
     const clientAddress =
         order?.customerDetails?.address ||
