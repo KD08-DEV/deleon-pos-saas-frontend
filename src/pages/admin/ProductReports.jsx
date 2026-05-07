@@ -38,35 +38,13 @@ const ProductReports = () => {
         window.clearTimeout(showToast._t);
         showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
     };
-    const addDays = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
-        return d.toISOString().slice(0, 19) + ".000";
-    };
-    const getItemCategory = (item) => {
-        const cat =
-            item?.inventoryCategory?.name ??
-            item?.inventoryCategory?.title ??
-            item?.inventoryCategoryName ??
-            item?.inventoryCategory ??
-            item?.category;
 
-        const out = (cat || "Sin Categoría").toString().trim();
-        return out || "Sin Categoría";
-    };
+    const buildDateRangeParams = (sourceFilters = {}) => {
+        const obj = { ...sourceFilters };
 
-    const cleanedParams = useMemo(() => {
-        const obj = { ...filters };
-
-        const hasFrom = !!obj.from;
-        const hasTo = !!obj.to;
-
-        // Si solo selecciona "desde", asumimos "hasta" = mismo día
-        // Si solo selecciona "hasta", asumimos "desde" = mismo día
         let fromYMD = obj.from || obj.to || "";
         let toYMD = obj.to || obj.from || "";
 
-        // Evita rango invertido (to < from)
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
             fromYMD = toYMD;
@@ -74,15 +52,18 @@ const ProductReports = () => {
         }
 
         if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDays(toYMD, 1); // fin exclusivo (día siguiente 00:00)
+        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
         });
 
         return obj;
-    }, [filters]);
+    };
 
+    const cleanedParams = useMemo(() => {
+        return buildDateRangeParams(filters);
+    }, [filters]);
 
 
 
@@ -96,14 +77,14 @@ const ProductReports = () => {
     }
 
     const productReportQuery = useQuery({
-        queryKey: ["sales-by-product-report", filters.from, filters.to],
+        queryKey: ["sales-by-product-report", cleanedParams],
         queryFn: async () => {
             return fetchProductDetail({
-                from: filters.from,
-                to: filters.to,
+                from: cleanedParams.from,
+                to: cleanedParams.to,
             });
         },
-        enabled: true,
+        enabled: !!cleanedParams.from && !!cleanedParams.to,
         keepPreviousData: true,
         staleTime: 30_000,
     });
@@ -165,7 +146,6 @@ const ProductReports = () => {
     }, [productReportQuery.data]);
 
 
-    const orders = data?.data || [];
 
     // Análisis de productos
     const productAnalysis = useMemo(() => {
