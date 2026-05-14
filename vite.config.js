@@ -12,7 +12,10 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: "autoUpdate",
+            injectRegister: "auto",
+
             includeAssets: ["favicon.ico", "robots.txt", "apple-touch-icon.png"],
+
             manifest: {
                 name: "De Leon Soft POS",
                 short_name: "POS",
@@ -40,20 +43,28 @@ export default defineConfig({
                     }
                 ]
             },
+
             workbox: {
+                skipWaiting: true,
+                clientsClaim: true,
+                cleanupOutdatedCaches: true,
+
                 globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+
                 runtimeCaching: [
                     {
                         urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
                         handler: "NetworkFirst",
                         options: {
                             cacheName: "api-cache",
-                            expiration: { maxEntries: 50, maxAgeSeconds: 86400 }
+                            expiration: {
+                                maxEntries: 50,
+                                maxAgeSeconds: 60
+                            }
                         }
                     },
                     {
-                        urlPattern: ({ request }) =>
-                            request.destination === "document",
+                        urlPattern: ({ request }) => request.destination === "document",
                         handler: "NetworkFirst",
                         options: {
                             cacheName: "html-cache"
@@ -62,7 +73,7 @@ export default defineConfig({
                     {
                         urlPattern: ({ request }) =>
                             ["style", "script", "worker"].includes(request.destination),
-                        handler: "StaleWhileRevalidate",
+                        handler: "NetworkFirst",
                         options: {
                             cacheName: "static-resources"
                         }

@@ -79,6 +79,17 @@ export const getCustomers = (q = "", limit = 20) =>
 
 export const createCustomer = (data) => api.post("/api/customer", data);
 
+// ACCOUNTS RECEIVABLE / CUENTAS POR COBRAR
+export const getAccountsReceivable = (params = {}) =>
+    api.get("/api/admin/accounts-receivable", { params });
 
+export const getAccountsReceivableSummary = (params = {}) =>
+    api.get("/api/admin/accounts-receivable/summary", { params });
+
+export const addAccountsReceivablePayment = (id, data) =>
+    api.post(`/api/admin/accounts-receivable/${encodeURIComponent(id)}/payments`, data);
+
+export const voidAccountsReceivable = (id, data = {}) =>
+    api.patch(`/api/admin/accounts-receivable/${encodeURIComponent(id)}/void`, data);
 
 export default api;

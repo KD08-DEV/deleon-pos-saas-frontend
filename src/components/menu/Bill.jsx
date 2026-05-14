@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -241,6 +241,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         navigate,
     ]);
     const draft = useSelector((state) => state.customer);
+    const selectedCustomerId =
+        order?.customerId?._id ||
+        order?.customerId ||
+        draft?.customerId ||
+        null;
     const draftTable = draft?.table || null;
     const draftOrderSource = draft?.orderSource || "DINE_IN";
     const effectiveOrderSource = String(
@@ -351,6 +356,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [showProductionFallback, setShowProductionFallback] = useState(false);
     const [productionFallbackTickets, setProductionFallbackTickets] = useState([]);
     const itemsToPrintRef = useRef([]);
+
     const committedItemsRef = useRef(Array.isArray(order?.items) ? order.items : []);
     useEffect(() => {
         committedItemsRef.current = Array.isArray(order?.items) ? order.items : [];
@@ -388,9 +394,16 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [draftOrderNote, setDraftOrderNote] = useState("");
     const [isNoteOpen, setIsNoteOpen] = useState(false);
 
+    const [leaveTableModal, setLeaveTableModal] = useState({
+        open: false,
+        loading: false,
+    });
+
+    const leaveAfterSaveRef = useRef(false);
 
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
+
     const [itemsToPrint, setItemsToPrint] = useState([]);
     const [lastPayloadItems, setLastPayloadItems] = useState([]);
 
@@ -399,6 +412,45 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [guests, setGuests] = useState(0);
     const [customerPhone, setCustomerPhone] = useState("");
     const [customerAddress, setCustomerAddress] = useState("");
+    useEffect(() => {
+        const details = order?.customerDetails || {};
+
+        const nextName =
+            details?.name ||
+            draft?.name ||
+            "";
+
+        const nextPhone =
+            details?.phone ||
+            draft?.phone ||
+            "";
+
+        const nextAddress =
+            details?.address ||
+            draft?.address ||
+            "";
+
+        const nextGuests =
+            details?.guests ??
+            draft?.guests ??
+            0;
+
+        if (nextName) setCustomerName(String(nextName));
+        if (nextPhone) setCustomerPhone(String(nextPhone));
+        if (nextAddress) setCustomerAddress(String(nextAddress));
+        if (Number(nextGuests || 0) > 0) setGuests(Number(nextGuests || 0));
+    }, [
+        order?._id,
+        order?.customerDetails?.name,
+        order?.customerDetails?.phone,
+        order?.customerDetails?.address,
+        order?.customerDetails?.guests,
+        draft?.customerId,
+        draft?.customerName || draft?.name,
+        draft?.customerPhone || draft?.phone,
+        draft?.customerAddress || draft?.address,
+        draft?.guests,
+    ]);
 
     // Fiscal (NCF) opcional
     const [wantsFiscal, setWantsFiscal] = useState(false);
@@ -411,6 +463,58 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [tipEnabled, setTipEnabled] = useState(true);
     const [tipPercent, setTipPercent] = useState(10);
     const [taxEnabled, setTaxEnabled] = useState(true);
+    const effectiveOrderId = orderId || order?._id || null;
+
+    const {
+        data: ecfTenantStatus,
+        isLoading: isLoadingEcfTenantStatus,
+    } = useQuery({
+        queryKey: ["tenant-ecf-status"],
+        queryFn: async () => {
+            const res = await api.get("/api/order/ecf/status");
+            return res.data?.data || null;
+        },
+        staleTime: 30_000,
+        refetchOnMount: true,
+    });
+
+    const ecfFeatureEnabled = ecfTenantStatus?.enabled === true;
+    const ecfCanIssueByTenant = ecfTenantStatus?.canIssue === true;
+    const isEcfMode = ecfFeatureEnabled === true;
+
+    const e31Enabled = ecfTenantStatus?.documentTypes?.e31?.enabled === true;
+    const e32Enabled = ecfTenantStatus?.documentTypes?.e32?.enabled === true;
+
+    const electronicFiscalCapable =
+        isEcfMode && ecfCanIssueByTenant && (e31Enabled || e32Enabled);
+
+    const fiscalUiEnabled = isEcfMode
+        ? electronicFiscalCapable
+        : fiscalEnabledByTenant;
+
+    const fiscalUiCapable = isEcfMode
+        ? electronicFiscalCapable
+        : fiscalCapable;
+
+    const {
+        data: orderEcfStatus,
+        isLoading: isLoadingOrderEcfStatus,
+        refetch: refetchOrderEcfStatus,
+    } = useQuery({
+        queryKey: ["order-ecf-status", effectiveOrderId],
+        enabled: Boolean(effectiveOrderId && ecfFeatureEnabled),
+        queryFn: async () => {
+            const res = await api.get(`/api/order/${effectiveOrderId}/ecf`);
+            return res.data || null;
+        },
+        staleTime: 10_000,
+        refetchOnMount: true,
+    });
+
+    const existingEcf = orderEcfStatus?.exists === true ? orderEcfStatus?.data : null;
+    const hasExistingEcf = Boolean(existingEcf?.eNCF);
+    const [ecfDocType, setEcfDocType] = useState("e32");
+
     useEffect(() => {
         if (!order?._id) return;
 
@@ -485,9 +589,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [taxEnabledByTenant]);
 
     useEffect(() => {
-        if (!fiscalEnabledByTenant) setWantsFiscal(false);
-    }, [fiscalEnabledByTenant]);
-
+        if (!fiscalUiEnabled) setWantsFiscal(false);
+    }, [fiscalUiEnabled]);
     // Totales
     const { discount, base, deliveryFeeCalc, tax, tip, total } = useMemo(() => {
         const discountCalc =
@@ -735,8 +838,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             order?.table?.id ||
             null;
         const basePayload = {
-            orderStatus: "En Progreso",
+            // Facturar debe cerrar la orden para que el backend libere la mesa.
+            // Ticket/Actualizar solo guardan la orden y mantienen la mesa ocupada.
+            orderStatus: isInvoiceSubmit ? "Completado" : "En Progreso",
             items,
+            customerId: selectedCustomerId || null,
 
             // IMPORTANTE: enviar siempre el ID de la mesa
             table: resolvedTableId,
@@ -765,50 +871,82 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         };
 
         // customerDetails (si hay data)
+        const finalCustomerName =
+            String(customerName || draft?.name || order?.customerDetails?.name || "").trim();
+
+        const finalCustomerPhone =
+            String(customerPhone || draft?.phone || order?.customerDetails?.phone || "").trim();
+
+        const finalCustomerAddress =
+            String(customerAddress || draft?.address || order?.customerDetails?.address || "").trim();
+
+        const finalGuests =
+            Number(guests || draft?.guests || order?.customerDetails?.guests || 0);
+
         const hasCustomerData =
-            String(customerName || "").trim() ||
+            selectedCustomerId ||
+            finalCustomerName ||
+            finalCustomerPhone ||
+            finalCustomerAddress ||
             String(customerRnc || "").trim() ||
-            Number(guests || 0) > 0;
+            finalGuests > 0;
 
         if (hasCustomerData) {
             basePayload.customerDetails = {
-                name: String(customerName || "").trim(),
-                rnc: String(customerRnc || "").trim(),
-                guests: Number(guests || 0),
-                phone: String(customerPhone || "").trim(),
-                address: String(customerAddress || "").trim(),
+                name: finalCustomerName || "Consumidor Final",
+                rnc: String(customerRnc || order?.customerDetails?.rnc || "").trim(),
+                rncCedula: String(order?.customerDetails?.rncCedula || customerRnc || "").trim(),
+                guests: finalGuests,
+                phone: finalCustomerPhone,
+                address: finalCustomerAddress,
             };
         }
 
         // fiscal (si aplica)
-        if (wantsFiscal && fiscalCapable) {
-            const existingNcfNumber =
-                order?.fiscal?.ncfNumber ||
-                order?.ncfNumber ||
-                "";
+        if (wantsFiscal && fiscalUiCapable) {
+            if (isEcfMode) {
+                const selectedEcfType = String(ecfDocType || "e32").toLowerCase();
 
-            const inferredExistingType = inferNcfTypeFromNumber(existingNcfNumber);
+                if (selectedEcfType === "e31") {
+                    basePayload.fiscal = {
+                        requested: true,
+                        ncfType: "B01",
+                        ecfDocumentType: "31",
+                    };
+                } else {
+                    basePayload.fiscal = {
+                        requested: false,
+                        ncfType: "B02",
+                        ecfDocumentType: "32",
+                    };
+                }
+            } else {
+                const existingNcfNumber =
+                    order?.fiscal?.ncfNumber ||
+                    order?.ncfNumber ||
+                    "";
 
-            const safeNcfType =
-                inferredExistingType ||
-                order?.fiscal?.ncfType ||
-                order?.ncfType ||
-                (allowedNcfTypes.includes(ncfType) ? ncfType : null) ||
-                allowedNcfTypes[0] ||
-                "B02";
+                const inferredExistingType = inferNcfTypeFromNumber(existingNcfNumber);
 
-            basePayload.fiscal = {
-                requested: true,
-                ncfType: safeNcfType,
-            };
+                const safeNcfType =
+                    inferredExistingType ||
+                    order?.fiscal?.ncfType ||
+                    order?.ncfType ||
+                    (allowedNcfTypes.includes(ncfType) ? ncfType : null) ||
+                    allowedNcfTypes[0] ||
+                    "B02";
+
+                basePayload.fiscal = {
+                    requested: true,
+                    ncfType: safeNcfType,
+                };
+            }
+
             if (chargeMode === "AT_INVOICE" && isInvoiceSubmit) {
                 basePayload.paymentStatus = "Pagado";
                 basePayload.markAsPaid = true;
             }
-
         }
-
-
         return basePayload;
     };
 
@@ -833,6 +971,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         return groups;
     };
+
 
     const orderMutation = useMutation({
         mutationFn: async (payload) => {
@@ -894,15 +1033,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             const currentPrintTarget = printTargetRef.current;
 
+
             // Solo dejamos /menu?orderId=... cuando NO es factura final.
             // Para factura final, no queremos que el POS se quede pegado a esa orden cerrada.
             if (!orderId && createdId && currentPrintTarget !== "invoice") {
                 navigate(`/menu?orderId=${createdId}`, { replace: true });
             }
 
-            if (!orderId && createdId && currentPrintTarget === "invoice") {
-                navigate(`/menu?orderId=${createdId}`, { replace: true });
-            }
+            // Si es factura final, NO pegamos la pantalla a /menu?orderId=...
+// porque esa orden ya quedó cerrada y la mesa debe quedar libre.
 
             const fallback = buildOrderPayload(submitActionRef.current);
             const tableIdToSync =
@@ -911,12 +1050,25 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 getTableIdFromAny(draftTable) ||
                 getTableIdFromAny(order?.table);
 
+            const shouldReleaseTable =
+                tableIdToSync &&
+                (
+                    currentPrintTarget === "invoice" ||
+                    ["Completado", "Cancelado"].includes(String(server?.orderStatus || "").trim())
+                );
+
             const shouldOccupyTable =
                 tableIdToSync &&
-                effectiveId;
+                effectiveId &&
+                !shouldReleaseTable;
 
             try {
-                if (shouldOccupyTable) {
+                if (shouldReleaseTable) {
+                    await updateTable(tableIdToSync, {
+                        status: "Disponible",
+                        orderId: null,
+                    });
+                } else if (shouldOccupyTable) {
                     await updateTable(tableIdToSync, {
                         status: "Ocupada",
                         orderId: effectiveId,
@@ -1125,7 +1277,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             console.log("[BILL][fiscal armado]", fiscal);
             console.log("[BILL][resolvedNcfType]", resolvedNcfType);
             console.log("[BILL][resolvedNcfNumber]", resolvedNcfNumber);
-            setOrderInfo(invoice);
+
 
             if (currentPrintTarget !== "ticket") {
                 itemsToPrintRef.current = [];
@@ -1143,9 +1295,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 dispatch(clearDraftContext());
 
                 setIsOrderModalOpen(false);
+
+                if (leaveAfterSaveRef.current) {
+                    leaveAfterSaveRef.current = false;
+
+                    setLeaveTableModal({
+                        open: false,
+                        loading: false,
+                    });
+
+                    navigate("/mesas", { replace: true });
+                    return;
+                }
+
                 navigate("/orders");
                 return;
             }
+
             if (currentPrintTarget === "ticket") {
                 const sourceItems =
                     Array.isArray(itemsToPrintRef.current) && itemsToPrintRef.current.length
@@ -1187,11 +1353,40 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }
             enqueueSnackbar("Factura generada correctamente.", { variant: "success" });
+
+            const ecfFromBackend = server?.ecf || res?.data?.data?.ecf || null;
+
+            if (ecfFromBackend?.exists) {
+                invoice.ecf = {
+                    exists: true,
+                    eNCF: ecfFromBackend.eNCF || null,
+                    status: ecfFromBackend.status || null,
+                    trackId: ecfFromBackend.trackId || null,
+                    documentId: ecfFromBackend.documentId || null,
+                };
+
+                enqueueSnackbar("e-CF emitido correctamente.", { variant: "success" });
+            } else if (ecfFromBackend?.error) {
+                invoice.ecf = {
+                    exists: false,
+                    error: true,
+                    message: ecfFromBackend.message || "No se pudo emitir el e-CF.",
+                    errors: ecfFromBackend.errors || [],
+                };
+
+                enqueueSnackbar(
+                    ecfFromBackend.message || "La factura fue generada, pero no se pudo emitir el e-CF.",
+                    { variant: "warning" }
+                );
+            }
+
+            setOrderInfo(invoice);
             setShowInvoice(true);
 
-// NO limpiar carrito ni draft aquí.
-// Si limpias aquí, la mesa pierde el contexto inmediatamente.
-// La limpieza debe pasar solo cuando realmente se cierre/desocupe la mesa.
+// La factura ya cerró la orden. Limpiamos el contexto local para que
+// al volver a mesas no se reutilicen los productos de esta mesa.
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
 
             queryClient.invalidateQueries({ queryKey: ["orders"] });
             queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -1228,13 +1423,34 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const handlePlaceOrder = (target = "invoice") => {
-        if (wantsFiscal && fiscalCapable) {
+        if (paymentMethod === "Credito" && !selectedCustomerId) {
+            enqueueSnackbar("Para vender fiado debes seleccionar o crear un cliente guardado.", {
+                variant: "warning",
+            });
+            return;
+        }
+        if (wantsFiscal && fiscalUiCapable) {
             const doc = String(customerRnc || "").replace(/[^\d]/g, "");
-            if (!doc) {
-                enqueueSnackbar("Para factura fiscal, agrega RNC/Cédula del cliente.", {
-                    variant: "warning",
-                });
-                return;
+
+            if (isEcfMode && ecfDocType === "e31") {
+                if (![9, 11].includes(doc.length)) {
+                    enqueueSnackbar(
+                        "Para e31 crédito fiscal electrónico, debes agregar un RNC/Cédula válido de 9 u 11 dígitos.",
+                        { variant: "warning" }
+                    );
+                    return;
+                }
+            }
+
+            if (!isEcfMode && ncfType === "B01" && doc.length !== 9) {
+                if(![9, 11].includes(doc.length)){
+                    enqueueSnackbar("Para B01 crédito fiscal, debes agregar un RNC válido de 9 u 11 dígitos.", {
+                        variant: "warning",
+                    });
+                    return;
+
+                }
+
             }
         }
 
@@ -1282,10 +1498,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         setShowInvoice(false);
         setIsOrderModalOpen(false);
 
-        // No completar la orden aquí.
-        // No liberar la mesa aquí.
-        // No limpiar el carrito aquí.
-        // La mesa queda ocupada hasta presionar "Desocupar mesa".
+        // La factura ya cerró la orden y liberó la mesa.
+        // Aseguramos que el carrito/draft queden limpios al cerrar la factura.
+        dispatch(removeAllItems());
+        dispatch(clearDraftContext());
 
         queryClient.invalidateQueries({ queryKey: ["orders"] });
         queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -1332,6 +1548,108 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             enqueueSnackbar("No se pudo cerrar y liberar la mesa.", { variant: "error" });
         }
     };
+
+    const closeLeaveTableModal = () => {
+        if (leaveTableModal.loading) return;
+
+        setLeaveTableModal({
+            open: false,
+            loading: false,
+        });
+    };
+
+    const handleBackFromTableOrder = () => {
+        const tableId =
+            getTableIdFromAny(draftTable) ||
+            getTableIdFromAny(order?.table);
+
+        const hasItems = Number(itemsCount || 0) > 0;
+
+        // Si no es una mesa o no hay productos, salimos normal.
+        if (!tableId || !hasItems) {
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+            navigate("/mesas", { replace: true });
+            return;
+        }
+
+        setLeaveTableModal({
+            open: true,
+            loading: false,
+        });
+    };
+
+    const handleSaveItemsAndLeave = () => {
+        setLeaveTableModal((prev) => ({
+            ...prev,
+            loading: true,
+        }));
+
+        leaveAfterSaveRef.current = true;
+
+        setSubmitAction("update");
+        handlePlaceOrder("update");
+    };
+
+    const handleDiscardItemsAndLeave = async () => {
+        const currentOrderId =
+            orderId ||
+            order?._id ||
+            null;
+
+        const tableId =
+            getTableIdFromAny(draftTable) ||
+            getTableIdFromAny(order?.table);
+
+        try {
+            setLeaveTableModal((prev) => ({
+                ...prev,
+                loading: true,
+            }));
+
+            // Si ya existe una orden, limpiamos sus items.
+            // Tu backend ya tiene lógica para borrar/liberar si items viene vacío.
+            if (currentOrderId) {
+                await updateOrder(currentOrderId, {
+                    items: [],
+                    orderStatus: "En Progreso",
+                    submitAction: "clear_table_items",
+                });
+            } else if (tableId) {
+                await updateTable(tableId, {
+                    status: "Disponible",
+                    orderId: null,
+                });
+            }
+
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["tables"] });
+            queryClient.invalidateQueries({ queryKey: ["cash-session"] });
+
+            setLeaveTableModal({
+                open: false,
+                loading: false,
+            });
+
+            navigate("/mesas", { replace: true });
+        } catch (e) {
+            console.error("[BILL] No pude borrar los items de la mesa:", e?.response?.data || e);
+
+            setLeaveTableModal((prev) => ({
+                ...prev,
+                loading: false,
+            }));
+
+            enqueueSnackbar(
+                e?.response?.data?.message || "No se pudieron borrar los items de la mesa.",
+                { variant: "error" }
+            );
+        }
+    };
+
 
     return (
         <>
@@ -1564,7 +1882,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             {/* Método de pago */}
 
-            <div className="flex items-center justify-between gap-4 px-5 mt-4">
+            <div className="grid grid-cols-2 gap-3 px-5 mt-4">
                 {isAppDelivery  ? (
                     <button
                         type="button"
@@ -1590,10 +1908,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                 paymentMethodMutation.mutate("Efectivo");
                             }}
-                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
                                 paymentMethod === "Efectivo"
-                                    ? "bg-[#2b2b2b] text-white"
-                                    : "bg-[#1f1f1f] text-[#ababab]"
+                                    ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
+                                    : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
                             Efectivo
@@ -1610,10 +1928,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     paymentMethodMutation.mutate("Tarjeta");
                                 }
                             }}
-                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
                                 paymentMethod === "Tarjeta"
-                                    ? "bg-[#2b2b2b] text-white"
-                                    : "bg-[#1f1f1f] text-[#ababab]"
+                                    ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
+                                    : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
                             Tarjeta
@@ -1630,63 +1948,118 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     paymentMethodMutation.mutate("Transferencia");
                                 }
                             }}
-                            className={`px-4 py-3 w-full rounded-lg font-semibold ${
+                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center break-words transition-all ${
                                 paymentMethod === "Transferencia"
-                                    ? "bg-[#2b2b2b] text-white"
-                                    : "bg-[#1f1f1f] text-[#ababab]"
+                                    ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
+                                    : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
                             Transferencia
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setPaymentMethod("Credito");
+
+                                if (orderId) {
+                                    paymentMethodMutation.mutate("Credito");
+                                }
+                            }}
+                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
+                                paymentMethod === "Credito"
+                                    ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
+                                    : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
+                            }`}
+                        >
+                            Credito
+                        </button>
                     </>
                 )}
             </div>
-
+            
 
             {/* Datos del cliente + Fiscal */}
             <div className="px-5 mt-4">
                 {/* FACTURA FISCAL (solo si el tenant lo permite) */}
-                {fiscalEnabledByTenant && (
+                {fiscalUiEnabled && (
                     <div className="mt-4 border-t border-[#2b2b2b] pt-3">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-[#f5f5f5] font-semibold">Factura fiscal (NCF)</p>
+                                <p className="text-sm text-[#f5f5f5] font-semibold">
+                                    {isEcfMode ? "Factura electrónica e-CF" : "Factura fiscal (NCF)"}
+                                </p>
                                 <p className="text-xs text-[#ababab]">
-                                    Solo si el cliente lo solicita y tu empresa tiene NCF configurado.
+                                    {isEcfMode
+                                        ? "Selecciona si será consumo electrónico o crédito fiscal electrónico."
+                                        : "Solo si el cliente lo solicita y tu empresa tiene NCF configurado."}
                                 </p>
                             </div>
 
                             {/* ✅ Switch estilo Uber Eats */}
                             <Switch
                                 checked={wantsFiscal}
-                                disabled={!fiscalCapable}
+                                disabled={!fiscalUiCapable}
                                 onChange={(v) => setWantsFiscal(v)}
                             />
                         </div>
 
-                        {!fiscalCapable && (
+                        {!fiscalUiCapable && (
                             <p className="text-xs text-red-400 mt-2">
-                                Este tenant no tiene NCF habilitado/configurado.
+                                {isEcfMode
+                                    ? "Este tenant no tiene e-CF listo para emitir."
+                                    : "Este tenant no tiene NCF habilitado/configurado."}
                             </p>
                         )}
 
                         {/* ✅ SOLO mostrar campos cuando el switch está activo */}
-                        {wantsFiscal && fiscalCapable && (
+                        {wantsFiscal && fiscalUiCapable && (
                             <>
                                 <div className="mt-3">
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs text-[#ababab]">Tipo NCF</span>
-                                        <select
-                                            value={ncfType}
-                                            onChange={(e) => setNcfType(e.target.value)}
-                                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                        >
-                                            {allowedNcfTypes.map((t) => (
-                                                <option key={t} value={t}>
-                                                    {t === "B01" ? "B01 - Crédito Fiscal" : "B02 - Consumidor Final"}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        {isEcfMode ? (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-[#ababab]">Tipo e-CF</span>
+                                                <select
+                                                    value={ecfDocType}
+                                                    onChange={(e) => setEcfDocType(e.target.value)}
+                                                    className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                                >
+                                                    {e32Enabled && (
+                                                        <option value="e32">e32 - Factura de consumo electrónica</option>
+                                                    )}
+                                                    {e31Enabled && (
+                                                        <option value="e31">e31 - Crédito fiscal electrónico</option>
+                                                    )}
+                                                </select>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-[#ababab]">Tipo NCF</span>
+                                                <select
+                                                    value={ncfType}
+                                                    onChange={(e) => setNcfType(e.target.value)}
+                                                    className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                                >
+                                                    {allowedNcfTypes.map((t) => (
+                                                        <option key={t} value={t}>
+                                                            {t === "B01" ? "B01 - Crédito Fiscal" : "B02 - Consumidor Final"}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-[#ababab] mt-2">
+                                            {isEcfMode
+                                                ? ecfDocType === "e31"
+                                                    ? "Para e31 debes agregar el RNC y razón social del cliente."
+                                                    : "Para e32 los datos del cliente son opcionales, salvo casos especiales."
+                                                : "Recomendación: agrega RNC/Cédula para completar los datos."}
+                                            {dgiiLoading ? " Buscando en DGII..." : ""}
+                                            {!dgiiLoading && dgiiStatus === "FOUND" ? " Encontrado." : ""}
+                                            {!dgiiLoading && dgiiStatus === "NOT_FOUND" ? " No encontrado." : ""}
+                                            {!dgiiLoading && dgiiStatus === "ERROR" ? " Error consultando." : ""}
+                                        </p>
                                     </div>
 
                                     <p className="text-xs text-[#ababab] mt-2">
@@ -1760,7 +2133,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     disabled={orderMutation.isPending}
                     className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
                 >
-                    Facturar
+                    {ecfFeatureEnabled ? "Facturar" : "Facturar"}
                 </button>
 
                 {/* 3) Actualizar: oculto en canal rápido */}
@@ -1778,6 +2151,83 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     </button>
                 )}
             </div>
+            <AnimatePresence>
+                {leaveTableModal.open && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={closeLeaveTableModal}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.94, opacity: 0, y: 16 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.94, opacity: 0, y: 16 }}
+                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#151515] via-[#101010] to-[#070707] shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="p-6 border-b border-white/10">
+                                <h3 className="text-xl font-bold text-white">
+                                    ¿Qué deseas hacer con esta mesa?
+                                </h3>
+
+                                <p className="mt-2 text-sm leading-6 text-white/60">
+                                    Tienes productos agregados. Puedes guardarlos en la mesa para continuar luego o borrarlos antes de salir.
+                                </p>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 mb-5">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-white/50">Productos</span>
+                                        <span className="font-semibold text-white">
+                                {itemsCount}
+                            </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-sm mt-3">
+                                        <span className="text-white/50">Total actual</span>
+                                        <span className="font-semibold text-[#f6b100]">
+                                RD${num(subtotal).toFixed(2)}
+                            </span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveItemsAndLeave}
+                                        disabled={leaveTableModal.loading || orderMutation.isPending}
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] transition-all disabled:opacity-50"
+                                    >
+                                        {leaveTableModal.loading ? "Guardando..." : "Guardar en la mesa"}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleDiscardItemsAndLeave}
+                                        disabled={leaveTableModal.loading || orderMutation.isPending}
+                                        className="w-full px-4 py-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-red-300 font-bold hover:bg-red-500/20 transition-all disabled:opacity-50"
+                                    >
+                                        Borrar y salir
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={closeLeaveTableModal}
+                                        disabled={leaveTableModal.loading || orderMutation.isPending}
+                                        className="w-full px-4 py-3 rounded-2xl border border-white/10 bg-[#1a1a1a] text-white font-semibold hover:bg-[#242424] transition-all disabled:opacity-50"
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             {showCashChangeBox && (
                 <div className="px-5 mt-4">
                     <div className="rounded-2xl border border-[#2b2b2b] bg-gradient-to-br from-[#151515] to-[#0f0f0f] p-4 shadow-lg">

@@ -5,6 +5,7 @@ import { ChevronDown, ShoppingCart, Minus, Plus, Search, X } from "lucide-react"
 import { enqueueSnackbar } from "notistack";
 import { useDispatch ,useSelector } from "react-redux";
 import { setCart } from "../../redux/slices/cartSlice";
+
 import { addItems } from "../../redux/slices/cartSlice";
 import api from "../../lib/api"
 
@@ -197,10 +198,27 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
         const n = Number(String(v ?? "1").replace(",", "."));
         return Number.isFinite(n) ? Math.max(0, n) : 0;
     };
+
     const setWeight = (id, val) => setWeightMap((m) => ({ ...m, [id]: val }));
 
+    const resetWeight = (id) => {
+        setWeightMap((m) => ({
+            ...m,
+            [id]: "1",
+        }));
+    };
+
     const getQty = (id) => Math.max(0, qtyMap[id] ?? 1);
+
+    const resetQty = (id) => {
+        setQtyMap((m) => ({
+            ...m,
+            [id]: 1,
+        }));
+    };
+
     const inc = (id) => setQtyMap((m) => ({ ...m, [id]: Math.min((m[id] ?? 1) + 1, 99) }));
+
     const dec = (id) =>
         setQtyMap((m) => ({ ...m, [id]: Math.max((m[id] ?? 1) - 1, 0) }));
 
@@ -214,15 +232,17 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
         // UNIT
         if (sellMode !== "weight") {
             const quantity = getQty(dish._id);
+
             if (quantity <= 0) {
                 enqueueSnackbar?.("Quantity must be at least 1", { variant: "warning" });
                 return;
             }
 
-            // Si es precio manual, abre modal y no agregues aún
+            // Si es precio manual, abre modal y no agregues aún.
+            // El reset se hará cuando realmente se agregue desde el modal.
             if (dish?.allowCustomPrice) {
                 setCustomPriceDish(dish);
-                setCustomPriceValue(""); // limpio
+                setCustomPriceValue("");
                 return;
             }
 
@@ -243,18 +263,20 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
             if (typeof onAddToCart === "function") {
                 onAddToCart(item);
                 triggerAddFx(dish._id);
+                resetQty(dish._id);
                 enqueueSnackbar?.(`${item.name} x${item.quantity} added to cart`, { variant: "success" });
                 return;
             }
 
             dispatch(addItems(item));
             triggerAddFx(dish._id);
+            resetQty(dish._id);
             return;
-
         }
 
-        // WEIGHT (lb)
+        // WEIGHT / LIBRAS
         const weight = getWeight(dish._id);
+
         if (weight <= 0) {
             enqueueSnackbar?.("Las libras deben ser mayor a 0.", { variant: "warning" });
             return;
@@ -279,12 +301,14 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
         if (typeof onAddToCart === "function") {
             onAddToCart(item);
             triggerAddFx(dish._id);
+            resetWeight(dish._id);
             enqueueSnackbar?.(`${item.name} (${weight} ${item.weightUnit}) added to cart`, { variant: "success" });
             return;
         }
 
         dispatch(addItems(item));
         triggerAddFx(dish._id);
+        resetWeight(dish._id);
     };
 
 
@@ -381,6 +405,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                         }
 
                                         triggerAddFx(customPriceDish._id);
+                                        resetQty(customPriceDish._id);
                                         enqueueSnackbar?.(`${item.name} x${item.quantity} agregado`, { variant: "success" });
                                         setCustomPriceDish(null);
                                     }}

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { RiDeleteBin2Fill } from "react-icons/ri";
 import { FaNotesMedical } from "react-icons/fa6";
 import { useDispatch, useSelector } from "react-redux";
-import { removeItem } from "../../redux/slices/cartSlice";
+import { setCart } from "../../redux/slices/cartSlice";
 
 const getItemKey = (item, index) => {
     return [
@@ -24,8 +24,39 @@ const getItemSignature = (item) => {
     });
 };
 
+const num = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const getUnitPrice = (item) => {
+    const quantity = num(item?.quantity || 1);
+
+    return num(
+        item?.unitPrice ??
+        item?.pricePerQuantity ??
+        item?.pricePerLb ??
+        item?.pricePerLB ??
+        (quantity > 0 ? num(item?.price) / quantity : 0)
+    );
+};
+
+const recalcItem = (item, nextQty) => {
+    const unitPrice = getUnitPrice(item);
+    const quantity = Number(nextQty);
+
+    return {
+        ...item,
+        quantity,
+        qty: quantity,
+        unitPrice,
+        price: Number((unitPrice * quantity).toFixed(2)),
+    };
+};
+
 const CartInfo = () => {
-    const cartData = useSelector((state) => state.cart);
+    const cartDataRaw = useSelector((state) => state.cart);
+    const cartData = Array.isArray(cartDataRaw) ? cartDataRaw : [];
     const scrollRef = useRef(null);
     const prevSnapshotRef = useRef({});
     const highlightTimeoutRef = useRef(null);
@@ -85,8 +116,38 @@ const CartInfo = () => {
         };
     }, []);
 
-    const handleRemove = (itemId) => {
-        dispatch(removeItem(itemId));
+    const handleRemoveOne = (index) => {
+        const item = cartData[index];
+        if (!item) return;
+
+        const currentQty = num(item.quantity || 1);
+        const nextCart = [...cartData];
+
+        // Si solo queda 1, se elimina la línea completa.
+        if (currentQty <= 1) {
+            nextCart.splice(index, 1);
+            dispatch(setCart(nextCart));
+            return;
+        }
+
+        // Si hay más de 1, solo resta 1.
+        const nextQty = currentQty - 1;
+        nextCart[index] = recalcItem(item, nextQty);
+
+        dispatch(setCart(nextCart));
+    };
+
+    const handleAddOne = (index) => {
+        const item = cartData[index];
+        if (!item) return;
+
+        const currentQty = num(item.quantity || 1);
+        const nextQty = currentQty + 1;
+
+        const nextCart = [...cartData];
+        nextCart[index] = recalcItem(item, nextQty);
+
+        dispatch(setCart(nextCart));
     };
 
     return (
@@ -165,18 +226,31 @@ const CartInfo = () => {
                                         </p>
                                     </div>
 
+                                    {item.note && (
+                                        <p className="mt-2 text-xs text-[#f6b100]">
+                                            Nota: {item.note}
+                                        </p>
+                                    )}
+
                                     <div className="flex items-center justify-between mt-3">
                                         <div className="flex items-center gap-3">
-                                            <RiDeleteBin2Fill
-                                                onClick={() => handleRemove(item.id)}
-                                                className="text-[#ababab] cursor-pointer"
-                                                size={20}
-                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveOne(index)}
+                                                className="text-[#ababab] hover:text-red-400 transition-colors"
+                                                title="Quitar 1"
+                                            >
+                                                <RiDeleteBin2Fill size={20} />
+                                            </button>
 
-                                            <FaNotesMedical
-                                                className="text-[#ababab] cursor-pointer"
-                                                size={20}
-                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleAddOne(index)}
+                                                className="text-[#ababab] hover:text-[#f6b100] transition-colors"
+                                                title="Agregar 1"
+                                            >
+                                                <FaNotesMedical size={20} />
+                                            </button>
                                         </div>
 
                                         <p className="text-[#f5f5f5] text-md font-bold">

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-
+import AccountsReceivable from "./AccountsReceivable";
 import {
     FileText,
     Users,
@@ -301,6 +301,12 @@ const Admin = () => {
                     description: "Control de cierre de caja diario",
                 },
                 {
+                    id: "accounts-receivable",
+                    label: "Cuentas por cobrar",
+                    icon: CreditCard,
+                    description: "Control de fiado, abonos y saldos pendientes",
+                },
+                {
                     id: "sales-reports",
                     label: "Reportes de Ventas",
                     icon: DollarSign,
@@ -530,7 +536,9 @@ const Admin = () => {
         if (reportes) {
             sections.push({
                 ...reportes,
-                items: (reportes.items || []).filter((i) => i.id === "cash-register"),
+                items: (reportes.items || []).filter((i) =>
+                    ["cash-register", "accounts-receivable"].includes(i.id)
+                ),
             });
         }
 
@@ -826,6 +834,7 @@ const Admin = () => {
                                         currentUser={effectiveUser}
                                     />
                                 )}
+                                {tab === "accounts-receivable" && <AccountsReceivable />}
                                 {tab === "reports" && <Reports />}
                                 {tab === "employees" && <Employees />}
                                 {tab === "fiscal" && <FiscalConfig />}

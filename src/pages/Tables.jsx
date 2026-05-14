@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { setDraftContext, clearDraftContext, removeCustomer } from "../redux/slices/customerSlice";
+import { setDraftContext, clearDraftContext } from "../redux/slices/customerSlice";
 import { removeAllItems } from "../redux/slices/cartSlice";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
@@ -25,15 +25,33 @@ export default function Tables() {
     const [deliveryPayOpen, setDeliveryPayOpen] = React.useState(false);
     const [deliveryPayMethod, setDeliveryPayMethod] = React.useState("Efectivo");
     const [pendingVirtual, setPendingVirtual] = React.useState(null);
-
-
     const [tableActionModal, setTableActionModal] = React.useState({
         open: false,
         table: null,
     });
 
     const closeTableActionModal = () => {
-        setTableActionModal({ open: false, table: null });
+        setTableActionModal({
+            open: false,
+            table: null,
+        });
+    };
+
+
+    const [releaseConfirmModal, setReleaseConfirmModal] = React.useState({
+        open: false,
+        table: null,
+        loading: false,
+    });
+
+    const closeReleaseConfirmModal = () => {
+        if (releaseConfirmModal.loading) return;
+
+        setReleaseConfirmModal({
+            open: false,
+            table: null,
+            loading: false,
+        });
     };
 
     const userState = useSelector((state) => state.user);
@@ -196,20 +214,27 @@ export default function Tables() {
             queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
         }
 
-        // Mesa nueva sin orden activa: limpiar carrito anterior antes de abrir menú
+        // Mesa nueva sin orden activa: limpiar carrito anterior,
+// pero NO borrar el cliente seleccionado.
         dispatch(removeAllItems());
-        dispatch(removeCustomer());
         dispatch(clearDraftContext());
 
         dispatch(
             setDraftContext({
-                table: tableId,
+                table: {
+                    _id: tableId,
+                    id: tableId,
+                    tableNo: table?.tableNo,
+                    tableNumber: table?.tableNumber,
+                    name: table?.name,
+                    area: table?.area || "General",
+                    seats: table?.seats,
+                },
                 isVirtual: false,
                 virtualType: null,
                 orderSource: "DINE_IN",
             })
         );
-
         navigate("/menu");
     };
 
@@ -224,9 +249,24 @@ export default function Tables() {
         );
     };
 
-    const handleReleaseTable = async (table) => {
+    const handleReleaseTable = (table) => {
         const tableId = table?._id || table?.id || null;
-        const currentOrderId = getOrderIdFromTable(table);
+
+        if (!tableId) {
+            enqueueSnackbar("No se encontró el ID de la mesa.", { variant: "error" });
+            return;
+        }
+
+        setReleaseConfirmModal({
+            open: true,
+            table,
+            loading: false,
+        });
+    };
+
+    const confirmReleaseTable = async () => {
+        const table = releaseConfirmModal.table;
+        const tableId = table?._id || table?.id || null;
 
         if (!tableId) {
             enqueueSnackbar("No se encontró el ID de la mesa.", { variant: "error" });
@@ -234,19 +274,22 @@ export default function Tables() {
         }
 
         try {
-            // 1) Si la mesa tiene una orden activa, primero la completamos/cerramos
-            if (currentOrderId) {
-                await updateOrder(currentOrderId, {
-                    orderStatus: "Completado",
-                    submitAction: "invoice",
-                });
-            }
+            setReleaseConfirmModal((prev) => ({
+                ...prev,
+                loading: true,
+            }));
 
-            // 2) Luego liberamos la mesa
+            // IMPORTANTE:
+            // Desocupar la mesa NO cancela la orden.
+            // Solo libera la mesa quitando currentOrder.
+            // La orden queda igual, con sus productos y su estado actual.
             await updateTable(tableId, {
                 status: "Disponible",
                 orderId: null,
             });
+
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
 
             queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
             queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
@@ -258,17 +301,32 @@ export default function Tables() {
                 type: "active",
             });
 
-            enqueueSnackbar("Mesa desocupada correctamente.", { variant: "success" });
+            enqueueSnackbar("Mesa desocupada correctamente. La orden se mantiene igual.", {
+                variant: "success",
+            });
+
+            setReleaseConfirmModal({
+                open: false,
+                table: null,
+                loading: false,
+            });
+
             closeTableActionModal();
         } catch (e) {
             console.error("[TABLES] No pude desocupar la mesa:", e?.response?.data || e);
+
+            setReleaseConfirmModal((prev) => ({
+                ...prev,
+                loading: false,
+            }));
 
             enqueueSnackbar(
                 e?.response?.data?.message || "No se pudo desocupar la mesa.",
                 { variant: "error" }
             );
         }
-    };
+    };;
+
     const handlePickTable = (table) => {
         // 1) CANALES VIRTUALES
         if (table?.isVirtual) {
@@ -278,9 +336,7 @@ export default function Tables() {
 
             // Canal virtual nuevo: limpiar carrito anterior
             dispatch(removeAllItems());
-            dispatch(removeCustomer());
             dispatch(clearDraftContext());
-
             dispatch(
                 setDraftContext({
                     table: null,
@@ -467,6 +523,89 @@ export default function Tables() {
                                 >
                                     Cancelar
                                 </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {releaseConfirmModal.open && releaseConfirmModal.table && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={closeReleaseConfirmModal}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.94, opacity: 0, y: 16 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.94, opacity: 0, y: 16 }}
+                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#151515] via-[#101010] to-[#070707] shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="p-6 border-b border-white/10">
+                                <div className="flex items-start gap-4">
+                                    <div className="h-12 w-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                                        <span className="text-2xl">!</span>
+                                    </div>
+
+                                    <div className="flex-1">
+                                        <h3 className="text-xl font-bold text-white">
+                                            Desocupar mesa
+                                        </h3>
+
+                                        <p className="mt-2 text-sm leading-6 text-white/60">
+                                            La mesa quedará disponible, pero la orden activa se mantendrá igual. No será cancelada ni facturada.                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6">
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 mb-5">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-white/50">Mesa</span>
+                                        <span className="font-semibold text-white">
+                                Mesa {releaseConfirmModal.table?.tableNo || "—"}
+                            </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-sm mt-3">
+                                        <span className="text-white/50">Área</span>
+                                        <span className="font-semibold text-white">
+                                {releaseConfirmModal.table?.area || "General"}
+                            </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-sm mt-3">
+                                        <span className="text-white/50">Orden actual</span>
+                                        <span className="font-semibold text-white">
+                                {releaseConfirmModal.table?.currentOrder ? "Sí" : "No"}
+                            </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={closeReleaseConfirmModal}
+                                        disabled={releaseConfirmModal.loading}
+                                        className="w-full px-4 py-3 rounded-2xl border border-white/10 bg-[#1a1a1a] text-white font-semibold hover:bg-[#242424] transition-all disabled:opacity-50"
+                                    >
+                                        Cancelar
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={confirmReleaseTable}
+                                        disabled={releaseConfirmModal.loading}
+                                        className="w-full px-4 py-3 rounded-2xl bg-red-500 text-white font-bold hover:bg-red-400 transition-all disabled:opacity-50"
+                                    >
+                                        {releaseConfirmModal.loading ? "Desocupando..." : "Sí, desocupar"}
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     </motion.div>

@@ -5,21 +5,8 @@ import { useReactToPrint } from "react-to-print";
 import useTenant from "../../hooks/useTenant.js";
 import { printWithTenantConfig } from "../../lib/tenantPrint";
 import usePrinterOptions from "../../hooks/usePrinterOptions";
+import { QRCodeSVG } from "qrcode.react";
 const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
-
-    const formatPhoneDO = (value = "") => {
-        const digits = String(value || "").replace(/\D/g, "");
-
-        if (digits.length === 10) {
-            return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-        }
-
-        if (digits.length === 11 && digits.startsWith("1")) {
-            return `1-${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
-        }
-
-        return String(value || "").trim();
-    };
 
 const formatDMY = (dateLike) => {
     if (!dateLike) return "N/A";
@@ -74,10 +61,47 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const businessName = tenantInfo?.business?.name || tenantInfo?.name || "";
     const businessAddress = tenantInfo?.business?.address || "";
     const businessRnc = tenantInfo?.business?.rnc || tenantInfo?.fiscal?.rnc || "";
-    const businessPhone = formatPhoneDO(tenantInfo?.business?.phone || "");
+    const businessPhone = tenantInfo?.business?.phone || "";
 
     // ===== Fiscal =====
     const resolvedFiscalRequested = order?.fiscal?.requested === true;
+    const ecf = order?.ecf || null;
+
+    const isEcf = Boolean(
+        ecf?.exists === true ||
+        ecf?.eNCF ||
+        ecf?.trackId ||
+        ecf?.status
+    );
+
+    const ecfENCF = ecf?.eNCF || "";
+    const ecfStatus = ecf?.status || "";
+    const ecfTrackId = ecf?.trackId || "";
+    const ecfSecurityCode = ecf?.securityCode || "";
+    const ecfQrUrl = ecf?.qrUrl || "";
+    const ecfFechaHoraFirma = ecf?.fechaHoraFirma || "";
+    const ecfDocumentType =
+        String(ecf?.documentType || "").trim() ||
+        (String(ecfENCF || "").startsWith("E31")
+            ? "31"
+            : String(ecfENCF || "").startsWith("E32")
+                ? "32"
+                : String(ecfENCF || "").startsWith("E33")
+                    ? "33"
+                    : String(ecfENCF || "").startsWith("E34")
+                        ? "34"
+                        : "");
+
+    const ecfTypeLabel =
+        ecfDocumentType === "31"
+            ? "e31 - Crédito fiscal electrónico"
+            : ecfDocumentType === "32"
+                ? "e32 - Factura de consumo electrónica"
+                : ecfDocumentType === "33"
+                    ? "e33 - Nota de débito electrónica"
+                    : ecfDocumentType === "34"
+                        ? "e34 - Nota de crédito electrónica"
+                        : "e-CF";
 
     const resolvedNcfType =
         order?.fiscal?.ncfType ||
@@ -177,11 +201,10 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         order?.customerRnc ||
         order?.customerRNC ||
         "";
-    const clientPhone = formatPhoneDO(
+    const clientPhone =
         order?.customerDetails?.phone ||
         order?.customerPhone ||
-        ""
-    );
+        "";
 
     const clientAddress =
         order?.customerDetails?.address ||
@@ -327,7 +350,13 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
     const browserPrint = useReactToPrint({
         contentRef: receiptRef,
-        documentTitle: isFiscal ? "Factura NCF" : (isPreInvoice ? "PreFactura" : "Factura"),
+        documentTitle: isEcf
+            ? "Factura e-CF"
+            : isFiscal
+                ? "Factura NCF"
+                : isPreInvoice
+                    ? "PreFactura"
+                    : "Factura",
     });
 
     const handleBrowserPrint = async () => {
@@ -361,10 +390,21 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
                 headerTitle,
 
-                isFiscal,
+
+                isFiscal: isEcf ? false : isFiscal,
                 isPreInvoice,
-                ncfType,
-                ncfNumber,
+                isEcf,
+                ecfENCF,
+                ecfStatus,
+                ecfTrackId,
+                ecfDocumentType,
+                ecfTypeLabel,
+
+                ecfSecurityCode,
+                ecfQrUrl,
+                ecfFechaHoraFirma,
+                ncfType: isEcf ? "" : ncfType,
+                ncfNumber: isEcf ? "" : ncfNumber,
                 facturaNo,
                 branchName,
                 emissionPoint,
@@ -442,9 +482,13 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
     const headerTitle =
         invoiceTitle ??
-        (isFiscal
-            ? "Factura con Comprobante Fiscal"
-            : (isPreInvoice ? "PreFactura" : "Factura Consumidor Final"));
+        (isEcf
+            ? "Factura Electrónica e-CF"
+            : isFiscal
+                ? "Factura con Comprobante Fiscal"
+                : isPreInvoice
+                    ? "PreFactura"
+                    : "Factura Consumidor Final");
 
     return (
         <motion.div
@@ -476,14 +520,18 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         </h2>
                     </div>
 
-                    {/* NCF */}
-                    {isFiscal && (
+                    {/* Tipo documento fiscal */}
+                    {isEcf ? (
+                        <div className="text-xs text-center text-gray-700">
+                            <p>Tipo e-CF: {ecfTypeLabel}</p>
+                            {ecfENCF && <p className="font-semibold">eNCF: {ecfENCF}</p>}
+                        </div>
+                    ) : isFiscal ? (
                         <div className="text-xs text-center text-gray-700">
                             {ncfType && <p>Tipo NCF: {ncfType}</p>}
                             {ncfNumber && <p className="font-semibold">NCF: {ncfNumber}</p>}
                         </div>
-                    )}
-
+                    ) : null}
                     <p className="text-[11px] text-center text-gray-600">Gracias por su compra</p>
 
                     {/* Datos orden */}
@@ -527,15 +575,54 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                             </p>
                         )}
 
+                        {isEcf && (
+                            <>
+                                <p>
+                                    <span className="font-semibold">eNCF:</span>{" "}
+                                    <span className="font-semibold">{ecfENCF || "Pendiente"}</span>
+                                </p>
+
+                                <p>
+                                    <span className="font-semibold">Estado e-CF:</span>{" "}
+                                    {ecfStatus || "Pendiente"}
+                                </p>
+
+                                <p>
+                                    <span className="font-semibold">TrackId:</span>{" "}
+                                    {ecfTrackId || "Pendiente"}
+                                </p>
+                            </>
+                        )}
+                        {ecfSecurityCode && (
+                            <p>
+                                <span className="font-semibold">Código de seguridad:</span>{" "}
+                                {ecfSecurityCode}
+                            </p>
+                        )}
+
+                        {ecfFechaHoraFirma && (
+                            <p>
+                                <span className="font-semibold">Fecha firma:</span>{" "}
+                                {ecfFechaHoraFirma}
+                            </p>
+                        )}
+
+                        {ecfQrUrl && (
+                            <div className="flex flex-col items-center justify-center mt-3">
+                                <QRCodeSVG value={ecfQrUrl} size={96} />
+                                <p className="text-[10px] text-gray-500 mt-1 text-center">
+                                    Consulta e-CF DGII
+                                </p>
+                            </div>
+                        )}
 
                         {/* ✅ Vence (NCF) */}
-                        {isFiscal && (
+                        {!isEcf && isFiscal && (
                             <p>
                                 <span className="font-semibold">Vence (NCF):</span>{" "}
                                 {expirationDate ? formatDMY(expirationDate) : "N/A"}
                             </p>
                         )}
-
                         <p>
                             <span className="font-semibold">Cliente:</span> {clientName}
                         </p>

@@ -52,8 +52,21 @@ const FinancialAnalysis = () => {
         return getItemPrice(item) * qty;
     };
 
+    const addDaysISOStart = (ymd, days) => {
+        const d = new Date(`${ymd}T00:00:00`);
+        d.setDate(d.getDate() + days);
+        // devolvemos ISO sin timezone raro: YYYY-MM-DDTHH:mm:ss.000
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}T00:00:00.000`;
+    };
+
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
+
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
 
         let fromYMD = obj.from || obj.to || "";
         let toYMD = obj.to || obj.from || "";
@@ -65,9 +78,9 @@ const FinancialAnalysis = () => {
             toYMD = tmp;
         }
 
-        // Día completo real
+        // Normaliza rango (días completos):
         if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
+        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];

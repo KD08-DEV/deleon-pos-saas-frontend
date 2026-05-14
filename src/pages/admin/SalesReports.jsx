@@ -65,33 +65,42 @@ const SalesReports = () => {
     const safeNumber = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
     const fmtPct = (v) => (v == null ? "N/A" : `${Number(v).toFixed(2)}%`);
-    const buildDateRangeParams = (sourceFilters = {}) => {
-        const obj = { ...sourceFilters };
+    const addDaysISOStart = (ymd, days) => {
+        const d = new Date(`${ymd}T00:00:00`);
+        d.setDate(d.getDate() + days);
 
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}T00:00:00.000`;
+    };
+
+    const cleanedParams = useMemo(() => {
+        const obj = { ...filters };
+
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        // Si solo selecciona "desde", asumimos "hasta" = mismo día
+        // Si solo selecciona "hasta", asumimos "desde" = mismo día
         let fromYMD = obj.from || obj.to || "";
         let toYMD = obj.to || obj.from || "";
 
-        // Evita rango invertido
+        // Evita rango invertido (to < from)
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
             fromYMD = toYMD;
             toYMD = tmp;
         }
 
-        // Día completo real.
-        // Ejemplo: 2026-05-24 => 2026-05-24 00:00:00 hasta 23:59:59
         if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
+        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo (día siguiente 00:00)
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
         });
 
         return obj;
-    };
-
-    const cleanedParams = useMemo(() => {
-        return buildDateRangeParams(filters);
     }, [filters]);
 
 
@@ -110,13 +119,11 @@ const SalesReports = () => {
         queryFn: async () => {
             // En tu UI, filters.from / filters.to están en formato YYYY-MM-DD
             // El backend los parsea bien con new Date(...)
-            const productParams = buildDateRangeParams({
-                from: filters.from,
-                to: filters.to,
+            return fetchProductDetail({
+                from: `${filters.from}T00:00:00.000`,
+                to: addDaysISOStart(filters.to, 1), // fin exclusivo: día siguiente 00:00
                 paymentMethod: filters.method || undefined,
             });
-
-            return fetchProductDetail(productParams);
         },
         enabled: true,
         keepPreviousData: true,

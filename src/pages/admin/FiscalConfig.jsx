@@ -97,6 +97,57 @@ export default function FiscalConfig() {
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState(null);
     const [printingForm, setPrintingForm] = useState(null);
+    const [certFile, setCertFile] = useState(null);
+    const [certPassword, setCertPassword] = useState("");
+    const [uploadingCert, setUploadingCert] = useState(false);
+    const uploadEcfCertificate = async () => {
+        if (!certFile) {
+            enqueueSnackbar("Selecciona un certificado .p12 o .pfx.", { variant: "warning" });
+            return;
+        }
+
+        if (!certPassword.trim()) {
+            enqueueSnackbar("Ingresa la contraseña del certificado.", { variant: "warning" });
+            return;
+        }
+
+        try {
+            setUploadingCert(true);
+
+            const formData = new FormData();
+            formData.append("certificate", certFile);
+            formData.append("password", certPassword.trim());
+
+            const res = await api.post("/api/admin/ecf/profile/certificate", formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+            });
+
+            if (!res.data?.success) {
+                throw new Error(res.data?.message || "No se pudo subir el certificado.");
+            }
+
+            enqueueSnackbar("Certificado e-CF cargado correctamente.", { variant: "success" });
+
+            setCertFile(null);
+            setCertPassword("");
+
+            await qc.invalidateQueries({ queryKey: ["admin-ecf-profile"] });
+            await qc.invalidateQueries({ queryKey: ["tenant-ecf-status"] });
+        } catch (error) {
+            console.error("uploadEcfCertificate error:", error);
+
+            const msg =
+                error?.response?.data?.message ||
+                error?.message ||
+                "Error subiendo certificado e-CF.";
+
+            enqueueSnackbar(msg, { variant: "error" });
+        } finally {
+            setUploadingCert(false);
+        }
+    };
 
     useEffect(() => {
         if (!printingConfig) return;
@@ -137,6 +188,19 @@ export default function FiscalConfig() {
         refetchOnReconnect: true,
     });
 
+    const {
+        data: ecfProfile,
+        isLoading: isLoadingEcfProfile,
+    } = useQuery({
+        queryKey: ["admin-ecf-profile"],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/ecf/profile");
+            return res.data?.data || null;
+        },
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnReconnect: true,
+    });
     const currentPlan = String(data?.plan || "").trim().toLowerCase();
 
     const canUseFiscal =
@@ -146,6 +210,16 @@ export default function FiscalConfig() {
         const b01 = data?.fiscal?.ncfConfig?.B01 || {};
         const b02 = data?.fiscal?.ncfConfig?.B02 || {};
         return {
+            ecf: {
+                enabled: !!ecfProfile?.enabled,
+                environment: ecfProfile?.environment || "internal_sandbox",
+                certificationStatus: ecfProfile?.certificationStatus || "not_started",
+                issuerRnc: ecfProfile?.issuer?.rnc || "",
+                issuerLegalName: ecfProfile?.issuer?.legalName || "",
+                certificateUploaded:
+                    ecfProfile?.security?.certificateUploaded === true ||
+                    ecfProfile?.certificate?.isActive === true,
+            },
             features: {
                 taxEnabled: typeof data?.features?.tax?.enabled === "boolean" ? data.features.tax.enabled : true,
                 tipEnabled: typeof data?.features?.tip?.enabled === "boolean" ? data.features.tip.enabled : true,
@@ -174,7 +248,7 @@ export default function FiscalConfig() {
                 expiresAt: asDateInputValue(b02.expiresAt),
             },
         };
-    }, [data, canUseFiscal]);
+    }, [data, canUseFiscal, ecfProfile]);
 
     const [form, setForm] = useState(null);
 
@@ -191,7 +265,7 @@ export default function FiscalConfig() {
         }
     }, [msg]);
 
-    if (isLoading || !form) {
+    if (isLoading || isLoadingEcfProfile || !form) {
         return (
             <div className="text-center py-8 text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
@@ -268,8 +342,20 @@ export default function FiscalConfig() {
 
             const res = await api.patch("/api/admin/fiscal-config", payload);
             if (!res.data?.success) throw new Error(res.data?.message || "No se pudo guardar");
+            const ecfPayload = {
+                enabled: !!form.ecf?.enabled,
+                environment: form.ecf?.environment || "internal_sandbox",
+                syncIssuerFromTenant: true,
+            };
+
+            const ecfRes = await api.patch("/api/admin/ecf/profile", ecfPayload);
+            if (!ecfRes.data?.success) {
+                throw new Error(ecfRes.data?.message || "No se pudo guardar la configuración e-CF");
+            }
 
             await qc.invalidateQueries({ queryKey: ["admin-fiscal-config"] });
+            await qc.invalidateQueries({ queryKey: ["admin-ecf-profile"] });
+            await qc.invalidateQueries({ queryKey: ["tenant-ecf-status"] });
             setMsg({ type: "ok", text: "Configuración guardada correctamente" });
             enqueueSnackbar("Configuración fiscal guardada exitosamente", { variant: "success" });
         } catch (e) {
@@ -330,6 +416,157 @@ export default function FiscalConfig() {
 
             {/* Funciones principales */}
             <div className="mb-6">
+                <div className="mb-6">
+                    <Section
+                        title="Facturación Electrónica e-CF"
+                        icon={Receipt}
+                        description="Activa o desactiva la emisión electrónica para este cliente"
+                    >
+                        <div className="space-y-4">
+                            <ToggleRow
+                                label="Activar e-CF"
+                                desc="Muestra el botón de Emitir e-CF en la factura y permite generar documentos electrónicos."
+                                checked={!!form.ecf?.enabled}
+                                onChange={(v) =>
+                                    setForm((f) => ({
+                                        ...f,
+                                        ecf: {
+                                            ...f.ecf,
+                                            enabled: v,
+                                        },
+                                    }))
+                                }
+                                icon={Receipt}
+                            />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-gray-800/40">
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">Ambiente e-CF</div>
+                                    <select
+                                        className={inputCls}
+                                        value={form.ecf?.environment || "internal_sandbox"}
+                                        onChange={(e) =>
+                                            setForm((f) => ({
+                                                ...f,
+                                                ecf: {
+                                                    ...f.ecf,
+                                                    environment: e.target.value,
+                                                },
+                                            }))
+                                        }
+                                    >
+                                        <option value="internal_sandbox">Sandbox interno</option>
+                                        <option value="dgii_certification">Certificación DGII</option>
+                                        <option value="dgii_production">Producción DGII</option>
+                                    </select>
+                                </label>
+
+                                <div>
+                                    <div className="text-xs text-gray-400 mb-1">Estado actual</div>
+                                    <div className="p-3 rounded-xl bg-[#1a1a1a] border border-gray-800/50 text-sm text-white">
+                                        {form.ecf?.enabled ? "e-CF activo" : "e-CF inactivo"}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-gray-800/50 bg-[#1a1a1a]/60 p-4">
+                                <p className="text-xs text-gray-400 mb-2">
+                                    Validación de configuración:
+                                </p>
+
+                                <div className="space-y-1 text-xs">
+                                    <p className={form.ecf?.issuerRnc ? "text-green-300" : "text-yellow-300"}>
+                                        RNC emisor: {form.ecf?.issuerRnc || "Pendiente"}
+                                    </p>
+
+                                    <p className={form.ecf?.issuerLegalName ? "text-green-300" : "text-yellow-300"}>
+                                        Razón social: {form.ecf?.issuerLegalName || "Pendiente"}
+                                    </p>
+
+                                    <p className={form.ecf?.certificateUploaded ? "text-green-300" : "text-yellow-300"}>
+                                        Certificado digital: {form.ecf?.certificateUploaded ? "Cargado" : "Pendiente"}
+                                    </p>
+
+                                    <p className="text-gray-400">
+                                        Estado certificación: {form.ecf?.certificationStatus || "not_started"}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                                <p className="text-xs text-yellow-200">
+                                    Nota: activar e-CF aquí solo habilita la función en el POS. Para producción real DGII todavía se requiere certificado digital, firma XML y gateway DGII.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="rounded-xl border border-gray-800/50 bg-[#1a1a1a]/60 p-4 space-y-4">
+                            <div>
+                                <p className="text-sm font-semibold text-white">
+                                    Certificado digital e-CF
+                                </p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Sube el certificado .p12 o .pfx del contribuyente. Se guardará en almacenamiento privado.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">
+                                        Archivo certificado
+                                    </div>
+
+                                    <input
+                                        type="file"
+                                        accept=".p12,.pfx"
+                                        onChange={(e) => setCertFile(e.target.files?.[0] || null)}
+                                        className={inputCls}
+                                    />
+
+                                    {certFile && (
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Seleccionado: {certFile.name}
+                                        </p>
+                                    )}
+                                </label>
+
+                                <label>
+                                    <div className="text-xs text-gray-400 mb-1">
+                                        Contraseña del certificado
+                                    </div>
+
+                                    <input
+                                        type="password"
+                                        value={certPassword}
+                                        onChange={(e) => setCertPassword(e.target.value)}
+                                        placeholder="Contraseña del .p12 / .pfx"
+                                        className={inputCls}
+                                    />
+                                </label>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={uploadEcfCertificate}
+                                disabled={uploadingCert}
+                                className={`px-4 py-3 rounded-xl font-semibold text-sm ${
+                                    uploadingCert
+                                        ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                                        : "bg-[#f6b100] text-[#1f1f1f] hover:opacity-90"
+                                }`}
+                            >
+                                {uploadingCert ? "Subiendo certificado..." : "Subir certificado e-CF"}
+                            </button>
+
+                            {form.ecf?.certificateUploaded && (
+                                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-3">
+                                    <p className="text-xs text-green-300">
+                                        Certificado cargado correctamente.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </Section>
+                </div>
                 <Section title="Funciones de Facturación" icon={CreditCard} description="Habilita o deshabilita funciones para las órdenes">
                     <div className="space-y-1">
                         <ToggleRow
@@ -376,6 +613,7 @@ export default function FiscalConfig() {
                         />
                     </div>
                 </Section>
+
             </div>
             {/* Modo de cobro */}
             <div className="space-y-2">

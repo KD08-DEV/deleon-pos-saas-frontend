@@ -171,42 +171,45 @@ const BottomNav = memo(() => {
     // ✅ Crear orden sin mesa y redirigir a /tables
     const createOrder = useMutation({
         mutationFn: (payload) => addOrder(payload),
-        onSuccess: (res) => {
+
+        onSuccess: (res, variables) => {
             const orderId = res?.data?.data?._id;
+
             if (!orderId) {
                 enqueueSnackbar("No se pudo crear la orden.", { variant: "error" });
                 return;
             }
 
+            const details = variables?.customerDetails || {};
+
             dispatch(
                 setCustomer({
-                    customerId: selectedCustomerId || null,
-                    name: name.trim(),
-                    phone: String(phone || "").trim(),
-                    address: String(address || "").trim(),
-                    guests: Number(guestCount || 0),
+                    customerId: variables?.customerId || null,
+                    name: details?.name || "Consumidor Final",
+                    phone: details?.phone || "",
+                    address: details?.address || "",
+                    guests: Number(details?.guests || 0),
                 })
             );
-
 
             setName("");
             setPhone("");
             setGuestCount(0);
-            closeModal();
             setAddress("");
             setSearch("");
             setSelectedCustomerId(null);
             setShowResults(false);
+            closeModal();
 
             navigate(`/menu?orderId=${orderId}`);
-            },
+        },
+
         onError: (err) => {
             enqueueSnackbar(err?.response?.data?.message || "Error al crear la orden.", {
                 variant: "error",
             });
         },
     });
-
     const handleCreateOrder = async () => {
         const cleanName = String(name || "").trim();
         const cleanPhone = String(phone || "").trim();
@@ -215,56 +218,19 @@ const BottomNav = memo(() => {
 
         const finalName = cleanName || "Consumidor Final";
 
+        const openTablePickerWithCustomer = (customerPayload) => {
+            dispatch(setCustomer(customerPayload));
 
-        try {
-            let customerIdToSend = selectedCustomerId;
-
-            if (!customerIdToSend) {
-                const shouldCreateCustomer = Boolean(cleanName) || Boolean(cleanPhone);
-
-                if (shouldCreateCustomer) {
-                    const created = await createCustomerMutation.mutateAsync({
-                        name: cleanName || "Consumidor Final",
-                        phone: cleanPhone,
-                        address: cleanAddress,
-                    });
-                    customerIdToSend = created?.data?.data?._id || null;
-                }
-            }
-
-
-            const payload = {
-                customerId: customerIdToSend,
-                customerDetails: {
-                    guests,
-                    name: finalName,
-                    phone: cleanPhone,
-                    address: cleanAddress,
-                },
-                user: userData?._id || null,
-            };
-
-            dispatch(
-                setCustomer({
-                    customerId: customerIdToSend || null,
-                    name: finalName,
-                    phone: cleanPhone,
-                    address: cleanAddress,
-                    guests,
-                })
-            );
-
-// Draft rápido por defecto para entrar al menú (sin BD)
+            // No asignamos mesa aquí. Primero mandamos al usuario a /tables.
             dispatch(
                 setDraftContext({
                     table: null,
-                    isVirtual: true,
-                    virtualType: "QUICK",
-                    orderSource: "QUICK",
+                    isVirtual: false,
+                    virtualType: null,
+                    orderSource: "DINE_IN",
                 })
             );
 
-// limpiar modal
             setName("");
             setPhone("");
             setGuestCount(0);
@@ -273,54 +239,77 @@ const BottomNav = memo(() => {
             setSelectedCustomerId(null);
             setShowResults(false);
             closeModal();
-            setIsTablePickerOpen(true);
+
+            navigate("/tables");
+        };
+
+        try {
+            let resolvedCustomerId = selectedCustomerId || null;
+            let resolvedName = finalName;
+            let resolvedPhone = cleanPhone;
+            let resolvedAddress = cleanAddress;
+
+            if (!resolvedCustomerId) {
+                const shouldCreateCustomer = Boolean(cleanName) || Boolean(cleanPhone);
+
+                if (shouldCreateCustomer) {
+                    const created = await createCustomerMutation.mutateAsync({
+                        name: cleanName || "Consumidor Final",
+                        phone: cleanPhone,
+                        address: cleanAddress,
+                    });
+
+                    const createdCustomer = created?.data?.data;
+
+                    resolvedCustomerId = createdCustomer?._id || null;
+                    resolvedName = createdCustomer?.name || finalName;
+                    resolvedPhone = createdCustomer?.phone || cleanPhone;
+                    resolvedAddress = createdCustomer?.address || cleanAddress;
+                }
+            }
+
+            openTablePickerWithCustomer({
+                customerId: resolvedCustomerId,
+                name: resolvedName,
+                phone: resolvedPhone,
+                address: resolvedAddress,
+                guests,
+            });
         } catch (e) {
             const status = e?.response?.status;
             const code = e?.response?.data?.code;
 
-            // Si backend devuelve "ya existe", usamos el customer existente
             if (status === 409 && code === "PHONE_ALREADY_EXISTS") {
-                const existing = e?.response?.data?.data; // customer existente
+                const existing = e?.response?.data?.data;
+
                 if (existing?._id) {
-                    pickCustomer(existing);
-
-                    const payload = {
-                        customerId: existing._id,
-                        customerDetails: {
-                            guests,
-                            name: existing.name || cleanName,
-                            phone: existing.phone || cleanPhone,
-                            address: existing.address || cleanAddress,
-                        },
-                        user: userData?._id || null,
-                    };
-
                     enqueueSnackbar("Este teléfono ya existe. Usando el cliente guardado.", {
                         variant: "info",
                     });
 
-                    createOrder.mutate(payload);
+                    openTablePickerWithCustomer({
+                        customerId: existing._id,
+                        name: existing.name || cleanName || "Consumidor Final",
+                        phone: existing.phone || cleanPhone,
+                        address: existing.address || cleanAddress,
+                        guests,
+                    });
+
                     return;
                 }
             }
 
-            // Fallback: crear orden con snapshot aunque no se pudo guardar customer
-            enqueueSnackbar("No se pudo guardar el cliente, pero se creará la orden.", {
+            enqueueSnackbar("No se pudo guardar el cliente, pero puedes continuar con el nombre escrito.", {
                 variant: "warning",
             });
 
-            const payload = {
+            openTablePickerWithCustomer({
                 customerId: null,
-                customerDetails: {
-                    guests,
-                    name: finalName,
-                    phone: cleanPhone,
-                    address: cleanAddress,
-                },
-                user: userData?._id || null,
-            };
-
-            createOrder.mutate(payload);
+                name: finalName,
+                phone: cleanPhone,
+                address: cleanAddress,
+                guests,
+            });
         }
     };
 
@@ -570,7 +559,7 @@ const BottomNav = memo(() => {
                                 disabled={createOrder.isPending}
                                 className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-800 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
                             >
-                                {createOrder.isPending ? "Creando..." : "Crear Orden"}
+                                {createOrder.isPending ? "Creando..." : "Seleccionar cliente"}
                             </motion.button>
                         </div>
                     </div>

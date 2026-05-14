@@ -38,6 +38,11 @@ const ProductReports = () => {
         window.clearTimeout(showToast._t);
         showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
     };
+    const addDays = (ymd, days) => {
+        const d = new Date(`${ymd}T00:00:00`);
+        d.setDate(d.getDate() + days);
+        return d.toISOString().slice(0, 19) + ".000";
+    };
     const getItemCategory = (item) => {
         const cat =
             item?.inventoryCategory?.name ??
@@ -50,36 +55,45 @@ const ProductReports = () => {
         return out || "Sin Categoría";
     };
 
-    const buildDateRangeParams = (sourceFilters = {}) => {
-        const obj = { ...sourceFilters };
+    const cleanedParams = useMemo(() => {
+        const obj = { ...filters };
 
+        const hasFrom = !!obj.from;
+        const hasTo = !!obj.to;
+
+        // Si solo selecciona "desde", asumimos "hasta" = mismo día
+        // Si solo selecciona "hasta", asumimos "desde" = mismo día
         let fromYMD = obj.from || obj.to || "";
         let toYMD = obj.to || obj.from || "";
 
-        // Evita rango invertido
+        // Evita rango invertido (to < from)
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
             fromYMD = toYMD;
             toYMD = tmp;
         }
 
-        // Día completo real
         if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = `${toYMD}T23:59:59.999`;
+        if (toYMD) obj.to = addDays(toYMD, 1); // fin exclusivo (día siguiente 00:00)
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
         });
 
         return obj;
-    };
-
-    const cleanedParams = useMemo(() => {
-        return buildDateRangeParams(filters);
     }, [filters]);
 
 
 
+    const { data, isLoading, isError, error } = useQuery({
+        queryKey: ["admin/reports", cleanedParams],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/reports", { params: cleanedParams });
+            return res.data;
+        },
+        keepPreviousData: true,
+        staleTime: 30_000,
+    });
     async function fetchProductDetail({ from, to }) {
         const params = new URLSearchParams();
         params.append("from", from);
@@ -92,137 +106,97 @@ const ProductReports = () => {
     const productReportQuery = useQuery({
         queryKey: ["sales-by-product-report", filters.from, filters.to],
         queryFn: async () => {
-            const productParams = buildDateRangeParams({
+            return fetchProductDetail({
                 from: filters.from,
                 to: filters.to,
             });
-
-            return fetchProductDetail(productParams);
         },
         enabled: true,
         keepPreviousData: true,
         staleTime: 30_000,
     });
 
-    const detailRows = useMemo(() => {
-        return (productReportQuery.data || []).map((r) => {
-            const name =
-                r?.product ||
-                r?.productName ||
-                r?.dishName ||
-                r?.itemName ||
-                r?.name ||
-                "Producto Desconocido";
+    const detailRows = productReportQuery.data || [];
 
-            const category =
-                r?.categoryName ||
-                r?.menuCategory ||
-                r?.inventoryCategoryName ||
-                r?.dishCategory ||
-                r?.dish?.category ||
-                r?.productCategory ||
-                r?.category ||
-                "Sin Categoría";
+    const categoryByProductName = useMemo(() => {
+        const m = new Map();
+        for (const r of detailRows) {
+            const name = (r?.name || "").toString().trim();   // en SalesReports el campo es r.name
+            const cat = (r?.category || "Sin Categoría").toString().trim();
+            if (name) m.set(name, cat);
+        }
+        return m;
+    }, [detailRows]);
 
-            const quantity = Number(
-                r?.totalQuantity ??
-                r?.qty ??
-                r?.quantity ??
-                r?.count ??
-                0
-            );
-
-            const revenue = Number(
-                r?.totalRevenue ??
-                r?.revenue ??
-                r?.sales ??
-                r?.total ??
-                0
-            );
-
-            const orderCount = Number(
-                r?.orderCount ??
-                r?.orders ??
-                r?.ordersCount ??
-                r?.countOrders ??
-                1
-            );
-
-            return {
-                ...r,
-                name: String(name || "Producto Desconocido").trim(),
-                category: String(category || "Sin Categoría").trim(),
-                totalQuantity: quantity,
-                totalRevenue: revenue,
-                orderCount,
-                avgPrice: quantity > 0 ? revenue / quantity : 0,
-            };
-        });
-    }, [productReportQuery.data]);
-
-
+    const orders = data?.data || [];
 
     // Análisis de productos
     const productAnalysis = useMemo(() => {
         const productStats = {};
         const categoryStats = {};
 
-        detailRows.forEach((row) => {
-            const productName = row.name || "Producto Desconocido";
-            const category = row.category || "Sin Categoría";
+        orders.forEach((order) => {
+            const items = order.items || [];
+            items.forEach((item) => {
+                const productName = item.name || "Producto Desconocido";
+                const category =
+                    categoryByProductName.get((item.name || "").toString().trim()) ||
+                    getItemCategory(item);
+                const quantity = Number(item.quantity || 0);
+                const price = Number(item.price || 0);
+                const total = quantity * price;
 
-            const quantity = Number(row.totalQuantity || 0);
-            const revenue = Number(row.totalRevenue || 0);
-            const orderCount = Number(row.orderCount || 0);
+                // Estadísticas por producto
+                if (!productStats[productName]) {
+                    productStats[productName] = {
+                        name: productName,
+                        category: category,
+                        totalQuantity: 0,
+                        totalRevenue: 0,
+                        orderCount: 0,
+                        avgPrice: 0,
+                    };
+                }
+                productStats[productName].totalQuantity += quantity;
+                productStats[productName].totalRevenue += total;
+                productStats[productName].orderCount += 1;
 
-            if (!productStats[productName]) {
-                productStats[productName] = {
-                    name: productName,
-                    category,
-                    totalQuantity: 0,
-                    totalRevenue: 0,
-                    orderCount: 0,
-                    avgPrice: 0,
-                };
-            }
-
-            productStats[productName].totalQuantity += quantity;
-            productStats[productName].totalRevenue += revenue;
-            productStats[productName].orderCount += orderCount;
-
-            if (!categoryStats[category]) {
-                categoryStats[category] = {
-                    name: category,
-                    totalQuantity: 0,
-                    totalRevenue: 0,
-                    productCount: 0,
-                    orderCount: 0,
-                };
-            }
-
-            categoryStats[category].totalQuantity += quantity;
-            categoryStats[category].totalRevenue += revenue;
-            categoryStats[category].orderCount += orderCount;
+                // Estadísticas por categoría
+                if (!categoryStats[category]) {
+                    categoryStats[category] = {
+                        name: category,
+                        totalQuantity: 0,
+                        totalRevenue: 0,
+                        productCount: 0,
+                        orders: new Set(),
+                    };
+                }
+                categoryStats[category].totalQuantity += quantity;
+                categoryStats[category].totalRevenue += total;
+                if (!categoryStats[category].orders.has(order._id)) {
+                    categoryStats[category].orders.add(order._id);
+                }
+            });
         });
 
+        // Calcular precio promedio por producto
         Object.keys(productStats).forEach((productName) => {
             const stats = productStats[productName];
-            stats.avgPrice =
-                stats.totalQuantity > 0
-                    ? stats.totalRevenue / stats.totalQuantity
-                    : 0;
+            stats.avgPrice = stats.orderCount > 0 ? stats.totalRevenue / stats.totalQuantity : 0;
         });
 
-        Object.keys(categoryStats).forEach((categoryName) => {
-            categoryStats[categoryName].productCount = Object.values(productStats).filter(
-                (p) => p.category === categoryName
-            ).length;
+        // Convertir Set a número para categorías
+        Object.keys(categoryStats).forEach((cat) => {
+            categoryStats[cat].orderCount = categoryStats[cat].orders.size;
+            delete categoryStats[cat].orders;
         });
 
+        // Productos más vendidos (por cantidad)
         const topProductsByQuantity = Object.values(productStats)
             .sort((a, b) => b.totalQuantity - a.totalQuantity)
             .slice(0, 10);
 
+        // Productos más vendidos (por revenue)
         const topProductsByRevenue = Object.values(productStats)
             .sort((a, b) => b.totalRevenue - a.totalRevenue)
             .slice(0, 10);
@@ -234,7 +208,7 @@ const ProductReports = () => {
             topProductsByRevenue,
             totalProducts: Object.keys(productStats).length,
         };
-    }, [detailRows]);
+    }, [orders]);
 
     const allProducts = useMemo(() => {
         const products = Object.values(productAnalysis.productStats || {});
@@ -284,7 +258,7 @@ const ProductReports = () => {
         }
     };
 
-    if (productReportQuery.isLoading) {
+    if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
@@ -293,10 +267,10 @@ const ProductReports = () => {
         );
     }
 
-    if (productReportQuery.isError) {
+    if (isError) {
         return (
             <div className="text-center py-8 text-red-400">
-                Error al cargar reportes{productReportQuery.error?.response?.status ? ` (HTTP ${productReportQuery.error.response.status})` : ""}.
+                Error al cargar reportes{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
             </div>
         );
     }

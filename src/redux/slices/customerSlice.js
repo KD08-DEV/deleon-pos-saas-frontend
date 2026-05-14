@@ -1,18 +1,27 @@
 import { createSlice } from "@reduxjs/toolkit";
-
 const initialState = {
-    // Draft context (NO es el orderId de backend)
+    // Draft context
     draftOrderId: "",
+    orderId: "",
+
     customerId: null,
+
+    // Nombre principal correcto
     customerName: "",
     customerPhone: "",
     customerAddress: "",
+
+    // Alias para compatibilidad con componentes viejos
+    name: "",
+    phone: "",
+    address: "",
+
     guests: 0,
 
     table: null,
     isVirtual: false,
-    virtualType: null,      // QUICK / PEDIDOSYA / UBEREATS / DELIVERY
-    orderSource: "DINE_IN", // DINE_IN / TAKEOUT / PEDIDOSYA / UBEREATS / DELIVERY / QUICK
+    virtualType: null,
+    orderSource: "DINE_IN",
 };
 
 
@@ -21,7 +30,6 @@ const customerSlice = createSlice({
     initialState,
     reducers: {
         setCustomer: (state, action) => {
-            // Compatibilidad: soporta name/phone y customerName/customerPhone
             const name =
                 action.payload?.name ??
                 action.payload?.customerName ??
@@ -40,10 +48,17 @@ const customerSlice = createSlice({
             const guests = Number(action.payload?.guests ?? 0);
 
             state.orderId = `${Date.now()}`;
-            state.customerId = action.payload?.customerId ?? null; // NUEVO
+            state.customerId = action.payload?.customerId ?? null;
+
             state.customerName = String(name).trim();
             state.customerPhone = String(phone).trim();
-            state.customerAddress = String(address).trim();        // NUEVO
+            state.customerAddress = String(address).trim();
+
+            // Alias para que draft?.name, draft?.phone y draft?.address funcionen
+            state.name = state.customerName;
+            state.phone = state.customerPhone;
+            state.address = state.customerAddress;
+
             state.guests = guests;
         },
         setDraftContext: (state, action) => {
@@ -63,14 +78,19 @@ const customerSlice = createSlice({
 
         removeCustomer: (state) => {
             state.orderId = "";
-            state.customerId = null;       // NUEVO
+            state.customerId = null;
+
             state.customerName = "";
             state.customerPhone = "";
-            state.customerAddress = "";    // NUEVO
+            state.customerAddress = "";
+
+            state.name = "";
+            state.phone = "";
+            state.address = "";
+
             state.guests = 0;
             state.table = null;
         },
-
         updateTable: (state, action) => {
             state.table = action.payload.table;
         },

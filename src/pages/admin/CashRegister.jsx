@@ -618,6 +618,38 @@ const CashRegister = () => {
             count: rows.length,
         };
     }, [expensesRows]);
+    const { data: receivableCashSummaryResp } = useQuery({
+        queryKey: [
+            "accounts-receivable",
+            "cash-summary",
+            selectedYMD,
+            registerFilterValue || "ALL",
+        ],
+        queryFn: async () => {
+            const params = {
+                from: selectedYMD,
+                to: selectedYMD,
+            };
+
+            if (registerFilterValue && registerFilterValue !== ALL_REGISTERS_ID) {
+                params.registerId = registerFilterValue;
+            }
+
+            const res = await api.get("/api/admin/accounts-receivable/cash-summary", {
+                params,
+            });
+
+            return res.data;
+        },
+        enabled: Boolean(selectedYMD),
+        staleTime: 10_000,
+        retry: 1,
+    });
+
+    const receivableCashSummary =
+        receivableCashSummaryResp?.data ||
+        receivableCashSummaryResp ||
+        {};
     // Fondo inicial (menudo)
     const [openingCashInput, setOpeningCashInput] = useState("");
     const openingEditedRef = useRef(false);
@@ -1640,11 +1672,30 @@ const CashRegister = () => {
         return `${yyyy}-${mm}-${dd}`;
     };
 
-    const dayReports = useMemo(() => {
+    const isCreditOrder = (r) => {
+        const method = normalize(r?.paymentMethod || "");
+        return (
+            method === "credito" ||
+            method === "crédito" ||
+            method === "credit" ||
+            method.includes("credito") ||
+            method.includes("crédito")
+        );
+    };
+
+// Todas las órdenes del día, incluyendo crédito.
+// Esto sirve para que buildCashClosure pueda detectar crédito como fallback.
+    const rawDayReports = useMemo(() => {
         return sortedReports.filter((r) =>
             toLocalYMD(r?.paidAt || r?.createdAt) === selectedYMD
         );
     }, [sortedReports, selectedYMD]);
+
+// Órdenes visibles como ventas cobradas.
+// Crédito NO aparece en la tabla ni cuenta como venta normal.
+    const dayReports = useMemo(() => {
+        return rawDayReports.filter((r) => !isCreditOrder(r));
+    }, [rawDayReports]);
 
 
     // Filtro para el modal (todos los registros con filtros)
@@ -1658,6 +1709,9 @@ const CashRegister = () => {
         const selectedRegister = String(modalRegisterId || "").trim().toUpperCase();
 
         return sortedReports.filter((r) => {
+            if (isCreditOrder(r)) {
+                return false;
+            }
             if (selectedRegister && selectedRegister !== ALL_REGISTERS_ID) {
                 const orderRegister = String(r?.registerId || DEFAULT_REGISTER_ID).trim().toUpperCase();
 
@@ -1677,17 +1731,6 @@ const CashRegister = () => {
                 const pm = normalize(r?.paymentMethod || "Efectivo");
                 if (!pm.includes(method)) return false;
             }
-            console.log(
-                "REPORTS FISCAL DEBUG",
-                sortedReports.slice(0, 10).map((r) => ({
-                    id: r?._id,
-                    fiscal: r?.fiscal,
-                    ncfType: r?.ncfType,
-                    ncfNumber: r?.ncfNumber,
-                    invoice: r?.invoice,
-                    resolved: getFiscalType(r),
-                }))
-            );
             if (fiscal) {
                 const fiscalType = getFiscalType(r);
 
@@ -1718,17 +1761,6 @@ const CashRegister = () => {
                 if (!c.includes(client)) return false;
             }
 
-            console.log(
-                "REPORTS FISCAL DEBUG",
-                sortedReports.slice(0, 10).map((r) => ({
-                    id: r?._id,
-                    fiscal: r?.fiscal,
-                    ncfType: r?.ncfType,
-                    ncfNumber: r?.ncfNumber,
-                    invoice: r?.invoice,
-                    resolved: getFiscalType(r),
-                }))
-            );
             return true;
         });
     }, [sortedReports, modalFilters, modalRegisterId]);
@@ -1737,7 +1769,8 @@ const CashRegister = () => {
         rows,
         openingInitial,
         addedTotal,
-        expensesSummary = { totalExpenses: 0, cashExpenses: 0 }
+        expensesSummary = { totalExpenses: 0, cashExpenses: 0 },
+        receivableSummary = {}
     ) => {
         const buckets = {
             efectivo: { label: "Efectivo", total: 0, count: 0 },
@@ -1752,7 +1785,16 @@ const CashRegister = () => {
         let grandTotal = 0;
         let totalCount = 0;
 
-        const normalizeText = (v) => String(v || "").trim().toLowerCase();
+        let creditSalesFromOrders = 0;
+        let creditSalesCountFromOrders = 0;
+
+        const normalizeText = (v) =>
+            String(v || "")
+                .trim()
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "");
+
         const normalizeMethod = (v) => normalizeText(v);
 
         const normalizeChannel = (r) => {
@@ -1765,18 +1807,43 @@ const CashRegister = () => {
         };
 
         for (const r of rows) {
-            const total = safeNumber(r?.bills?.totalWithTax ?? r?.totalWithTax ?? r?.total ?? 0);
+            const total = safeNumber(
+                r?.bills?.totalWithTax ??
+                r?.totalWithTax ??
+                r?.total ??
+                0
+            );
+
+            const pmRaw = normalizeMethod(r?.paymentMethod);
+
+            /*
+             * IMPORTANTE:
+             * Crédito / Fiado NO suma como venta cobrada.
+             * Se muestra aparte como CxC negativa / pendiente.
+             */
+            if (pmRaw.includes("credito") || pmRaw.includes("credit")) {
+                creditSalesFromOrders += total;
+                creditSalesCountFromOrders += 1;
+                continue;
+            }
 
             let key = "otros";
             const channel = normalizeChannel(r);
-            const pmRaw = normalizeMethod(r?.paymentMethod);
 
             if (pmRaw.includes("efect")) key = "efectivo";
             else if (pmRaw.includes("tarj")) key = "tarjeta";
             else if (pmRaw.includes("transf")) key = "transferencia";
-            else if (channel.includes("pedidoya") || channel.includes("pedido") || channel.includes("pedidosya")) key = "pedidoya";
-            else if (channel.includes("ubereats") || channel.includes("uber")) key = "ubereats";
-            else if (channel.includes("delivery")) key = "delivery";
+            else if (
+                channel.includes("pedidoya") ||
+                channel.includes("pedido") ||
+                channel.includes("pedidosya")
+            ) {
+                key = "pedidoya";
+            } else if (channel.includes("ubereats") || channel.includes("uber")) {
+                key = "ubereats";
+            } else if (channel.includes("delivery")) {
+                key = "delivery";
+            }
 
             buckets[key].total += total;
             buckets[key].count += 1;
@@ -1785,38 +1852,127 @@ const CashRegister = () => {
             totalCount += 1;
         }
 
+        const receivablePaymentsCash = safeNumber(receivableSummary?.paymentsCash);
+        const receivablePaymentsCard = safeNumber(receivableSummary?.paymentsCard);
+        const receivablePaymentsTransfer = safeNumber(receivableSummary?.paymentsTransfer);
+        const receivablePaymentsOther = safeNumber(receivableSummary?.paymentsOther);
+        const receivablePaymentsTotal = safeNumber(receivableSummary?.paymentsTotal);
+
+        const creditSales = safeNumber(
+            receivableSummary?.creditSales || creditSalesFromOrders
+        );
+
+        const creditSalesCount = safeNumber(
+            receivableSummary?.creditSalesCount || creditSalesCountFromOrders
+        );
+
+        /*
+         * Los abonos o pagos de cuentas por cobrar SÍ son dinero cobrado.
+         * Se suman al método correspondiente.
+         */
+        buckets.efectivo.total += receivablePaymentsCash;
+        buckets.tarjeta.total += receivablePaymentsCard;
+        buckets.transferencia.total += receivablePaymentsTransfer;
+        buckets.otros.total += receivablePaymentsOther;
+
+        grandTotal += receivablePaymentsTotal;
+
         const openingVal = safeNumber(openingInitial);
         const addedVal = safeNumber(addedTotal);
+
         const cashSales = safeNumber(buckets.efectivo.total);
 
         const totalExpenses = safeNumber(expensesSummary?.totalExpenses);
         const cashExpenses = safeNumber(expensesSummary?.cashExpenses);
 
+        /*
+         * Efectivo en caja:
+         * fondo inicial + agregado + efectivo cobrado - gastos en efectivo.
+         * Si un abono CxC fue en efectivo, ya está dentro de buckets.efectivo.total.
+         */
         const cashInRegister = openingVal + cashSales + addedVal - cashExpenses;
+
+        /*
+         * Total cobrado NO debe incluir fondo inicial.
+         * totalWithMenudo queda solo como referencia, no como venta.
+         */
         const totalWithMenudo = openingVal + grandTotal;
         const netSales = grandTotal - totalExpenses;
 
         return {
             buckets,
+
+            // Total cobrado real: NO incluye crédito, SÍ incluye abonos CxC.
             grandTotal,
             netSales,
             totalWithMenudo,
             totalCount,
+
             openingInitial: openingVal,
             addedTotal: addedVal,
             cashSales,
             totalExpenses,
             cashExpenses,
             cashInRegister,
+
+            // Cuentas por cobrar
+            creditSales,
+            creditSalesNegative: creditSales * -1,
+            creditSalesCount,
+
+            receivablePaymentsCash,
+            receivablePaymentsCard,
+            receivablePaymentsTransfer,
+            receivablePaymentsOther,
+            receivablePaymentsTotal,
+
+            receivableNetImpact: receivablePaymentsTotal - creditSales,
         };
     };
     // Resumen basado en los últimos 10 registros
 // Resumen basado en los registros de HOY
 
     const initialCashClosure = useMemo(
-        () => buildCashClosure(dayReports, openingInitial, addedTotal, expensesSummary),
-        [dayReports, openingInitial, addedTotal, expensesSummary]
+        () =>
+            buildCashClosure(
+                rawDayReports,
+                openingInitial,
+                addedTotal,
+                expensesSummary,
+                receivableCashSummary
+            ),
+        [
+            rawDayReports,
+            openingInitial,
+            addedTotal,
+            expensesSummary,
+            receivableCashSummary,
+        ]
     );
+    const systemExpectedInRegisterShown = useMemo(() => {
+        const liveExpected = safeNumber(initialCashClosure?.cashInRegister);
+        const savedExpected = safeNumber(expectedInRegisterShown);
+
+        /*
+         * Cuando el admin está viendo TODAS LAS CAJAS / TODAS LAS VENTAS,
+         * no debemos depender de rangeExpectedTotal porque ese valor viene
+         * de cierres guardados. Si las cajas están abiertas, puede venir incompleto.
+         *
+         * Por eso usamos el cálculo vivo:
+         * fondo inicial + agregado + efectivo vendido + abonos CxC efectivo - gastos efectivo.
+         */
+        if (useConsolidatedSummary) {
+            return liveExpected;
+        }
+
+        // En una caja individual cerrada, usa lo guardado.
+        // Si todavía no hay cierre guardado, usa el cálculo vivo.
+        return savedExpected > 0 ? savedExpected : liveExpected;
+    }, [
+        useConsolidatedSummary,
+        expectedInRegisterShown,
+        initialCashClosure?.cashInRegister,
+    ]);
 
 // Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
     const netSales = useMemo(() => {
@@ -1857,7 +2013,12 @@ const CashRegister = () => {
 
     const downloadExcel = async (reportsToExport = dayReports, summary = initialCashClosure) => {
         try {
-            const rows = reportsToExport.map((r) => ({
+            const cleanReportsToExport = reportsToExport.filter((r) => {
+                const method = String(r?.paymentMethod || "").trim().toLowerCase();
+                return method !== "credito" && method !== "credit";
+            });
+
+            const rows = cleanReportsToExport.map((r) => ({
                 Factura: getInvoiceNumber(r),
                 Fecha: r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "",
                 Usuario: r?.user?.name || "—",
@@ -1873,6 +2034,11 @@ const CashRegister = () => {
 
             const summaryRows = [
                 { Campo: "Fondo inicial (menudo)", Valor: Number(summary?.openingInitial || 0) },
+                { Campo: "Ventas a crédito / CxC", Valor: Number((summary?.creditSales || 0) * -1) },
+                { Campo: "Abonos CxC cobrados", Valor: Number(summary?.receivablePaymentsTotal || 0) },
+                { Campo: "Abonos CxC efectivo", Valor: Number(summary?.receivablePaymentsCash || 0) },
+                { Campo: "Abonos CxC tarjeta", Valor: Number(summary?.receivablePaymentsCard || 0) },
+                { Campo: "Abonos CxC transferencia", Valor: Number(summary?.receivablePaymentsTransfer || 0) },
                 { Campo: "Efectivo (ventas)", Valor: Number(summary?.cashSales || 0) },
                 { Campo: "Efectivo en caja (fondo + ventas)", Valor: Number(summary?.cashInRegister || 0) },
                 { Campo: "Total general (todas las ventas)", Valor: Number(summary?.grandTotal || 0) },
@@ -2227,7 +2393,7 @@ const CashRegister = () => {
                             </div>
                         </div>
 
-                        {isAdminLike && sessionClosed && (
+                        {sessionClosed && (
                             <div className="mb-4 flex justify-end">
                                 <button
                                     type="button"
@@ -2264,7 +2430,7 @@ const CashRegister = () => {
 
                     {(() => {
                         const counted = safeNumber(closingCountedSaved);
-                        const expected = safeNumber(expectedInRegisterShown);
+                        const expected = safeNumber(systemExpectedInRegisterShown);
                         const diff = Number((counted - expected).toFixed(2));
 
                         return (
@@ -2393,12 +2559,14 @@ const CashRegister = () => {
                 <div className="flex items-center justify-between mb-4">
                     <h3  id="cash-summary"  className="text-white font-semibold text-lg">Resumen</h3>
                     <div className="text-sm text-gray-300">
-                        Total:{" "}
+                        Total cobrado:{" "}
                         <span className="font-semibold text-[#f6b100] text-lg">
-                        {currency(initialCashClosure.totalWithMenudo)}
-                        </span>
+        {currency(initialCashClosure.grandTotal)}
+    </span>
 
-                        <span className="text-gray-500 ml-2">({initialCashClosure.totalCount} órdenes)</span>
+                        <span className="text-gray-500 ml-2">
+        ({initialCashClosure.totalCount} órdenes cobradas)
+    </span>
                     </div>
                 </div>
 
@@ -2407,11 +2575,24 @@ const CashRegister = () => {
                         ["efectivo", initialCashClosure.buckets.efectivo],
                         ["tarjeta", initialCashClosure.buckets.tarjeta],
                         ["transferencia", initialCashClosure.buckets.transferencia],
+
+                        ["cxc-abonos", {
+                            label: "Abonos CxC",
+                            total: initialCashClosure.receivablePaymentsTotal,
+                            count: 0,
+                        }],
+
+                        ["cxc-credito", {
+                            label: "Ventas a crédito (CxC)",
+                            total: initialCashClosure.creditSales * -1,
+                            count: initialCashClosure.creditSalesCount,
+                        }],
+
                         ["pedidoya", initialCashClosure.buckets.pedidoya],
                         ["ubereats", initialCashClosure.buckets.ubereats],
 
-                        // 👇 Sustituye "Otros" por "Menudo"
-                        ["menudo", { label: "Menudo (fondo inicial + agregado)", total: (initialCashClosure.openingInitial + initialCashClosure.addedTotal), count: 0 }],
+                        ["menudo", {
+                            label: "Menudo (fondo inicial + agregado)", total: (initialCashClosure.openingInitial + initialCashClosure.addedTotal), count: 0 }],
 
                         // (Opcional) si “Otros” tiene algo, lo mostramos al final
                         ...(safeNumber(initialCashClosure.buckets?.otros?.total) > 0 || safeNumber(initialCashClosure.buckets?.otros?.count) > 0
@@ -2423,7 +2604,13 @@ const CashRegister = () => {
                             className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors"
                         >
                             <div className="text-xs text-gray-400 mb-1">{v.label}</div>
-                            <div className="text-sm font-semibold text-white">{currency(v.total)}</div>
+                            <div
+                                className={`font-semibold ${
+                                    Number(v.total || 0) < 0 ? "text-red-400" : "text-white"
+                                }`}
+                            >
+                                {currency(v.total)}
+                            </div>
                             <div className="text-xs text-gray-500 mt-1">{v.count} órdenes</div>
                         </div>
                     ))}
