@@ -8,7 +8,7 @@ import { saveAs } from "file-saver";
 import api from "../../lib/api";
 
 const currency = (n) =>
-    new Intl.NumberFormat("en-IN", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
         .format(Number(n || 0));
 
 const Reports = () => {

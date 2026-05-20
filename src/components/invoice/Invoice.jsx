@@ -78,8 +78,15 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const ecfStatus = ecf?.status || "";
     const ecfTrackId = ecf?.trackId || "";
     const ecfSecurityCode = ecf?.securityCode || "";
-    const ecfQrUrl = ecf?.qrUrl || "";
+    const ecfQrUrl =
+        ecf?.qrUrl ||
+        ecf?.qrCodeUrl ||
+        ecf?.consultaUrl ||
+        ecf?.consultUrl ||
+        ecf?.qr ||
+        "";
     const ecfFechaHoraFirma = ecf?.fechaHoraFirma || "";
+
     const ecfDocumentType =
         String(ecf?.documentType || "").trim() ||
         (String(ecfENCF || "").startsWith("E31")
@@ -92,6 +99,11 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         ? "34"
                         : "");
 
+    const ecfReference = ecf?.reference || order?.reference || null;
+
+    const isEcfAdjustment = ["33", "34"].includes(
+        String(ecfDocumentType || "").trim()
+    );
     const ecfTypeLabel =
         ecfDocumentType === "31"
             ? "e31 - Crédito fiscal electrónico"
@@ -125,6 +137,14 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     );
 
     const tenantPreInvoiceEnabled = !!tenantInfo?.features?.preInvoice?.enabled;
+    console.log("[INVOICE][ECF DATA]", {
+        isEcf,
+        ecf,
+        ecfQrUrl,
+        ecfENCF,
+        ecfTrackId,
+        ecfSecurityCode,
+    });
 
 // si existe una prefactura en la orden, tiene prioridad; si no, usa el tenant default
     const isPreInvoice =
@@ -403,6 +423,8 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                 ecfSecurityCode,
                 ecfQrUrl,
                 ecfFechaHoraFirma,
+                ecfReference,
+                isEcfAdjustment,
                 ncfType: isEcf ? "" : ncfType,
                 ncfNumber: isEcf ? "" : ncfNumber,
                 facturaNo,
@@ -532,8 +554,9 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                             {ncfNumber && <p className="font-semibold">NCF: {ncfNumber}</p>}
                         </div>
                     ) : null}
-                    <p className="text-[11px] text-center text-gray-600">Gracias por su compra</p>
-
+                    <p className="text-[11px] text-center text-gray-600">
+                        {isEcfAdjustment ? "Documento de ajuste electrónico" : "Gracias por su compra"}
+                    </p>
                     {/* Datos orden */}
                     <div className="mt-3 border-t pt-3 text-xs text-gray-800 space-y-1">
 
@@ -591,30 +614,38 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                                     <span className="font-semibold">TrackId:</span>{" "}
                                     {ecfTrackId || "Pendiente"}
                                 </p>
+
+                                {isEcfAdjustment && ecfReference && (
+                                    <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-2 py-2 space-y-1">
+                                        <p className="font-semibold text-gray-900">
+                                            Información de referencia
+                                        </p>
+
+                                        <p>
+                                            <span className="font-semibold">eNCF afectado:</span>{" "}
+                                            {ecfReference.modifiedENCF || "N/A"}
+                                        </p>
+
+                                        <p>
+                                            <span className="font-semibold">Fecha e-CF afectado:</span>{" "}
+                                            {ecfReference.modifiedDate || "N/A"}
+                                        </p>
+
+                                        <p>
+                                            <span className="font-semibold">Código modificación:</span>{" "}
+                                            {ecfReference.modificationCode || "N/A"}
+                                        </p>
+
+                                        <p>
+                                            <span className="font-semibold">Motivo:</span>{" "}
+                                            {ecfReference.reason || "N/A"}
+                                        </p>
+                                    </div>
+                                )}
                             </>
                         )}
-                        {ecfSecurityCode && (
-                            <p>
-                                <span className="font-semibold">Código de seguridad:</span>{" "}
-                                {ecfSecurityCode}
-                            </p>
-                        )}
 
-                        {ecfFechaHoraFirma && (
-                            <p>
-                                <span className="font-semibold">Fecha firma:</span>{" "}
-                                {ecfFechaHoraFirma}
-                            </p>
-                        )}
 
-                        {ecfQrUrl && (
-                            <div className="flex flex-col items-center justify-center mt-3">
-                                <QRCodeSVG value={ecfQrUrl} size={96} />
-                                <p className="text-[10px] text-gray-500 mt-1 text-center">
-                                    Consulta e-CF DGII
-                                </p>
-                            </div>
-                        )}
 
                         {/* ✅ Vence (NCF) */}
                         {!isEcf && isFiscal && (
@@ -647,8 +678,9 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
                     {/* Items */}
                     <div className="mt-4 text-xs">
-                        <h3 className="font-semibold mb-2 text-gray-800">Detalle de consumo</h3>
-
+                        <h3 className="font-semibold mb-2 text-gray-800">
+                            {isEcfAdjustment ? "Detalle de la nota" : "Detalle de consumo"}
+                        </h3>
                         <div className={`${headerGridClass} gap-x-2 border-b pb-1 mb-1 font-semibold text-[11px] text-gray-700`}>
                             <span>Descripción</span>
                             <span className="text-right">Cant.</span>
@@ -758,6 +790,31 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                             </>
                         )}
                     </div>
+                    {ecfQrUrl && (
+                        <div className="flex flex-col items-center justify-center mt-3">
+                            <QRCodeSVG value={ecfQrUrl} size={96} />
+                            <p className="text-[10px] text-gray-500 mt-1 text-center">
+                                Consulta e-CF DGII
+                            </p>
+                            {ecfSecurityCode && (
+                                <p className="text-xs leading-tight text-gray-800 text-center mt-1">
+                                    <span className="font-semibold">Código de seguridad:</span>{" "}
+                                    {ecfSecurityCode}
+                                </p>
+                            )}
+
+                            {ecfFechaHoraFirma && (
+                                <p className="text-xs leading-tight text-gray-800 text-center mt-1">
+                                    <span className="font-semibold">Fecha firma:</span>{" "}
+                                    {ecfFechaHoraFirma}
+                                </p>
+                            )}
+
+
+                        </div>
+                    )}
+
+
                 </div>
                 <div className="border-t px-4 pt-3 pb-2 bg-gray-50">
                     <div className="space-y-2">

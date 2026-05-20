@@ -663,14 +663,27 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     // Si el usuario activa wantsFiscal pero el tenant no puede, lo apagamos y avisamos
     useEffect(() => {
-        if (wantsFiscal && !fiscalCapable) {
+        if (wantsFiscal && !fiscalUiCapable) {
             setWantsFiscal(false);
-            enqueueSnackbar("Este tenant no tiene NCF habilitado/configurado.", {
-                variant: "warning",
-            });
+            enqueueSnackbar(
+                isEcfMode
+                    ? "Este tenant no tiene e-CF listo para emitir."
+                    : "Este tenant no tiene NCF habilitado/configurado.",
+                { variant: "warning" }
+            );
         }
-    }, [wantsFiscal, fiscalCapable]);
+    }, [wantsFiscal, fiscalUiCapable, isEcfMode]);
+    useEffect(() => {
+        if (!isEcfMode) return;
 
+        if (ecfDocType === "e32" && !e32Enabled && e31Enabled) {
+            setEcfDocType("e31");
+        }
+
+        if (ecfDocType === "e31" && !e31Enabled && e32Enabled) {
+            setEcfDocType("e32");
+        }
+    }, [isEcfMode, ecfDocType, e31Enabled, e32Enabled]);
     // Mantener ncfType válido según allowed types
     useEffect(() => {
         if (!allowedNcfTypes?.length) return;
@@ -1352,17 +1365,33 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                 return;
             }
-            enqueueSnackbar("Factura generada correctamente.", { variant: "success" });
-
             const ecfFromBackend = server?.ecf || res?.data?.data?.ecf || null;
+
+            if (ecfFromBackend?.error) {
+                enqueueSnackbar(
+                    ecfFromBackend.message === "E32_OVER_250K_REQUIRES_BUYER_DOCUMENT"
+                        ? "Para facturar e32 por RD$250,000 o más debes agregar RNC/Cédula válido del comprador."
+                        : ecfFromBackend.message || "No se pudo emitir el e-CF. La factura no debe imprimirse.",
+                    { variant: "error" }
+                );
+
+                return;
+            }
+
+            enqueueSnackbar("Factura generada correctamente.", { variant: "success" });
 
             if (ecfFromBackend?.exists) {
                 invoice.ecf = {
                     exists: true,
+                    documentId: ecfFromBackend.documentId || null,
+                    documentType: ecfFromBackend.documentType || null,
+                    sequenceNumber: ecfFromBackend.sequenceNumber || null,
                     eNCF: ecfFromBackend.eNCF || null,
                     status: ecfFromBackend.status || null,
                     trackId: ecfFromBackend.trackId || null,
-                    documentId: ecfFromBackend.documentId || null,
+                    securityCode: ecfFromBackend.securityCode || null,
+                    qrUrl: ecfFromBackend.qrUrl || null,
+                    fechaHoraFirma: ecfFromBackend.fechaHoraFirma || null,
                 };
 
                 enqueueSnackbar("e-CF emitido correctamente.", { variant: "success" });
@@ -1427,6 +1456,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             enqueueSnackbar("Para vender fiado debes seleccionar o crear un cliente guardado.", {
                 variant: "warning",
             });
+            return;
+        }
+        const targetAction = String(target || "").trim().toLowerCase();
+        const buyerDocForEcf = String(
+            customerRnc ||
+            order?.customerDetails?.rnc ||
+            order?.customerDetails?.rncCedula ||
+            ""
+        ).replace(/[^\d]/g, "");
+
+        if (
+            targetAction === "invoice" &&
+            isEcfMode &&
+            num(total) >= 250000 &&
+            ![9, 11].includes(buyerDocForEcf.length)
+        ) {
+            enqueueSnackbar(
+                "Para facturar e32 por RD$250,000 o más debes agregar RNC/Cédula válido del comprador.",
+                { variant: "warning" }
+            );
             return;
         }
         if (wantsFiscal && fiscalUiCapable) {

@@ -8,6 +8,7 @@ import api from "../../lib/api";
 const DEFAULT_REGISTER_ID = "MAIN";
 const ALL_REGISTERS_ID = "__ALL_REGISTERS__";
 const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+import Invoice from "../../components/invoice/Invoice";
 
 
 
@@ -34,7 +35,7 @@ import { listExpenses } from "../../lib/adminFinanceApi";
 
 
 const currency = (n) =>
-    new Intl.NumberFormat("en-IN", {
+    new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
         maximumFractionDigits: 2,
@@ -83,6 +84,58 @@ const safeNumber = (v) => {
     return Number.isFinite(n) ? n : 0;
 };
 
+const CLOSING_INPUT_MODE_TOTAL = "total";
+const CLOSING_INPUT_MODE_BREAKDOWN = "breakdown";
+
+const CASH_DENOMINATIONS_RD = [
+    { label: "RD$ 2,000", value: 2000, type: "Billete" },
+    { label: "RD$ 1,000", value: 1000, type: "Billete" },
+    { label: "RD$ 500", value: 500, type: "Billete" },
+    { label: "RD$ 200", value: 200, type: "Billete" },
+    { label: "RD$ 100", value: 100, type: "Billete" },
+    { label: "RD$ 50", value: 50, type: "Billete" },
+    { label: "RD$ 25", value: 25, type: "Moneda" },
+    { label: "RD$ 10", value: 10, type: "Moneda" },
+    { label: "RD$ 5", value: 5, type: "Moneda" },
+    { label: "RD$ 1", value: 1, type: "Moneda" },
+];
+
+const createEmptyDenominationCounts = () =>
+    CASH_DENOMINATIONS_RD.reduce((acc, item) => {
+        acc[String(item.value)] = "";
+        return acc;
+    }, {});
+
+const buildCashBreakdownPayload = (counts = {}) =>
+    CASH_DENOMINATIONS_RD.map((item) => {
+        const count = Number(String(counts[String(item.value)] ?? "").replace(/[^\d]/g, ""));
+        return {
+            label: item.label,
+            value: item.value,
+            count: Number.isFinite(count) ? count : 0,
+        };
+    }).filter((item) => item.count > 0);
+
+const calculateCashBreakdownTotal = (counts = {}) =>
+    buildCashBreakdownPayload(counts).reduce(
+        (sum, item) => sum + Number(item.value || 0) * Number(item.count || 0),
+        0
+    );
+
+const buildCountsFromSavedBreakdown = (breakdown = []) => {
+    const next = createEmptyDenominationCounts();
+
+    if (!Array.isArray(breakdown)) return next;
+
+    breakdown.forEach((item) => {
+        const valueKey = String(Number(item?.value || 0));
+        if (valueKey in next) {
+            next[valueKey] = String(Number(item?.count || 0) || "");
+        }
+    });
+
+    return next;
+};
 const getInvoiceNumber = (r) => {
     const raw =
         r?.facturaNo ??
@@ -263,13 +316,32 @@ const CashRegister = () => {
     const [mermaEditTab, setMermaEditTab] = useState("cooked"); // "cooked" | "raw"
     const [closingCountedInput, setClosingCountedInput] = useState("");
     const [closingNote, setClosingNote] = useState("");
+    const [closingInputMode, setClosingInputMode] = useState(CLOSING_INPUT_MODE_TOTAL);
+    const [closingDenominationCounts, setClosingDenominationCounts] = useState(() =>
+        createEmptyDenominationCounts()
+    );
+
     const [adjustCloseOpen, setAdjustCloseOpen] = useState(false);
     const [adjustCountedInput, setAdjustCountedInput] = useState("");
     const [adjustNote, setAdjustNote] = useState("");
     const [adjustManagerCode, setAdjustManagerCode] = useState("");
+
+
     const [managerCodeModalOpen, setManagerCodeModalOpen] = useState(false);
     const [managerCodeInput, setManagerCodeInput] = useState("");
     const [closeManagerCode, setCloseManagerCode] = useState("");
+    const [openingManagerCode, setOpeningManagerCode] = useState("");
+    const closingBreakdownPayload = useMemo(
+        () => buildCashBreakdownPayload(closingDenominationCounts),
+        [closingDenominationCounts]
+    );
+
+    const closingBreakdownTotal = useMemo(
+        () => calculateCashBreakdownTotal(closingDenominationCounts),
+        [closingDenominationCounts]
+    );
+
+
     const me = getUserFromStorage();
     const userData = useSelector(
         (state) => state.user?.userData || state.auth?.userData || null
@@ -282,6 +354,23 @@ const CashRegister = () => {
         getRoleFromToken() ||
         ""
     ).trim();
+    const [ecfAdjustmentModal, setEcfAdjustmentModal] = useState({
+        open: false,
+        order: null,
+        documentType: "34",
+        originalEcf: null,
+    });
+
+    const [ecfAdjustmentForm, setEcfAdjustmentForm] = useState({
+        adjustmentMode: "partial",
+        amount: "",
+        tax: "",
+        reason: "",
+        modificationCode: "1",
+    });
+
+    const [lastEcfAdjustmentResult, setLastEcfAdjustmentResult] = useState(null);
+    const [selectedAdjustmentInvoice, setSelectedAdjustmentInvoice] = useState(null);
 
     const roleNorm = role.toLowerCase();
 
@@ -342,6 +431,7 @@ const CashRegister = () => {
     const isAdminLike = ADMIN_ROLES.has(roleUpper);
     const activeRegisterId = useMemo(() => {
         if (isAdminLike) {
+            if (registersLoading) return "";
             if (!registers.length) return ALL_REGISTERS_ID;
 
             if (!selectedRegisterId || selectedRegisterId === ALL_REGISTERS_ID) {
@@ -355,12 +445,34 @@ const CashRegister = () => {
             return ALL_REGISTERS_ID;
         }
 
+        if (registersLoading) return "";
+
         if (selectedRegisterId && registers.some((r) => r.code === selectedRegisterId)) {
             return selectedRegisterId;
         }
 
-        return registers[0]?.code || DEFAULT_REGISTER_ID;
-    }, [selectedRegisterId, registers, isAdminLike]);
+        if (registers.length > 0) {
+            return registers[0].code;
+        }
+
+        return DEFAULT_REGISTER_ID;
+    }, [selectedRegisterId, registers, registersLoading, isAdminLike]);
+    useEffect(() => {
+        if (isAdminLike) return;
+        if (registersLoading) return;
+        if (!registers.length) return;
+
+        const selectedIsValid = registers.some((r) => r.code === selectedRegisterId);
+
+        if (!selectedIsValid) {
+            const firstRegisterCode = registers[0]?.code;
+
+            if (firstRegisterCode) {
+                setSelectedRegisterId(firstRegisterCode);
+                saveRegisterId(firstRegisterCode);
+            }
+        }
+    }, [isAdminLike, registersLoading, registers, selectedRegisterId]);
 
 
     const isViewingAllRegisters = isAdminLike && activeRegisterId === ALL_REGISTERS_ID;
@@ -382,7 +494,15 @@ const CashRegister = () => {
     };
 
     const [forceSummary, setForceSummary] = useState(false);
-    const registerFilterValue = isViewingAllRegisters ? undefined : activeRegisterId;
+    const hasUsableRegister =
+        Boolean(activeRegisterId) &&
+        activeRegisterId !== ALL_REGISTERS_ID &&
+        (!registers.length || registers.some((r) => r.code === activeRegisterId) || activeRegisterId === DEFAULT_REGISTER_ID);
+
+    const registerFilterValue =
+        isViewingAllRegisters || !hasUsableRegister
+            ? undefined
+            : activeRegisterId;
 
     const defaultModalRegisterId = useMemo(() => {
         if (isAdminLike) return activeRegisterId || ALL_REGISTERS_ID;
@@ -404,7 +524,7 @@ const CashRegister = () => {
             selectedYMD,
             registerFilterValue || "ALL",
         ],
-        enabled: !isViewingAllRegisters,
+        enabled: Boolean(selectedYMD && !isViewingAllRegisters && hasUsableRegister),
         queryFn: async () => {
             const params = { dateYMD: selectedYMD, registerId: registerFilterValue };
 
@@ -521,12 +641,35 @@ const CashRegister = () => {
         getUserIdFromToken();
 
     const closedByMe = closedById && myUserId ? String(closedById) === String(myUserId) : false;
+    // “Fondo inicial” se considera seteado SOLO si openingInitial > 0
+    // (no por el hecho de que exista una sesión)
+    const hasOpenMovement =
+        Array.isArray(session?.movements) &&
+        session.movements.some(
+            (m) =>
+                String(m?.type || "").toUpperCase() === "OPEN" &&
+                Number(m?.amount || 0) > 0
+        );
+
+    const openingAlreadySet =
+        Number(session?.openingFloatInitial || 0) > 0 ||
+        hasOpenMovement;
 
 // ✅ Regla final
     const showSummary =
         adminCanSeeSummary ||
         (sessionClosed && (isCajera || isCashier));
+    const canCloseSelectedSession =
+        sessionExists &&
+        !sessionClosed &&
+        openingAlreadySet &&
+        !isViewingAllRegisters &&
+        (isAdminLike || isCashier || isCajera);
 
+    const showCashSessionControls =
+        !useConsolidatedSummary &&
+        !isViewingAllRegisters &&
+        (isAdminLike || isCashier || isCajera);
     const queryClient = useQueryClient();
     useEffect(() => {
         queryClient.removeQueries({ queryKey: ["admin/cash-session"] });
@@ -573,6 +716,29 @@ const CashRegister = () => {
         staleTime: 60_000,
         retry: 0,
     });
+    const { data: tenantEcfStatusResp } = useQuery({
+        queryKey: ["tenant-ecf-status-for-adjustments"],
+        queryFn: async () => {
+            const res = await api.get("/api/order/ecf/status");
+            return res.data;
+        },
+        staleTime: 30_000,
+        retry: 0,
+    });
+
+    const tenantEcfStatus = tenantEcfStatusResp?.data || {};
+
+    const ecfAdjustmentsEnabled =
+        tenantEcfStatus?.enabled === true &&
+        tenantEcfStatus?.canIssue === true;
+
+    const e33Enabled =
+        ecfAdjustmentsEnabled &&
+        tenantEcfStatus?.documentTypes?.e33?.enabled === true;
+
+    const e34Enabled =
+        ecfAdjustmentsEnabled &&
+        tenantEcfStatus?.documentTypes?.e34?.enabled === true;
 
     const planFeatures = usageResp?.data?.features || {};
 
@@ -729,35 +895,40 @@ const CashRegister = () => {
     });
 
     const closeCashSessionMutation = useMutation({
-        mutationFn: async ({ fid, dateYMD, registerId, countedTotal, note }) => {
+        mutationFn: async ({ fid, dateYMD, registerId, countedTotal, note, breakdown, managerCode }) => {
             const res = await api.post("/api/admin/cash-session/close", {
                 fid,
                 dateYMD,
                 registerId,
                 countedTotal,
                 note,
-                managerCode: closeManagerCode.trim(),
-
+                breakdown,
+                managerCode,
             });
             return res.data;
-
         },
         onSuccess: (payload) => {
             const sessionDoc = payload?.data ?? null;
 
             if (sessionDoc?._id) {
                 queryClient.setQueryData(
-                    ["admin/cash-session", selectedYMD, activeRegisterId],
+                    [
+                        "admin/cash-session",
+                        currentUserId || "NO_USER",
+                        selectedYMD,
+                        registerFilterValue || "ALL",
+                    ],
                     { success: true, data: sessionDoc }
                 );
             }
 
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
             queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
-
             // ✅ UX: limpiar campos
             setClosingCountedInput("");
             setClosingNote("");
+            setClosingInputMode(CLOSING_INPUT_MODE_TOTAL);
+            setClosingDenominationCounts(createEmptyDenominationCounts());
             setCloseManagerCode("");
 
             // ✅ UX: feedback
@@ -1188,16 +1359,7 @@ const CashRegister = () => {
     const menudoActual = openingInitial + addedTotal; // opening + adds
 
 
-    // “Fondo inicial” se considera seteado SOLO si openingInitial > 0
-    // (no por el hecho de que exista una sesión)
-    const hasOpenMovement =
-        Array.isArray(session?.movements) &&
-        session.movements.some((m) => String(m?.type || "").toUpperCase() === "OPEN");
 
-    const openingAlreadySet =
-        Boolean(session?.openedAt) ||
-        hasOpenMovement ||
-        Number(session?.openingFloatInitial || 0) > 0;
 
 
     const { data: managerCodeStatus } = useQuery({
@@ -1228,30 +1390,45 @@ const CashRegister = () => {
 
     // Cajera: no puede editar si ya se guardó opening
     // Admin: puede editar cualquier fecha, pero SOLO cuando active el modo edición
-    const disableOpeningInput =
-        // Cajera: si ya se guardó el opening, no puede modificarlo
-        (isCashier && openingAlreadySet) ||
-        // No-admin: solo puede tocar hoy
-        (!isAdmin && !isSelectedToday) ||
-        // Admin: solo bloquea cuando EXISTE sesión y NO está editando
-        (isAdmin && sessionExists && !isEditingOpening);
+    const cashierEditingOpeningWithManager =
+        isCashier &&
+        isEditingOpening &&
+        openingAlreadySet &&
+        !sessionClosed;
 
+    const disableOpeningInput =
+        // Cajera: si ya se guardó el fondo, solo puede editar entrando al modo con código manager.
+        (isCashier && openingAlreadySet && !isEditingOpening) ||
+
+        // Cajera: si NO está editando con manager code, no puede modificar fechas viejas.
+        (!isAdmin && !isSelectedToday && !cashierEditingOpeningWithManager) ||
+
+        // Admin: si existe sesión, solo edita cuando active el modo edición.
+        (isAdmin && sessionExists && !isEditingOpening);
 
     useEffect(() => {
         if (closingAlreadySet) {
             setClosingCountedInput(formatThousands(closingCountedSaved));
+            setClosingInputMode(CLOSING_INPUT_MODE_TOTAL);
+            setClosingDenominationCounts(
+                buildCountsFromSavedBreakdown(session?.closing?.breakdown || [])
+            );
         } else {
             setClosingCountedInput("");
             setClosingNote("");
+            setClosingInputMode(CLOSING_INPUT_MODE_TOTAL);
+            setClosingDenominationCounts(createEmptyDenominationCounts());
         }
-    }, [selectedYMD, closingAlreadySet, closingCountedSaved]);
+    }, [selectedYMD, closingAlreadySet, closingCountedSaved, session?.closing?.breakdown]);
+
     useEffect(() => {
         setIsEditingOpening(false);
         setClosingCountedInput("");
         setClosingNote("");
+        setClosingInputMode(CLOSING_INPUT_MODE_TOTAL);
+        setClosingDenominationCounts(createEmptyDenominationCounts());
         setAddAmountInput?.("");
     }, [activeRegisterId]);
-
 
     // Cajera solo puede guardar fondo inicial si:
     // - es hoy
@@ -1286,11 +1463,23 @@ const CashRegister = () => {
 
     const openCashSessionModalMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, openingFloat }) => {
-            const res = await api.post("/api/admin/cash-session/open", {
-                dateYMD,
-                registerId,
-                openingFloat,
-            });
+            const cleanRegisterId = String(registerId || "").trim().toUpperCase();
+
+            const res = await api.post(
+                "/api/admin/cash-session/open",
+                {
+                    dateYMD,
+                    registerId: cleanRegisterId,
+                    openingFloat,
+                },
+                {
+                    params: {
+                        dateYMD,
+                        registerId: cleanRegisterId,
+                    },
+                }
+            );
+
             return res.data;
         },
         onSuccess: () => {
@@ -1330,12 +1519,24 @@ const CashRegister = () => {
 
     const adjustCashModalMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, openingFloat, note }) => {
-            const res = await api.patch("/api/admin/cash-session/adjust", {
-                dateYMD,
-                registerId,
-                openingFloat,
-                note: note || "",
-            });
+            const cleanRegisterId = String(registerId || "").trim().toUpperCase();
+
+            const res = await api.patch(
+                "/api/admin/cash-session/adjust",
+                {
+                    dateYMD,
+                    registerId: cleanRegisterId,
+                    openingFloat,
+                    note: note || "",
+                },
+                {
+                    params: {
+                        dateYMD,
+                        registerId: cleanRegisterId,
+                    },
+                }
+            );
+
             return res.data;
         },
         onSuccess: () => {
@@ -1347,11 +1548,32 @@ const CashRegister = () => {
 
     const openCashSessionMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, openingFloat }) => {
-            const res = await api.post("/api/admin/cash-session/open", {
+            const cleanRegisterId = String(registerId || "").trim().toUpperCase();
+
+            console.log("[OPEN CASH SESSION REQUEST]", {
                 dateYMD,
-                registerId,
+                registerId: cleanRegisterId,
                 openingFloat,
+                activeRegisterId,
+                selectedRegisterId,
+                registersLoading,
             });
+
+            const res = await api.post(
+                "/api/admin/cash-session/open",
+                {
+                    dateYMD,
+                    registerId: cleanRegisterId,
+                    openingFloat,
+                },
+                {
+                    params: {
+                        dateYMD,
+                        registerId: cleanRegisterId,
+                    },
+                }
+            );
+
             return res.data;
         },
         onSuccess: () => {
@@ -1375,44 +1597,99 @@ const CashRegister = () => {
             }
 
             if (status === 409) {
-                showToast("La caja ya está cerrada. No se puede agregar dinero.");
-                queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
+                const message = err?.response?.data?.message;
+
+                if (message === "PENDING_CASH_SESSION_CLOSE") {
+                    showToast("Tienes una caja anterior pendiente de cierre.", "error");
+                } else if (message === "CASH_SESSION_ALREADY_CLOSED") {
+                    showToast("Esta caja ya fue cerrada para esta fecha.", "error");
+                } else if (message === "SESSION_ALREADY_EXISTS") {
+                    showToast("Ya existe una apertura para esta caja y esta cajera.", "error");
+                } else {
+                    showToast("No se pudo abrir la caja. Revisa si ya existe una sesión.", "error");
+                }
+
+                queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
                 return;
             }
 
             showToast(
                 err?.response?.data?.message ||
                 err?.response?.data?.error ||
-                "No se pudo agregar dinero."
+                "No se pudo guardar el fondo inicial."
             );
         },
 
     });
     const adjustOpeningMutation = useMutation({
-        mutationFn: async ({ dateYMD, registerId, openingFloat, note }) => {
-            console.log("[PATCH adjust] request", { dateYMD, registerId, openingFloat, note });
+        mutationFn: async ({ dateYMD, registerId, openingFloat, note, managerCode }) => {
+            const cleanRegisterId = String(registerId || "").trim().toUpperCase();
 
-            const res = await api.patch("/api/admin/cash-session/adjust", {
+            console.log("[PATCH adjust] request", {
                 dateYMD,
-                registerId,
+                registerId: cleanRegisterId,
                 openingFloat,
                 note,
             });
+
+            const res = await api.patch(
+                "/api/admin/cash-session/adjust",
+                {
+                    dateYMD,
+                    registerId: cleanRegisterId,
+                    openingFloat,
+                    note,
+                    managerCode,
+                },
+                {
+                    params: {
+                        dateYMD,
+                        registerId: cleanRegisterId,
+                    },
+                }
+            );
 
             console.log("[PATCH adjust] response", res?.data);
             return res.data;
         },
         onSuccess: () => {
             // refrescar sesión del día
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
+            queryClient.invalidateQueries({ queryKey: ["admin/orders/reports", selectedYMD] });
             setIsEditingOpening(false);
+            setOpeningManagerCode("");
         },
         onError: (err) => {
             console.log("[PATCH adjust] ERROR", {
                 status: err?.response?.status,
                 data: err?.response?.data,
             });
-            showToast("No se pudo editar el fondo inicial. Revisa consola.");
+
+            const message =
+                err?.response?.data?.message ||
+                err?.response?.data?.error;
+
+            if (message === "MISSING_MANAGER_CODE") {
+                showToast("Debes ingresar el código del manager.", "error");
+                return;
+            }
+
+            if (message === "INVALID_MANAGER_CODE") {
+                showToast("Código del manager incorrecto.", "error");
+                return;
+            }
+
+            if (message === "SESSION_NOT_FOUND") {
+                showToast("No se encontró la sesión de caja para esta cajera y caja.", "error");
+                return;
+            }
+
+            if (message === "SESSION_CLOSED") {
+                showToast("La caja ya está cerrada. No se puede editar el fondo inicial.", "error");
+                return;
+            }
+
+            showToast("No se pudo editar el fondo inicial.", "error");
         },
     });
 
@@ -1536,19 +1813,61 @@ const CashRegister = () => {
 
 
     const getFiscalType = (r) => {
-        const directType = normalize(
+        const clean = (v) =>
+            String(v || "")
+                .trim()
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[\s_-]+/g, "");
+
+        // 1. Primero revisamos e-CF porque E31/E32/E33/E34 deben ganar sobre B01/B02
+        const ecfType = clean(
+            r?.ecf?.documentType ||
+            r?.ecf?.tipoeCF ||
+            r?.ecf?.tipoEcf ||
+            r?.ecfDocumentType ||
+            r?.fiscal?.ecfDocumentType ||
+            r?.invoice?.ecf?.documentType ||
+            r?.invoice?.fiscal?.ecfDocumentType ||
+            ""
+        );
+
+        const ecfNumber = clean(
+            r?.ecf?.eNCF ||
+            r?.ecf?.encf ||
+            r?.eNCF ||
+            r?.encf ||
+            r?.fiscal?.eNCF ||
+            r?.fiscal?.encf ||
+            r?.invoice?.ecf?.eNCF ||
+            r?.invoice?.fiscal?.eNCF ||
+            ""
+        );
+
+        const ecfValue = `${ecfType} ${ecfNumber}`;
+
+        if (["31", "e31"].includes(ecfType) || ecfValue.includes("e31")) return "e31";
+        if (["32", "e32"].includes(ecfType) || ecfValue.includes("e32")) return "e32";
+        if (["33", "e33"].includes(ecfType) || ecfValue.includes("e33")) return "e33";
+        if (["34", "e34"].includes(ecfType) || ecfValue.includes("e34")) return "e34";
+
+        // 2. Luego revisamos comprobantes fiscales normales B01/B02
+        const ncfType = clean(
             r?.fiscal?.ncfType ||
             r?.fiscal?.type ||
+            r?.fiscal?.documentType ||
+            r?.documentType ||
             r?.ncfType ||
             r?.bills?.ncfType ||
+            r?.bills?.documentType ||
             r?.invoice?.fiscal?.ncfType ||
+            r?.invoice?.fiscal?.documentType ||
             r?.invoice?.ncfType ||
             ""
         );
 
-        if (directType) return directType;
-
-        const ncfNumber = String(
+        const ncfNumber = clean(
             r?.fiscal?.ncfNumber ||
             r?.fiscal?.ncf ||
             r?.ncfNumber ||
@@ -1557,10 +1876,41 @@ const CashRegister = () => {
             r?.invoice?.fiscal?.ncf ||
             r?.invoice?.ncfNumber ||
             ""
-        ).trim().toUpperCase();
+        );
 
-        if (ncfNumber.startsWith("B01")) return "b01";
-        if (ncfNumber.startsWith("B02")) return "b02";
+        const ncfValue = `${ncfType} ${ncfNumber}`;
+
+        if (ncfType === "b01" || ncfValue.includes("b01")) return "b01";
+        if (ncfType === "b02" || ncfValue.includes("b02")) return "b02";
+
+        // 3. Fallback por nombres descriptivos
+        const textValue = clean(
+            [
+                r?.fiscal?.name,
+                r?.fiscal?.label,
+                r?.fiscal?.description,
+                r?.documentName,
+                r?.documentLabel,
+                r?.invoice?.fiscal?.name,
+                r?.invoice?.fiscal?.label,
+            ].filter(Boolean).join(" ")
+        );
+
+        if (textValue.includes("creditofiscal") || textValue.includes("facturacreditofiscal")) {
+            return "credito_fiscal";
+        }
+
+        if (textValue.includes("consumidorfinal") || textValue.includes("facturaconsumidorfinal")) {
+            return "consumidor_final";
+        }
+
+        if (textValue.includes("debitofiscal") || textValue.includes("notadebito")) {
+            return "debito_fiscal";
+        }
+
+        if (textValue.includes("notacredito")) {
+            return "nota_credito";
+        }
 
         return "";
     };
@@ -1734,19 +2084,51 @@ const CashRegister = () => {
             if (fiscal) {
                 const fiscalType = getFiscalType(r);
 
-                if (fiscal === "fiscal" && !["b01", "b02"].includes(fiscalType)) {
+                const fiscalTypes = [
+                    "b01",
+                    "b02",
+                    "e31",
+                    "e32",
+                    "e33",
+                    "e34",
+                    "credito_fiscal",
+                    "consumidor_final",
+                    "debito_fiscal",
+                    "nota_credito",
+                ];
+
+                const hasFiscal = fiscalTypes.includes(fiscalType);
+
+                const isCreditoFiscal = ["b01", "e31", "credito_fiscal"].includes(fiscalType);
+                const isConsumidorFinal = ["b02", "e32", "consumidor_final"].includes(fiscalType);
+                const isDebitoFiscal = ["e33", "debito_fiscal"].includes(fiscalType);
+                const isNotaCredito = ["e34", "nota_credito"].includes(fiscalType);
+
+                if (fiscal === "fiscal" && !hasFiscal) {
                     return false;
                 }
 
-                if (fiscal === "b01" && fiscalType !== "b01") {
+                if (fiscal === "credito_fiscal" && !isCreditoFiscal) {
                     return false;
                 }
 
-                if (fiscal === "b02" && fiscalType !== "b02") {
+                if (fiscal === "consumidor_final" && !isConsumidorFinal) {
                     return false;
                 }
 
-                if (fiscal === "nofiscal" && ["b01", "b02"].includes(fiscalType)) {
+                if (fiscal === "debito_fiscal" && !isDebitoFiscal) {
+                    return false;
+                }
+
+                if (fiscal === "nota_credito" && !isNotaCredito) {
+                    return false;
+                }
+
+                if (["b01", "b02", "e31", "e32", "e33", "e34"].includes(fiscal) && fiscalType !== fiscal) {
+                    return false;
+                }
+
+                if (fiscal === "nofiscal" && hasFiscal) {
                     return false;
                 }
             }
@@ -2084,6 +2466,398 @@ const CashRegister = () => {
         window.clearTimeout(showToast._t);
         showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
     };
+    const resetEcfAdjustmentForm = (documentType = "34") => {
+        setEcfAdjustmentForm({
+            adjustmentMode: "partial",
+            amount: "",
+            tax: "",
+            reason:
+                documentType === "34"
+                    ? "Devolución parcial de producto"
+                    : "Monto adicional pendiente de facturar",
+            modificationCode: "1",
+        });
+        setLastEcfAdjustmentResult(null);
+    };
+
+    const openEcfAdjustmentModal = async (order, documentType = "34") => {
+        try {
+            if (!ecfAdjustmentsEnabled) {
+                showToast("El e-CF está desactivado para este tenant.");
+                return;
+            }
+
+            if (documentType === "33" && !e33Enabled) {
+                showToast("La Nota de Débito e33 no está habilitada.");
+                return;
+            }
+
+            if (documentType === "34" && !e34Enabled) {
+                showToast("La Nota de Crédito e34 no está habilitada.");
+                return;
+            }
+            if (!order?._id) {
+                showToast("Orden no disponible.");
+                return;
+            }
+
+            const res = await api.get(`/api/order/${order._id}/ecf`);
+            const ecfData = res?.data?.data || {};
+
+            const isAccepted =
+                res?.data?.exists === true &&
+                ["accepted", "accepted_with_observation"].includes(
+                    String(ecfData?.status || "").trim()
+                );
+
+            if (!isAccepted || !ecfData?.eNCF) {
+                showToast("Solo puedes crear notas sobre facturas e-CF aceptadas.");
+                return;
+            }
+
+            setEcfAdjustmentModal({
+                open: true,
+                order,
+                documentType,
+                originalEcf: ecfData,
+            });
+
+            resetEcfAdjustmentForm(documentType);
+        } catch (error) {
+            console.error("[openEcfAdjustmentModal] error:", error);
+            showToast(
+                error?.response?.data?.message ||
+                "No se pudo validar el e-CF de esta factura."
+            );
+        }
+    };
+
+    const closeEcfAdjustmentModal = () => {
+        setEcfAdjustmentModal({
+            open: false,
+            order: null,
+            documentType: "34",
+            originalEcf: null,
+        });
+        resetEcfAdjustmentForm("34");
+    };
+
+    const calculateSuggestedTax = (amount) => {
+        const value = Number(String(amount || "").replace(/[^\d.-]/g, ""));
+        if (!Number.isFinite(value) || value <= 0) return "";
+        return String(Number((value * 0.18).toFixed(2)));
+    };
+
+    const {
+        data: ecfAdjustmentsResponse,
+        isLoading: ecfAdjustmentsLoading,
+    } = useQuery({
+        queryKey: ["order-ecf-adjustments", ecfAdjustmentModal?.order?._id],
+        queryFn: async () => {
+            const orderId = ecfAdjustmentModal?.order?._id;
+            if (!orderId) return { success: true, data: [] };
+
+            const res = await api.get(`/api/order/${orderId}/ecf/adjustments`);
+            return res.data;
+        },
+        enabled: ecfAdjustmentModal.open && Boolean(ecfAdjustmentModal?.order?._id),
+        retry: 0,
+    });
+
+    const ecfAdjustments = useMemo(() => {
+        const rows = Array.isArray(ecfAdjustmentsResponse?.data)
+            ? ecfAdjustmentsResponse.data
+            : [];
+
+        const map = new Map();
+
+        for (const doc of rows) {
+            const key = doc?.documentId || doc?.eNCF;
+            if (!key) continue;
+            map.set(key, doc);
+        }
+
+        return Array.from(map.values());
+    }, [ecfAdjustmentsResponse]);
+
+    const roundMoney = (value) =>
+        Math.round((Number(value) || 0) * 100) / 100;
+
+    const acceptedAdjustmentStatuses = ["accepted", "accepted_with_observation"];
+
+    const originalEcfTotal = roundMoney(
+        ecfAdjustmentModal?.originalEcf?.totals?.total || 0
+    );
+
+    const acceptedDebitNotesTotal = useMemo(() => {
+        return roundMoney(
+            ecfAdjustments
+                .filter((doc) => {
+                    const type = String(doc?.documentType || "").trim();
+                    const status = String(doc?.status || "").trim();
+
+                    return (
+                        type === "33" &&
+                        acceptedAdjustmentStatuses.includes(status)
+                    );
+                })
+                .reduce((sum, doc) => {
+                    return sum + Number(doc?.totals?.total || 0);
+                }, 0)
+        );
+    }, [ecfAdjustments]);
+
+    const acceptedCreditNotesTotal = useMemo(() => {
+        return roundMoney(
+            ecfAdjustments
+                .filter((doc) => {
+                    const type = String(doc?.documentType || "").trim();
+                    const status = String(doc?.status || "").trim();
+
+                    return (
+                        type === "34" &&
+                        acceptedAdjustmentStatuses.includes(status)
+                    );
+                })
+                .reduce((sum, doc) => {
+                    return sum + Number(doc?.totals?.total || 0);
+                }, 0)
+        );
+    }, [ecfAdjustments]);
+
+    const availableCreditTotal = roundMoney(
+        Math.max(
+            originalEcfTotal + acceptedDebitNotesTotal - acceptedCreditNotesTotal,
+            0
+        )
+    );
+
+    const issueEcfAdjustmentMutation = useMutation({
+        mutationFn: async () => {
+            const orderId = ecfAdjustmentModal?.order?._id;
+            const documentType = ecfAdjustmentModal?.documentType;
+
+            if (!orderId) {
+                throw new Error("ORDER_ID_REQUIRED");
+            }
+
+            const adjustmentMode = String(ecfAdjustmentForm.adjustmentMode || "partial");
+            const amount = Number(String(ecfAdjustmentForm.amount || "").replace(/[^\d.-]/g, ""));
+            const tax = Number(String(ecfAdjustmentForm.tax || "").replace(/[^\d.-]/g, ""));
+            const reason = String(ecfAdjustmentForm.reason || "").trim();
+            const modificationCode = String(ecfAdjustmentForm.modificationCode || "1").trim();
+
+            if (!reason) {
+                throw new Error("Debes escribir el motivo de la nota.");
+            }
+
+            const payload = {
+                documentType,
+                adjustmentMode,
+                reason,
+                modificationCode,
+            };
+
+            if (adjustmentMode !== "total") {
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    throw new Error("Debes colocar un monto válido.");
+                }
+
+                payload.amount = amount;
+                payload.tax = Number.isFinite(tax) && tax >= 0 ? tax : 0;
+            }
+
+            if (documentType === "34") {
+                const requestedCreditTotal =
+                    adjustmentMode === "total"
+                        ? originalEcfTotal
+                        : roundMoney(
+                            amount + (Number.isFinite(tax) && tax >= 0 ? tax : 0)
+                        );
+
+                if (availableCreditTotal <= 0) {
+                    throw new Error("Esta factura ya no tiene balance disponible para nota de crédito.");
+                }
+
+                if (requestedCreditTotal > availableCreditTotal + 0.01) {
+                    throw new Error(
+                        `La nota de crédito excede el balance disponible. Disponible: ${currency(availableCreditTotal)}. Solicitado: ${currency(requestedCreditTotal)}.`
+                    );
+                }
+            }
+
+            const res = await api.post(`/api/order/${orderId}/ecf/adjustment`, payload);
+            return res.data;
+        },
+        onSuccess: (res) => {
+            const data = res?.data || {};
+            setLastEcfAdjustmentResult(data);
+
+            showToast(
+                `${data?.documentType === "33" ? "Nota de débito" : "Nota de crédito"} emitida: ${data?.eNCF || ""}`,
+                "success"
+            );
+
+            queryClient.invalidateQueries({
+                queryKey: ["order-ecf-adjustments", ecfAdjustmentModal?.order?._id],
+            });
+        },
+        onError: (error) => {
+            console.error("[issueEcfAdjustmentMutation] error:", error);
+            showToast(
+                error?.response?.data?.message ||
+                error?.message ||
+                "No se pudo emitir la nota."
+            );
+        },
+    });
+    const getAdjustmentTitle = (documentType) => {
+        const type = String(documentType || "").trim();
+
+        if (type === "33") return "Nota de Débito Electrónica e-CF";
+        if (type === "34") return "Nota de Crédito Electrónica e-CF";
+
+        return "Nota Electrónica e-CF";
+    };
+
+    const buildAdjustmentInvoiceOrder = (doc = {}) => {
+        const documentType = String(doc.documentType || doc?.ecf?.documentType || "").trim();
+
+        const subtotal = Number(doc?.totals?.subtotal || 0);
+        const tax = Number(doc?.totals?.tax || 0);
+        const discount = Number(doc?.totals?.discount || 0);
+        const total = Number(doc?.totals?.total || 0);
+
+        const reference = doc.reference || {};
+        const originalEcf = ecfAdjustmentModal?.originalEcf || {};
+
+        const fallbackItemName =
+            documentType === "33"
+                ? `Nota de débito - ${reference?.reason || "Ajuste"}`
+                : `Nota de crédito - ${reference?.reason || "Ajuste"}`;
+
+        const noteItems =
+            Array.isArray(doc.items) && doc.items.length
+                ? doc.items
+                : [
+                    {
+                        name: fallbackItemName,
+                        quantity: 1,
+                        unitPrice: subtotal || total,
+                        price: subtotal || total,
+                        note: reference?.reason || "",
+                    },
+                ];
+
+        return {
+            _id: doc.documentId,
+            createdAt: doc.createdAt || new Date().toISOString(),
+
+            facturaNo: doc.eNCF,
+            invoiceNumber: doc.eNCF,
+
+            fiscal: {
+                requested: documentType === "33",
+                ecfDocumentType: documentType,
+                ncfType: `E${documentType}`,
+                internalNumber: doc.eNCF,
+                issuedAt: doc.createdAt || new Date().toISOString(),
+            },
+
+            customerDetails: {
+                name: originalEcf?.customer?.name || "Consumidor Final",
+                rnc: originalEcf?.customer?.document || "",
+                rncCedula: originalEcf?.customer?.document || "",
+                phone: "",
+                address: "",
+            },
+
+            paymentMethod: "Ajuste e-CF",
+
+            bills: {
+                subtotal,
+                total: subtotal,
+                discount,
+                taxEnabled: tax > 0,
+                tax,
+                tipEnabled: false,
+                tip: 0,
+                tipAmount: 0,
+                deliveryFee: 0,
+                totalWithTax: total,
+            },
+
+            items: noteItems,
+
+            ecf: {
+                exists: true,
+                documentType,
+                eNCF: doc.eNCF,
+                status: doc.status,
+                trackId: doc.trackId,
+                securityCode: doc.securityCode,
+                qrUrl: doc.qrUrl,
+                fechaHoraFirma: doc.fechaHoraFirma,
+                reference,
+            },
+        };
+    };
+
+    const openAdjustmentInvoicePreview = (doc) => {
+        const invoiceData = {
+            title: getAdjustmentTitle(doc?.documentType),
+            order: buildAdjustmentInvoiceOrder(doc),
+        };
+
+        // Cerrar el modal de creación/listado de notas para que Invoice no quede detrás
+        setEcfAdjustmentModal({
+            open: false,
+            order: null,
+            documentType: "34",
+            originalEcf: null,
+        });
+
+        // Abrir la vista imprimible de la nota
+        setSelectedAdjustmentInvoice(invoiceData);
+    };
+
+    const renderInvoiceActions = (r) => {
+        if (!r?._id) {
+            return <span className="text-xs text-gray-500">No disponible</span>;
+        }
+
+        return (
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => verFactura(r._id)}
+                    className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
+                >
+                    Ver
+                </button>
+
+                {e34Enabled && (
+                    <button
+                        type="button"
+                        onClick={() => openEcfAdjustmentModal(r, "34")}
+                        className="px-2 py-1 rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 text-xs font-semibold hover:bg-red-500/20 transition-colors"
+                    >
+                        Nota crédito
+                    </button>
+                )}
+
+                {e33Enabled && (
+                    <button
+                        type="button"
+                        onClick={() => openEcfAdjustmentModal(r, "33")}
+                        className="px-2 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
+                    >
+                        Nota débito
+                    </button>
+                )}
+            </div>
+        );
+    };
 
     const resetModalFilters = () => {
         setModalFilters({
@@ -2168,8 +2942,9 @@ const CashRegister = () => {
             </div>
 
             {/* Fondo inicial */}
-            {showSummary && (
-            <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+
+            {showCashSessionControls && (
+                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Columna izquierda: texto + cards (esto elimina el espacio vacío) */}
                     <div className="space-y-4">
@@ -2181,7 +2956,8 @@ const CashRegister = () => {
                         </div>
 
                         {/* Cards pasan aquí */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {(isAdminLike || sessionClosed) && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
                                 <div className="text-xs text-gray-400 mb-1">Menudo (fondo inicial + agregado)</div>
                                 <div className="text-sm font-semibold text-white">{currency(menudoActual)}</div>
@@ -2215,7 +2991,9 @@ const CashRegister = () => {
                                 </div>
                             </div>
                         </div>
+                        )}
                     </div>
+
 
                     {/* Columna derecha: formulario */}
                     <div className="w-full max-w-sm justify-self-end">
@@ -2303,9 +3081,16 @@ const CashRegister = () => {
                                         const openingFloat = Number(cleaned);
                                         if (!Number.isFinite(openingFloat) || openingFloat <= 0) return;
 
+                                        const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                                        if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                            showToast("Selecciona una caja específica antes de guardar el fondo inicial.", "error");
+                                            return;
+                                        }
+
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: activeRegisterId,
+                                            registerId: cleanRegisterId,
                                             openingFloat,
                                         });
                                     }}
@@ -2313,6 +3098,83 @@ const CashRegister = () => {
                                 >
                                     Guardar fondo inicial
                                 </button>
+                            )}
+                            {isCashier && openingAlreadySet && !sessionClosed && !isEditingOpening && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsEditingOpening(true);
+                                        setOpeningCashInput(formatThousands(openingInitial || 0));
+                                    }}
+                                    className="mt-2 w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
+                                >
+                                    Editar fondo inicial con código manager
+                                </button>
+                            )}
+                            {isCashier && isEditingOpening && openingAlreadySet && !sessionClosed && (
+                                <div className="mt-3 space-y-2">
+                                    <label className="text-xs text-gray-400">Código del manager</label>
+                                    <input
+                                        type="password"
+                                        value={openingManagerCode}
+                                        onChange={(e) => setOpeningManagerCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm"
+                                        placeholder="Ej: 1234"
+                                        inputMode="numeric"
+                                        autoComplete="new-password"
+                                    />
+
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const cleaned = String(openingCashInput ?? "").replace(/[^\d.-]/g, "");
+                                                const openingFloat = Number(cleaned);
+
+                                                if (!Number.isFinite(openingFloat) || openingFloat <= 0) {
+                                                    showToast("Monto inválido.");
+                                                    return;
+                                                }
+
+                                                if (!openingManagerCode.trim()) {
+                                                    showToast("Código del manager requerido.");
+                                                    return;
+                                                }
+
+                                                const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                                                if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                                    showToast("Selecciona una caja específica antes de editar el fondo inicial.", "error");
+                                                    return;
+                                                }
+
+                                                adjustOpeningMutation.mutate({
+                                                    dateYMD: selectedYMD,
+                                                    registerId: cleanRegisterId,
+                                                    openingFloat,
+                                                    managerCode: openingManagerCode.trim(),
+                                                    note: `Fondo inicial ajustado por cajera con autorización manager (${selectedYMD})`,
+                                                });
+                                            }}
+                                            disabled={adjustOpeningMutation.isPending}
+                                            className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
+                                        >
+                                            {adjustOpeningMutation.isPending ? "Guardando..." : "Guardar cambio"}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsEditingOpening(false);
+                                                setOpeningManagerCode("");
+                                                setOpeningCashInput(formatThousands(openingInitial || 0));
+                                            }}
+                                            className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
+                                        >
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
                             )}
 
                             {/* ADMIN: puede crear fondo inicial HOY si aún no existe */}
@@ -2324,9 +3186,21 @@ const CashRegister = () => {
                                         const openingFloat = Number(cleaned);
                                         if (!Number.isFinite(openingFloat) || openingFloat < 0) return;
 
+                                        const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                                        if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                            showToast("Selecciona una caja específica antes de guardar el fondo inicial.", "error");
+                                            return;
+                                        }
+
+                                        if (registers.length > 0 && !registers.some((r) => r.code === cleanRegisterId)) {
+                                            showToast("La caja seleccionada no existe o no está activa.", "error");
+                                            return;
+                                        }
+
                                         openCashSessionMutation.mutate({
                                             dateYMD: selectedYMD,
-                                            registerId: activeRegisterId,
+                                            registerId: cleanRegisterId,
                                             openingFloat,
                                         });
                                     }}
@@ -2357,9 +3231,16 @@ const CashRegister = () => {
                                                     const openingFloat = Number(cleaned);
                                                     if (!Number.isFinite(openingFloat) || openingFloat < 0) return;
 
+                                                    const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                                                    if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                                        showToast("Selecciona una caja específica antes de editar el fondo inicial.", "error");
+                                                        return;
+                                                    }
+
                                                     adjustOpeningMutation.mutate({
                                                         dateYMD: selectedYMD,
-                                                        registerId: activeRegisterId,
+                                                        registerId: cleanRegisterId,
                                                         openingFloat,
                                                         note: `Ajuste de fondo inicial por admin (${selectedYMD})`,
                                                     });
@@ -2460,6 +3341,52 @@ const CashRegister = () => {
                             <div className="text-sm text-white mt-1">{session?.closing?.note || session?.notes}</div>
                         </div>
                     )}
+                    {!useConsolidatedSummary &&
+                        Array.isArray(session?.closing?.breakdown) &&
+                        session.closing.breakdown.length > 0 && (
+                            <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div>
+                                        <div className="text-xs text-gray-400">Desglose del efectivo contado</div>
+                                        <div className="text-[11px] text-gray-500">
+                                            Billetes y monedas registrados al cierre.
+                                        </div>
+                                    </div>
+
+                                    <div className="text-sm font-bold text-[#f6b100]">
+                                        {currency(
+                                            session.closing.breakdown.reduce(
+                                                (sum, item) =>
+                                                    sum + Number(item?.value || 0) * Number(item?.count || 0),
+                                                0
+                                            )
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {session.closing.breakdown.map((item, index) => (
+                                        <div
+                                            key={`${item.value}-${index}`}
+                                            className="flex items-center justify-between rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2"
+                                        >
+                                            <div>
+                                                <div className="text-sm text-white font-semibold">
+                                                    {item.label || `RD$ ${item.value}`}
+                                                </div>
+                                                <div className="text-[11px] text-gray-500">
+                                                    Cantidad: {Number(item.count || 0)}
+                                                </div>
+                                            </div>
+
+                                            <div className="text-sm text-gray-200 font-semibold">
+                                                {currency(Number(item.value || 0) * Number(item.count || 0))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     {session?.closing?.adjustedAt && (
                         <div className="mt-2 text-xs text-gray-500">
                             Ajustado: {new Date(session.closing.adjustedAt).toLocaleString()} por {session?.closing?.adjustedBy?.name || "Admin"}
@@ -2471,16 +3398,46 @@ const CashRegister = () => {
             )}
 
 
-            {!showSummary && (
+            {canCloseSelectedSession && (
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                     <h3 className="text-white font-semibold text-lg">Cierre final de caja</h3>
                     <p className="text-sm text-gray-400 mt-1">
                         Para ver el resumen, primero registra el efectivo contado al cierre.
                     </p>
 
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-xs text-gray-400">Efectivo contado (lo que tú tienes en caja)</label>
+                    <div className="mt-4">
+                        <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#0f0f0f] border border-gray-800/50 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setClosingInputMode(CLOSING_INPUT_MODE_TOTAL)}
+                                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                    closingInputMode === CLOSING_INPUT_MODE_TOTAL
+                                        ? "bg-[#f6b100] text-black"
+                                        : "text-gray-300 hover:bg-white/5"
+                                }`}
+                            >
+                                Total contado
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setClosingInputMode(CLOSING_INPUT_MODE_BREAKDOWN)}
+                                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                    closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                        ? "bg-[#f6b100] text-black"
+                                        : "text-gray-300 hover:bg-white/5"
+                                }`}
+                            >
+                                Billetes y monedas
+                            </button>
+                        </div>
+                    </div>
+
+                    {closingInputMode === CLOSING_INPUT_MODE_TOTAL && (
+                        <div className="mt-4">
+                            <label className="text-xs text-gray-400">
+                                Efectivo contado (lo que tienes en caja)
+                            </label>
                             <input
                                 value={closingCountedInput}
                                 onChange={(e) => setClosingCountedInput(formatThousands(e.target.value))}
@@ -2488,18 +3445,87 @@ const CashRegister = () => {
                                 placeholder="Ej: 2,000"
                             />
                         </div>
+                    )}
 
-                        <div>
-                            <label className="text-xs text-gray-400">Nota (opcional)</label>
-                            <input
-                                value={closingNote}
-                                onChange={(e) => setClosingNote(e.target.value)}
-                                className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                                placeholder="Ej: faltó cambio, etc."
-                            />
+                    {closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN && (
+                        <div className="mt-4 rounded-xl bg-[#0f0f0f] border border-gray-800/50 p-4">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <div>
+                                    <div className="text-sm font-semibold text-white">
+                                        Conteo por denominación
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Ingresa la cantidad de cada billete o moneda.
+                                    </div>
+                                </div>
+
+                                <div className="text-right">
+                                    <div className="text-xs text-gray-500">Total contado</div>
+                                    <div className="text-lg font-bold text-[#f6b100]">
+                                        {currency(closingBreakdownTotal)}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {CASH_DENOMINATIONS_RD.map((item) => {
+                                    const countValue = closingDenominationCounts[String(item.value)] || "";
+                                    const lineTotal = Number(item.value || 0) * Number(countValue || 0);
+
+                                    return (
+                                        <div
+                                            key={item.value}
+                                            className="rounded-lg bg-[#151515] border border-gray-800/40 p-3"
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-white">
+                                                        {item.label}
+                                                    </div>
+                                                    <div className="text-[11px] text-gray-500">
+                                                        {item.type}
+                                                    </div>
+                                                </div>
+
+                                                <input
+                                                    value={countValue}
+                                                    onChange={(e) => {
+                                                        const value = e.target.value.replace(/[^\d]/g, "").slice(0, 6);
+                                                        setClosingDenominationCounts((prev) => ({
+                                                            ...prev,
+                                                            [String(item.value)]: value,
+                                                        }));
+                                                    }}
+                                                    inputMode="numeric"
+                                                    className="w-20 px-2 py-2 bg-[#0b0b0b] border border-gray-800/50 rounded-lg text-white text-right"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+
+                                            <div className="mt-2 text-xs text-gray-500 text-right">
+                                                Subtotal:{" "}
+                                                <span className="text-gray-300 font-semibold">
+                                {currency(lineTotal)}
+                            </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
+                    )}
+
+                    <div className="mt-4">
+                        <label className="text-xs text-gray-400">Nota del cierre (opcional)</label>
+                        <textarea
+                            value={closingNote}
+                            onChange={(e) => setClosingNote(e.target.value)}
+                            className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white min-h-[90px] resize-none"
+                            placeholder="Ej: faltó cambio, sobrante, observación de la cajera, etc."
+                        />
                     </div>
-                    <div>
+
+                    <div className="mt-4">
                         <label className="text-xs text-gray-400">Código del manager</label>
                         <input
                             type="password"
@@ -2510,17 +3536,19 @@ const CashRegister = () => {
                             inputMode="numeric"
                             autoComplete="new-password"
                         />
-
                     </div>
 
 
                     <button
                         type="button"
                         onClick={() => {
-                            const cleaned = String(closingCountedInput ?? "").replace(/[^\d.-]/g, "");
-                            const countedTotal = Number(cleaned);
                             if (!sessionExists) {
                                 showToast("No hay una caja abierta para esta fecha.");
+                                return;
+                            }
+
+                            if (isViewingAllRegisters) {
+                                showToast("Selecciona una caja específica para poder cerrarla.", "error");
                                 return;
                             }
 
@@ -2529,24 +3557,58 @@ const CashRegister = () => {
                                 return;
                             }
 
-                            if (!Number.isFinite(countedTotal) || countedTotal < 0) return;
+                            if (!closeManagerCode.trim()) {
+                                showToast("Código del manager requerido.", "error");
+                                return;
+                            }
+
+                            const breakdown =
+                                closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                    ? closingBreakdownPayload
+                                    : [];
+
+                            const countedTotal =
+                                closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                    ? closingBreakdownTotal
+                                    : Number(String(closingCountedInput ?? "").replace(/[^\d.-]/g, ""));
+
+                            if (!Number.isFinite(countedTotal) || countedTotal < 0) {
+                                showToast("Monto inválido.", "error");
+                                return;
+                            }
+
+                            if (closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN && breakdown.length === 0) {
+                                showToast("Debes ingresar al menos una denominación.", "error");
+                                return;
+                            }
 
                             const fid = session?._id || session?.id;
                             if (!fid) {
-                                showToast("No se encontró el ID de la sesión (fid). Verifica que el GET cash-session esté devolviendo data con _id.");
+                                showToast("No se encontró el ID de la sesión.");
                                 return;
                             }
+
+                            const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                            if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                showToast("Selecciona una caja específica antes de cerrar.", "error");
+                                return;
+                            }
+
                             closeCashSessionMutation.mutate({
                                 fid,
                                 dateYMD: selectedYMD,
-                                registerId: activeRegisterId,
+                                registerId: cleanRegisterId,
                                 countedTotal,
+                                breakdown,
                                 note: closingNote,
+                                managerCode: closeManagerCode.trim(),
                             });
                         }}
-                        className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                        disabled={closeCashSessionMutation.isPending}
+                        className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
                     >
-                        Registrar cierre
+                        {closeCashSessionMutation.isPending ? "Cerrando caja..." : "Registrar cierre"}
                     </button>
                 </div>
             )}
@@ -2691,17 +3753,9 @@ const CashRegister = () => {
                                         {r?._id ? `ID: ${String(r._id).slice(-6)}` : "—"}
                                     </div>
 
-                                    {r?._id ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => verFactura(r._id)}
-                                            className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gray-800/50 text-sm text-white hover:bg-[#222] transition-colors"
-                                        >
-                                            Ver factura
-                                        </button>
-                                    ) : (
-                                        <span className="text-xs text-gray-500">No disponible</span>
-                                    )}
+                                    <div className="flex justify-end">
+                                        {renderInvoiceActions(r)}
+                                    </div>
                                 </div>
                             </div>
                         ))
@@ -2767,17 +3821,7 @@ const CashRegister = () => {
                                                     {currency(r?.bills?.totalWithTax)}
                                                 </td>
                                                 <td className="p-3">
-                                                    {r?._id ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => verFactura(r._id)}
-                                                            className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
-                                                        >
-                                                            Ver
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-xs text-gray-500">No disponible</span>
-                                                    )}
+                                                    {renderInvoiceActions(r)}
                                                 </td>
                                             </tr>
                                         ))
@@ -2918,10 +3962,22 @@ const CashRegister = () => {
                                                         className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                                     >
                                                         <option value="">Todos</option>
-                                                        <option value="fiscal">Solo con comprobante fiscal (B01/B02)</option>
+
+                                                        <option value="fiscal">Con comprobante fiscal / e-CF</option>
+
+                                                        <option value="credito_fiscal">Crédito fiscal (B01 / E31)</option>
+                                                        <option value="consumidor_final">Consumidor final (B02 / E32)</option>
+                                                        <option value="debito_fiscal">Débito fiscal / Nota de débito (E33)</option>
+                                                        <option value="nota_credito">Nota de crédito (E34)</option>
+
                                                         <option value="b01">Solo B01</option>
                                                         <option value="b02">Solo B02</option>
-                                                        <option value="nofiscal">Sin comprobante fiscal</option>
+                                                        <option value="e31">Solo E31</option>
+                                                        <option value="e32">Solo E32</option>
+                                                        <option value="e33">Solo E33</option>
+                                                        <option value="e34">Solo E34</option>
+
+                                                        <option value="nofiscal">Sin comprobante fiscal / e-CF</option>
                                                     </select>
                                                 </div>
 
@@ -3028,17 +4084,25 @@ const CashRegister = () => {
                                                                     if (!Number.isFinite(openingFloat) || openingFloat < 0) return;
 
                                                                     // Si existe sesión ese día, ajusta; si no existe, crea (open)
+                                                                    const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+
+                                                                    if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
+                                                                        showToast("Selecciona una caja específica antes de editar el fondo inicial.", "error");
+                                                                        return;
+                                                                    }
+
+                                                                        // Si existe sesión ese día, ajusta; si no existe, crea apertura.
                                                                     if (modalSessionExists) {
                                                                         adjustCashModalMutation.mutate({
                                                                             dateYMD: modalDay,
-                                                                            registerId: activeRegisterId,
+                                                                            registerId: cleanRegisterId,
                                                                             openingFloat,
                                                                             note: `Ajuste de fondo inicial por admin (modal) — ${modalDay}`,
                                                                         });
                                                                     } else {
                                                                         openCashSessionModalMutation.mutate({
                                                                             dateYMD: modalDay,
-                                                                            registerId: activeRegisterId,
+                                                                            registerId: cleanRegisterId,
                                                                             openingFloat,
                                                                         });
                                                                     }
@@ -3264,6 +4328,298 @@ const CashRegister = () => {
                         >
                             Guardar ajuste
                         </button>
+                    </div>
+                </div>
+            )}
+            {ecfAdjustmentModal.open && (
+                <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-2xl rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800/50">
+                            <div>
+                                <h2 className="text-xl font-bold text-white">
+                                    {ecfAdjustmentModal.documentType === "34"
+                                        ? "Crear Nota de Crédito e34"
+                                        : "Crear Nota de Débito e33"}
+                                </h2>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Factura afectada:{" "}
+                                    <span className="text-[#f6b100] font-semibold">
+                            {ecfAdjustmentModal.originalEcf?.eNCF || "—"}
+                        </span>
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={closeEcfAdjustmentModal}
+                                className="p-2 rounded-lg hover:bg-white/5 text-gray-300 hover:text-white"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4 max-h-[75vh] overflow-auto">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
+                                    <div className="text-xs text-gray-500">Tipo</div>
+                                    <div className="text-white font-semibold mt-1">
+                                        {ecfAdjustmentModal.documentType === "34"
+                                            ? "e34 - Nota de Crédito"
+                                            : "e33 - Nota de Débito"}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
+                                    <div className="text-xs text-gray-500">Factura original</div>
+                                    <div className="text-white font-semibold mt-1">
+                                        {ecfAdjustmentModal.originalEcf?.eNCF || "—"}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
+                                    <div className="text-xs text-gray-500">Total original</div>
+                                    <div className="text-[#f6b100] font-bold mt-1">
+                                        {currency(ecfAdjustmentModal.originalEcf?.totals?.total)}
+                                    </div>
+                                </div>
+                            </div>
+                            {ecfAdjustmentModal.documentType === "34" && (
+                                <div className="rounded-xl border border-[#f6b100]/20 bg-[#f6b100]/10 p-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                        <div>
+                                            <div className="text-sm font-semibold text-white">
+                                                Balance disponible para nota de crédito
+                                            </div>
+                                            <div className="text-xs text-gray-400 mt-1">
+                                                Total original: {currency(originalEcfTotal)} · Débito aplicado: {currency(acceptedDebitNotesTotal)} · Crédito aplicado: {currency(acceptedCreditNotesTotal)}
+                                            </div>
+                                        </div>
+
+                                        <div className="text-[#f6b100] font-bold text-lg">
+                                            {currency(availableCreditTotal)}
+                                        </div>
+                                    </div>
+
+                                    {availableCreditTotal <= 0 && (
+                                        <div className="mt-3 text-xs text-red-300">
+                                            Esta factura ya fue cubierta por notas de crédito aceptadas. No se puede emitir otra E34.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-xs text-gray-400">Modo de ajuste</label>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setEcfAdjustmentForm((f) => ({
+                                                ...f,
+                                                adjustmentMode: "partial",
+                                            }))
+                                        }
+                                        className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
+                                            ecfAdjustmentForm.adjustmentMode === "partial"
+                                                ? "bg-[#f6b100] text-black border-[#f6b100]"
+                                                : "bg-[#111] text-white border-gray-800/50"
+                                        }`}
+                                    >
+                                        Parcial
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setEcfAdjustmentForm((f) => ({
+                                                ...f,
+                                                adjustmentMode: "total",
+                                                amount: "",
+                                                tax: "",
+                                            }))
+                                        }
+                                        className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
+                                            ecfAdjustmentForm.adjustmentMode === "total"
+                                                ? "bg-[#f6b100] text-black border-[#f6b100]"
+                                                : "bg-[#111] text-white border-gray-800/50"
+                                        }`}
+                                    >
+                                        Total
+                                    </button>
+                                </div>
+                            </div>
+
+                            {ecfAdjustmentForm.adjustmentMode !== "total" && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs text-gray-400">Monto base</label>
+                                        <input
+                                            value={ecfAdjustmentForm.amount}
+                                            onChange={(e) => {
+                                                const value = formatThousands(e.target.value);
+                                                setEcfAdjustmentForm((f) => ({
+                                                    ...f,
+                                                    amount: value,
+                                                    tax: f.tax ? f.tax : calculateSuggestedTax(value),
+                                                }));
+                                            }}
+                                            className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
+                                            placeholder="Ej: 50.00"
+                                            inputMode="decimal"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-gray-400">ITBIS</label>
+                                        <input
+                                            value={ecfAdjustmentForm.tax}
+                                            onChange={(e) =>
+                                                setEcfAdjustmentForm((f) => ({
+                                                    ...f,
+                                                    tax: formatThousands(e.target.value),
+                                                }))
+                                            }
+                                            className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
+                                            placeholder="Ej: 9.00"
+                                            inputMode="decimal"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-xs text-gray-400">Código de modificación</label>
+                                <select
+                                    value={ecfAdjustmentForm.modificationCode}
+                                    onChange={(e) =>
+                                        setEcfAdjustmentForm((f) => ({
+                                            ...f,
+                                            modificationCode: e.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
+                                >
+                                    <option value="1">1 - Anula o modifica comprobante</option>
+                                    <option value="2">2 - Corrige texto</option>
+                                    <option value="3">3 - Corrige monto</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-gray-400">Motivo</label>
+                                <textarea
+                                    value={ecfAdjustmentForm.reason}
+                                    onChange={(e) =>
+                                        setEcfAdjustmentForm((f) => ({
+                                            ...f,
+                                            reason: e.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full min-h-[90px] px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60 resize-none"
+                                    placeholder="Describe el motivo de la nota..."
+                                />
+                            </div>
+
+                            {lastEcfAdjustmentResult && (
+                                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                                    <div className="text-emerald-200 font-semibold">
+                                        Nota emitida correctamente
+                                    </div>
+                                    <div className="text-xs text-emerald-100/80 mt-2 space-y-1">
+                                        <div>eNCF: {lastEcfAdjustmentResult.eNCF}</div>
+                                        <div>Estado: {lastEcfAdjustmentResult.status}</div>
+                                        <div>TrackId: {lastEcfAdjustmentResult.trackId}</div>
+                                        <div>Total: {currency(lastEcfAdjustmentResult?.totals?.total)}</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="rounded-xl bg-[#111] border border-gray-800/50 p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="text-sm font-semibold text-white">
+                                        Notas existentes de esta factura
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        {ecfAdjustments.length} nota(s)
+                                    </div>
+                                </div>
+
+                                {ecfAdjustmentsLoading ? (
+                                    <div className="text-sm text-gray-400">Cargando notas...</div>
+                                ) : ecfAdjustments.length === 0 ? (
+                                    <div className="text-sm text-gray-500">
+                                        Esta factura todavía no tiene notas.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {ecfAdjustments.map((doc) => (
+                                            <div
+                                                key={doc.documentId}
+                                                className="rounded-lg border border-gray-800/50 bg-[#0b0b0c] p-3"
+                                            >
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="text-white font-semibold text-sm">
+                                                            {doc.documentType === "33"
+                                                                ? "Nota de Débito"
+                                                                : "Nota de Crédito"}{" "}
+                                                            - {doc.eNCF}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 mt-1">
+                                                            Motivo: {doc?.reference?.reason || "—"}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="text-right">
+                                                        <div className="text-[#f6b100] font-bold">
+                                                            {currency(doc?.totals?.total)}
+                                                        </div>
+
+                                                        <div className="text-xs text-gray-500">
+                                                            {doc.status || "—"}
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openAdjustmentInvoicePreview(doc)}
+                                                            className="mt-2 px-3 py-1 rounded-lg border border-[#f6b100]/40 bg-[#f6b100]/10 text-[#f6b100] text-xs font-semibold hover:bg-[#f6b100]/20 transition-colors"
+                                                        >
+                                                            Ver / Imprimir
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 p-5 border-t border-gray-800/50 bg-[#080808]">
+                            <button
+                                type="button"
+                                onClick={closeEcfAdjustmentModal}
+                                className="px-4 py-3 rounded-xl bg-[#1a1a1a] border border-gray-800/50 text-white font-semibold hover:bg-[#262626]"
+                            >
+                                Cerrar
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => issueEcfAdjustmentMutation.mutate()}
+                                disabled={
+                                    issueEcfAdjustmentMutation.isPending ||
+                                    (
+                                        ecfAdjustmentModal.documentType === "34" &&
+                                        availableCreditTotal <= 0
+                                    )
+                                }                                className="px-4 py-3 rounded-xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] disabled:opacity-60"
+                            >
+                                {issueEcfAdjustmentMutation.isPending
+                                    ? "Emitiendo..."
+                                    : "Emitir nota"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -3529,7 +4885,13 @@ const CashRegister = () => {
 
 
 
-
+            {selectedAdjustmentInvoice?.order && (
+                <Invoice
+                    order={selectedAdjustmentInvoice.order}
+                    invoiceTitle={selectedAdjustmentInvoice.title}
+                    onClose={() => setSelectedAdjustmentInvoice(null)}
+                />
+            )}
         </>
     );
 };

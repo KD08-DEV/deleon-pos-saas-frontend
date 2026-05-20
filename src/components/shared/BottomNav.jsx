@@ -329,7 +329,7 @@ const BottomNav = memo(() => {
 
     if (isCashier) {
         navItems.push({
-            path: "/admin",
+            path: "/admin?tab=cash-register",
             label: "Cierre de caja",
             icon: Wallet,
             id: "cash-register",
@@ -403,97 +403,97 @@ const BottomNav = memo(() => {
             <AnimatePresence>
                 {isModalOpen && (
                     <Modal onClose={closeModal} title="Crear Nueva Orden">
-                    <div className="space-y-4 text-white">
-                        <div>
-                            <label className="block mb-2 text-sm text-white/70">Buscar cliente guardado</label>
+                        <div className="space-y-4 text-white max-h-[calc(100vh-180px)] overflow-y-auto pr-1">
+                        <div className="relative">
+                            <label className="block mb-2 text-sm text-white/70">
+                                Buscar cliente guardado
+                            </label>
 
-
-                        </div>
-                        <div className="flex items-center gap-2">
                             <button
                                 type="button"
                                 className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-100 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
                                 onClick={() => {
                                     setIsCustomerPickerOpen((v) => !v);
                                     setShowResults(true);
-                                    // si quieres que al abrir siempre muestre todo:
-                                    // setSearch("");
                                 }}
                             >
                                 Buscar cliente
                             </button>
 
+                            {selectedCustomerId ? (
+                                <span className="block mt-2 text-xs text-white/70">
+            Cliente seleccionado
+        </span>
+                            ) : (
+                                <span className="block mt-2 text-xs text-white/50">
+            Opcional
+        </span>
+                            )}
 
-                        </div>
-                        {selectedCustomerId ? (
-                            <span className="text-xs text-white/70">
-                                  Cliente seleccionado
-                                </span>
-                        ) : (
-                            <span className="text-xs text-white/50">
-                                  Opcional
-                                </span>
-                        )}
+                            {isCustomerPickerOpen && (
+                                <div className="absolute left-0 right-0 top-[88px] z-[99999] rounded-xl border border-[#2a2a2a] bg-[#0f0f0f] p-3 shadow-2xl shadow-black/70">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
+                                            placeholder="Buscar por nombre, teléfono o dirección..."
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                        />
 
-                        {isCustomerPickerOpen && (
-                            <div className="mt-3 rounded-xl border border-[#2a2a2a] bg-[#0f0f0f] p-3">
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
-                                        placeholder="Buscar por nombre, teléfono o dirección..."
-                                        value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
-                                    />
-
-                                    <button
-                                        type="button"
-                                        className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
-                                        onClick={() => setSearch("")}
-                                    >
-                                        Limpiar
-                                    </button>
-                                </div>
-
-                                <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-[#1f1f1f]">
-                                    {customersQuery.isLoading && (
-                                        <div className="px-3 py-2 text-sm text-white/60">Cargando clientes...</div>
-                                    )}
-
-                                    {!customersQuery.isLoading && (customersQuery.data?.length || 0) === 0 && (
-                                        <div className="px-3 py-2 text-sm text-white/60">
-                                            No hay clientes para mostrar.
-                                        </div>
-                                    )}
-
-                                    {(customersQuery.data || []).map((c) => (
                                         <button
-                                            key={c._id}
                                             type="button"
-                                            onClick={() => {
-                                                pickCustomer(c);
-                                                setIsCustomerPickerOpen(false);
-                                            }}
-                                            className="w-full text-left px-3 py-2 hover:bg-[#161616] border-b border-[#1f1f1f]"
+                                            className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
+                                            onClick={() => setSearch("")}
                                         >
-                                            <div className="text-sm font-semibold text-white">{c.name}</div>
-                                            <div className="text-xs text-white/60">
-                                                {c.phone || "Sin teléfono"} {c.address ? `• ${c.address}` : ""}
-                                            </div>
+                                            Limpiar
                                         </button>
-                                    ))}
-                                </div>
+                                    </div>
 
-                                <div className="mt-3 flex justify-end">
-                                    <button
-                                        type="button"
-                                        className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
-                                        onClick={() => setIsCustomerPickerOpen(false)}
-                                    >
-                                        Cerrar
-                                    </button>
+                                    <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-[#1f1f1f]">
+                                        {customersQuery.isLoading && (
+                                            <div className="px-3 py-2 text-sm text-white/60">
+                                                Cargando clientes...
+                                            </div>
+                                        )}
+
+                                        {!customersQuery.isLoading && (customersQuery.data?.length || 0) === 0 && (
+                                            <div className="px-3 py-2 text-sm text-white/60">
+                                                No hay clientes para mostrar.
+                                            </div>
+                                        )}
+
+                                        {(customersQuery.data || []).map((c) => (
+                                            <button
+                                                key={c._id}
+                                                type="button"
+                                                onClick={() => {
+                                                    pickCustomer(c);
+                                                    setIsCustomerPickerOpen(false);
+                                                }}
+                                                className="w-full text-left px-3 py-2 hover:bg-[#161616] border-b border-[#1f1f1f]"
+                                            >
+                                                <div className="text-sm font-semibold text-white">
+                                                    {c.name}
+                                                </div>
+                                                <div className="text-xs text-white/60">
+                                                    {c.phone || "Sin teléfono"} {c.address ? `• ${c.address}` : ""}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="mt-3 flex justify-end">
+                                        <button
+                                            type="button"
+                                            className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
+                                            onClick={() => setIsCustomerPickerOpen(false)}
+                                        >
+                                            Cerrar
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
 
                         <div>

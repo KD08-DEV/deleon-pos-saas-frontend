@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import Admin from "./pages/admin/Admin";
+
 import SuperAdminDashboard from "./pages/superAdmin/SuperAdminDashboard";
 import SuperAdminTenants from "./pages/superAdmin/SuperAdminTenants";
 import SuperAdminCreateTenant from "./pages/superAdmin/SuperAdminCreateTenant";
@@ -606,9 +607,9 @@ function Layout() {
                                             setOpenModal(false);
 
                                             navigate(
-                                                `/admin${
+                                                `/admin?tab=cash-register${
                                                     pendingDate
-                                                        ? `?cashDate=${encodeURIComponent(pendingDate)}&registerId=${encodeURIComponent(pendingRegisterId)}`
+                                                        ? `&cashDate=${encodeURIComponent(pendingDate)}&registerId=${encodeURIComponent(pendingRegisterId)}`
                                                         : ""
                                                 }`
                                             );

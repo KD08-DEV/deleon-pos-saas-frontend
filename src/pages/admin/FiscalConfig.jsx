@@ -10,6 +10,113 @@ import useTenantPrinting from "../../hooks/usePrinters.js";
 const inputCls =
     "w-full p-3 border border-gray-800/50 rounded-xl bg-[#1a1a1a] text-white text-sm " +
     "focus:outline-none focus:border-[#f6b100]/50 transition-colors";
+const ECF_DOCUMENT_TYPE_GROUPS = [
+    {
+        title: "Ventas normales",
+        description: "Tipos usados para ventas directas del negocio.",
+        items: [
+            {
+                key: "e31",
+                code: "31",
+                label: "Crédito Fiscal",
+                description: "Para clientes con RNC que solicitan crédito fiscal.",
+                defaultEnabled: true,
+            },
+            {
+                key: "e32",
+                code: "32",
+                label: "Consumo",
+                description: "Para consumidor final.",
+                defaultEnabled: true,
+            },
+        ],
+    },
+    {
+        title: "Ajustes",
+        description: "Tipos usados para corregir o ajustar comprobantes ya emitidos.",
+        items: [
+            {
+                key: "e33",
+                code: "33",
+                label: "Nota de Débito",
+                description: "Para aumentar o ajustar montos de un e-CF previo.",
+                defaultEnabled: true,
+            },
+            {
+                key: "e34",
+                code: "34",
+                label: "Nota de Crédito",
+                description: "Para devoluciones, anulaciones o descuentos sobre un e-CF previo.",
+                defaultEnabled: true,
+            },
+        ],
+    },
+    {
+        title: "Comprobantes especiales",
+        description: "Activa solo si el contribuyente está autorizado o realmente los necesita.",
+        items: [
+            {
+                key: "e41",
+                code: "41",
+                label: "Compras",
+                description: "Comprobante electrónico de compras.",
+                defaultEnabled: false,
+            },
+            {
+                key: "e43",
+                code: "43",
+                label: "Gastos Menores",
+                description: "Para gastos menores relacionados al trabajo.",
+                defaultEnabled: false,
+            },
+            {
+                key: "e44",
+                code: "44",
+                label: "Regímenes Especiales",
+                description: "Para contribuyentes acogidos a regímenes especiales.",
+                defaultEnabled: false,
+            },
+            {
+                key: "e45",
+                code: "45",
+                label: "Gubernamental",
+                description: "Para ventas al Estado o entidades gubernamentales.",
+                defaultEnabled: false,
+            },
+            {
+                key: "e46",
+                code: "46",
+                label: "Exportación",
+                description: "Para operaciones de exportación.",
+                defaultEnabled: false,
+            },
+            {
+                key: "e47",
+                code: "47",
+                label: "Pagos al Exterior",
+                description: "Para pagos realizados al exterior.",
+                defaultEnabled: false,
+            },
+        ],
+    },
+];
+
+const buildDefaultEcfDocumentTypes = (profileDocumentTypes = {}) => {
+    const out = {};
+
+    for (const group of ECF_DOCUMENT_TYPE_GROUPS) {
+        for (const item of group.items) {
+            out[item.key] = {
+                enabled:
+                    typeof profileDocumentTypes?.[item.key]?.enabled === "boolean"
+                        ? profileDocumentTypes[item.key].enabled
+                        : item.defaultEnabled,
+            };
+        }
+    }
+
+    return out;
+};
 
 function asDateInputValue(d) {
     if (!d) return "";
@@ -128,7 +235,20 @@ export default function FiscalConfig() {
                 throw new Error(res.data?.message || "No se pudo subir el certificado.");
             }
 
-            enqueueSnackbar("Certificado e-CF cargado correctamente.", { variant: "success" });
+            const uploadedProfile = res.data?.data;
+
+            const certificateValidated =
+                uploadedProfile?.security?.certificateUploaded === true &&
+                uploadedProfile?.security?.passwordConfigured === true &&
+                uploadedProfile?.certificate?.isActive === true;
+
+            if (!certificateValidated) {
+                throw new Error("CERTIFICATE_NOT_VALIDATED");
+            }
+
+            enqueueSnackbar("Certificado e-CF cargado y contraseña validada correctamente.", {
+                variant: "success",
+            });
 
             setCertFile(null);
             setCertPassword("");
@@ -138,12 +258,32 @@ export default function FiscalConfig() {
         } catch (error) {
             console.error("uploadEcfCertificate error:", error);
 
-            const msg =
+            const backendMessage =
                 error?.response?.data?.message ||
                 error?.message ||
-                "Error subiendo certificado e-CF.";
+                "ERROR_UPLOADING_CERTIFICATE";
 
-            enqueueSnackbar(msg, { variant: "error" });
+            const friendlyMessages = {
+                CERTIFICATE_PASSWORD_INVALID:
+                    "La contraseña del certificado es incorrecta. Verifica la clave e intenta nuevamente.",
+                CERTIFICATE_FILE_INVALID:
+                    "El archivo del certificado no es válido. Debe ser un .p12 o .pfx correcto.",
+                INVALID_CERTIFICATE_EXTENSION:
+                    "El archivo debe ser .p12 o .pfx.",
+                CERTIFICATE_PASSWORD_REQUIRED:
+                    "Debes escribir la contraseña del certificado.",
+                CERTIFICATE_FILE_REQUIRED:
+                    "Debes seleccionar un archivo de certificado.",
+                CERTIFICATE_NOT_VALIDATED:
+                    "El certificado fue recibido, pero no quedó validado correctamente. Verifica el archivo y la contraseña.",
+                CERTIFICATE_UPLOAD_FAILED:
+                    "No se pudo subir el certificado al almacenamiento privado.",
+            };
+
+            enqueueSnackbar(
+                friendlyMessages[backendMessage] || backendMessage || "Error subiendo certificado e-CF.",
+                { variant: "error" }
+            );
         } finally {
             setUploadingCert(false);
         }
@@ -217,8 +357,10 @@ export default function FiscalConfig() {
                 issuerRnc: ecfProfile?.issuer?.rnc || "",
                 issuerLegalName: ecfProfile?.issuer?.legalName || "",
                 certificateUploaded:
-                    ecfProfile?.security?.certificateUploaded === true ||
+                    ecfProfile?.security?.certificateUploaded === true &&
+                    ecfProfile?.security?.passwordConfigured === true &&
                     ecfProfile?.certificate?.isActive === true,
+                documentTypes: buildDefaultEcfDocumentTypes(ecfProfile?.documentTypes || {}),
             },
             features: {
                 taxEnabled: typeof data?.features?.tax?.enabled === "boolean" ? data.features.tax.enabled : true,
@@ -281,6 +423,34 @@ export default function FiscalConfig() {
             </div>
         );
     }
+    const certificateReady =
+        ecfProfile?.security?.certificateUploaded === true &&
+        ecfProfile?.security?.passwordConfigured === true &&
+        ecfProfile?.certificate?.isActive === true;
+
+    const certificateHasFile =
+        Boolean(ecfProfile?.certificate?.fileName) ||
+        Boolean(ecfProfile?.certificate?.path);
+
+    const certificateHasProblem =
+        certificateHasFile && !certificateReady;
+
+    const certificateMissing =
+        !certificateHasFile && !certificateReady;
+
+    const formatCertificateDate = (value) => {
+        if (!value) return null;
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) return null;
+
+        return date.toLocaleDateString("es-DO", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        });
+    };
 
     const setType = (type, key, value) => {
         setForm((f) => ({
@@ -346,6 +516,7 @@ export default function FiscalConfig() {
                 enabled: !!form.ecf?.enabled,
                 environment: form.ecf?.environment || "internal_sandbox",
                 syncIssuerFromTenant: true,
+                documentTypes: form.ecf?.documentTypes || buildDefaultEcfDocumentTypes(),
             };
 
             const ecfRes = await api.patch("/api/admin/ecf/profile", ecfPayload);
@@ -415,6 +586,7 @@ export default function FiscalConfig() {
             )}
 
             {/* Funciones principales */}
+
             <div className="mb-6">
                 <div className="mb-6">
                     <Section
@@ -483,8 +655,8 @@ export default function FiscalConfig() {
                                         Razón social: {form.ecf?.issuerLegalName || "Pendiente"}
                                     </p>
 
-                                    <p className={form.ecf?.certificateUploaded ? "text-green-300" : "text-yellow-300"}>
-                                        Certificado digital: {form.ecf?.certificateUploaded ? "Cargado" : "Pendiente"}
+                                    <p className={certificateReady ? "text-green-300" : "text-yellow-300"}>
+                                        Certificado digital: {certificateReady ? "Validado correctamente" : "Pendiente o incompleto"}
                                     </p>
 
                                     <p className="text-gray-400">
@@ -557,11 +729,97 @@ export default function FiscalConfig() {
                                 {uploadingCert ? "Subiendo certificado..." : "Subir certificado e-CF"}
                             </button>
 
-                            {form.ecf?.certificateUploaded && (
-                                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-3">
-                                    <p className="text-xs text-green-300">
-                                        Certificado cargado correctamente.
-                                    </p>
+                            {certificateReady && (
+                                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-semibold text-green-300">
+                                                Certificado cargado y contraseña validada correctamente.
+                                            </p>
+                                            <p className="text-xs text-green-200/80 mt-1">
+                                                El sistema pudo abrir el .p12/.pfx con la contraseña indicada.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-300 pt-2">
+                                        {ecfProfile?.certificate?.fileName && (
+                                            <p>
+                                                Archivo: <span className="text-white">{ecfProfile.certificate.fileName}</span>
+                                            </p>
+                                        )}
+
+                                        {ecfProfile?.certificate?.serialNumber && (
+                                            <p>
+                                                Serial: <span className="text-white">{ecfProfile.certificate.serialNumber}</span>
+                                            </p>
+                                        )}
+
+                                        {ecfProfile?.certificate?.validFrom && (
+                                            <p>
+                                                Válido desde:{" "}
+                                                <span className="text-white">
+                        {formatCertificateDate(ecfProfile.certificate.validFrom)}
+                    </span>
+                                            </p>
+                                        )}
+
+                                        {ecfProfile?.certificate?.validTo && (
+                                            <p>
+                                                Válido hasta:{" "}
+                                                <span className="text-white">
+                        {formatCertificateDate(ecfProfile.certificate.validTo)}
+                    </span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {certificateHasProblem && (
+                                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 space-y-2">
+                                    <div className="flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-semibold text-red-300">
+                                                El certificado no está validado correctamente.
+                                            </p>
+                                            <p className="text-xs text-red-200/80 mt-1">
+                                                Puede que la contraseña sea incorrecta, el archivo no sea válido o la configuración esté incompleta.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs pt-2">
+                                        <div className={ecfProfile?.security?.certificateUploaded ? "text-green-300" : "text-red-300"}>
+                                            Archivo: {ecfProfile?.security?.certificateUploaded ? "Cargado" : "No validado"}
+                                        </div>
+
+                                        <div className={ecfProfile?.security?.passwordConfigured ? "text-green-300" : "text-red-300"}>
+                                            Contraseña: {ecfProfile?.security?.passwordConfigured ? "Configurada" : "No validada"}
+                                        </div>
+
+                                        <div className={ecfProfile?.certificate?.isActive ? "text-green-300" : "text-red-300"}>
+                                            Estado: {ecfProfile?.certificate?.isActive ? "Activo" : "Inactivo"}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {certificateMissing && (
+                                <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                                    <div className="flex items-start gap-2">
+                                        <Info className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-semibold text-yellow-200">
+                                                Certificado pendiente.
+                                            </p>
+                                            <p className="text-xs text-yellow-100/80 mt-1">
+                                                Sube un archivo .p12 o .pfx y valida su contraseña para poder firmar e-CF reales.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -614,6 +872,89 @@ export default function FiscalConfig() {
                     </div>
                 </Section>
 
+            </div>
+            <div className="rounded-xl border border-gray-800/50 bg-[#1a1a1a]/60 p-4 space-y-5">
+                <div>
+                    <p className="text-sm font-semibold text-white">
+                        Tipos de e-CF habilitados
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                        Activa solo los tipos de comprobantes electrónicos autorizados o necesarios para este contribuyente.
+                    </p>
+                </div>
+
+                <div className="space-y-5">
+                    {ECF_DOCUMENT_TYPE_GROUPS.map((group) => (
+                        <div
+                            key={group.title}
+                            className="rounded-xl border border-gray-800/40 bg-[#111111]/70 p-4"
+                        >
+                            <div className="mb-3">
+                                <p className="text-sm font-semibold text-[#f6b100]">
+                                    {group.title}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    {group.description}
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                {group.items.map((item) => {
+                                    const checked =
+                                        form.ecf?.documentTypes?.[item.key]?.enabled === true;
+
+                                    return (
+                                        <div
+                                            key={item.key}
+                                            className="flex items-start justify-between gap-4 rounded-lg border border-gray-800/30 bg-[#1a1a1a]/60 px-3 py-3"
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-semibold text-white">
+                                            {item.key} - {item.label}
+                                        </span>
+
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 border border-gray-700">
+                                            Código {item.code}
+                                        </span>
+                                                </div>
+
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {item.description}
+                                                </p>
+                                            </div>
+
+                                            <Switch
+                                                checked={checked}
+                                                onChange={(v) =>
+                                                    setForm((f) => ({
+                                                        ...f,
+                                                        ecf: {
+                                                            ...f.ecf,
+                                                            documentTypes: {
+                                                                ...(f.ecf?.documentTypes || {}),
+                                                                [item.key]: {
+                                                                    ...(f.ecf?.documentTypes?.[item.key] || {}),
+                                                                    enabled: v,
+                                                                },
+                                                            },
+                                                        },
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-3">
+                    <p className="text-xs text-blue-200">
+                        Recomendación: para restaurantes y negocios normales, deja activos e31, e32, e33 y e34. Los comprobantes especiales deben activarse solo cuando el contribuyente los necesite.
+                    </p>
+                </div>
             </div>
             {/* Modo de cobro */}
             <div className="space-y-2">

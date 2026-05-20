@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
@@ -56,6 +56,8 @@ import HelpAndSupport from "./HelpAndSupport";
 
 
 const Admin = () => {
+    const [searchParams] = useSearchParams();
+    const tabFromUrl = searchParams.get("tab");
     const [tab, setTab] = useState("cash-register");
     const location = useLocation();
     const [expandedMenu, setExpandedMenu] = useState("reportes");
@@ -63,6 +65,11 @@ const Admin = () => {
 
     const navigate = useNavigate();
     const { userData, isAuth } = useSelector((state) => state.user);
+    useEffect(() => {
+        if (tabFromUrl === "cash-register") {
+            setTab("cash-register");
+        }
+    }, [tabFromUrl]);
 
     // 📊 Traer resumen de uso del plan + permisos actuales del membership
     const { data: usageData } = useQuery({
@@ -136,6 +143,11 @@ const Admin = () => {
 
         if (role === "Cajera") {
             if (canCreateProductsByPermission) {
+                if (tabFromUrl === "cash-register") {
+                    setTab("cash-register");
+                    return;
+                }
+
                 setTab("menu-management");
                 setExpandedMenu("restaurante");
             } else if (canInventoryEntryByPermission) {
@@ -224,8 +236,9 @@ const Admin = () => {
             inventory: true,
             suppliers: true,
             inventoryCategories: true,
-            expenses: false,
-            financeSummary: false,
+            expenses: true,
+            financeSummary: true,
+
             notifications: false,
         },
         pro: {
@@ -248,11 +261,22 @@ const Admin = () => {
         },
     };
 
-    const planFeatures =
-        usageData?.features ||
+    const fallbackFeatures =
         PLAN_FEATURES_FALLBACK[rawPlan] ||
         PLAN_FEATURES_FALLBACK.emprendedor;
 
+    const planFeatures = {
+        ...fallbackFeatures,
+        ...(usageData?.features || {}),
+
+        // Seguridad visual: Premium debe tener Registro de gastos y Reporte de gastos
+        ...(rawPlan === "premium"
+            ? {
+                expenses: true,
+                financeSummary: true,
+            }
+            : {}),
+    };
     const canUseFeature = (feature) => Boolean(planFeatures?.[feature]);
 
     const canInventory = canUseFeature("inventory");

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
 import Suppliers from "./Suppliers";
@@ -289,6 +289,7 @@ export default function Inventory({ plan, currentUser }) {
         to: getTodayYMD(),
     });
 
+
     // CONSUMPTION filters
     const [consFilters, setConsFilters] = useState({
         from: getTodayYMD(),
@@ -571,7 +572,7 @@ export default function Inventory({ plan, currentUser }) {
 
     // Yield: Proceso de merma (purchase + conversion interno)
     const createYieldMutation = useMutation({
-        mutationFn: async ({ itemId, purchasedQty, totalCost, finalQty, steps, note }) => {
+        mutationFn: async ({ itemId, purchasedQty, totalCost, finalQty, steps, note, idempotencyKey }) => {
             const res = await api.post("/api/inventory/movements/yield", {
                 itemId,
                 purchasedQty,
@@ -579,10 +580,10 @@ export default function Inventory({ plan, currentUser }) {
                 finalQty,
                 steps,
                 note,
+                idempotencyKey,
             });
             return res.data;
         },
-
         onSuccess: async (_data, vars) => {
             markYieldProcessed(vars?.itemId);
             enqueueSnackbar("Proceso de merma aplicado", { variant: "success" });
@@ -1160,7 +1161,17 @@ export default function Inventory({ plan, currentUser }) {
                             <div className="text-white/60">No hay artículos.</div>
                         ) : (
                             items.map((it) => {
-                                const isLow = num(it.stockCurrent) <= num(it.stockMin);
+                                const type = String(it?.inventoryType || "none").trim().toLowerCase();
+
+                                const isInactiveInventory =
+                                    type === "none" &&
+                                    it?.isInventoryItem !== true &&
+                                    String(it?.category || "").trim().toLowerCase() !== "inventario";
+
+                                const isLow =
+                                    !isInactiveInventory &&
+                                    num(it.stockCurrent) <= num(it.stockMin);
+
                                 const providerName =
                                     it?.supplierId?.name ||
                                     it?.supplierId?.companyName ||
@@ -1175,11 +1186,39 @@ export default function Inventory({ plan, currentUser }) {
                                                 </div>
                                                 <div className="text-white/40 text-xs mt-1">Proveedor: {providerName}</div>
                                             </div>
-                                            <div>{isLow ? <Badge tone="warning">Bajo</Badge> : <Badge>OK</Badge>}</div>
+                                            <div>
+                                                {isInactiveInventory ? (
+                                                    <Badge tone="warning">Sin inventario</Badge>
+                                                ) : isLow ? (
+                                                    <Badge tone="warning">Bajo</Badge>
+                                                ) : (
+                                                    <Badge>OK</Badge>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="mt-3 flex flex-wrap gap-2">
-                                            {canUseYieldProcess && (
+                                            {canInventoryEntry && (
+                                                <button
+                                                    onClick={() => openMovement("purchase", it, false)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                >
+                                                    <ArrowDownCircle className="w-4 h-4" />
+                                                    Entrada
+                                                </button>
+                                            )}
+
+                                            {canInventoryExit && !isInactiveInventory && (
+                                                <button
+                                                    onClick={() => openMovement("sale", it, false)}
+                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
+                                                >
+                                                    <ArrowUpCircle className="w-4 h-4" />
+                                                    Salida
+                                                </button>
+                                            )}
+
+                                            {canUseYieldProcess && !isInactiveInventory && (
                                                 <button
                                                     onClick={() => openMovement("purchase", it, true)}
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
@@ -1188,16 +1227,7 @@ export default function Inventory({ plan, currentUser }) {
                                                 </button>
                                             )}
 
-                                            {isOwnerOrAdmin && (
-                                                <button
-                                                    onClick={() => openMovement("purchase", it, true)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                >
-                                                    Proceso merma
-                                                </button>
-                                            )}
-
-                                            {canInventoryAdjust && (
+                                            {canInventoryAdjust && !isInactiveInventory && (
                                                 <button
                                                     onClick={() => openMovement("adjust", it, false)}
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
@@ -1207,7 +1237,7 @@ export default function Inventory({ plan, currentUser }) {
                                                 </button>
                                             )}
 
-                                            {canInventoryWaste && (
+                                            {canInventoryWaste && !isInactiveInventory && (
                                                 <button
                                                     onClick={() => openMovement("waste", it, false)}
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
@@ -1530,8 +1560,16 @@ export default function Inventory({ plan, currentUser }) {
                 onClose={() => setItemModal({ open: false, mode: "new", item: null })}
                 onSave={async (payload) => {
                     const mode = itemModal.mode;
-                    if (mode === "create") return saveItemMutation.mutate({ mode: "create", payload });
-                    return saveItemMutation.mutate({ mode: "edit", id: itemModal.item?._id, payload });
+
+                    if (mode === "create") {
+                        return saveItemMutation.mutateAsync({ mode: "create", payload });
+                    }
+
+                    return saveItemMutation.mutateAsync({
+                        mode: "edit",
+                        id: itemModal.item?._id,
+                        payload,
+                    });
                 }}
             />
 
@@ -1540,9 +1578,13 @@ export default function Inventory({ plan, currentUser }) {
                 type={mvModal.type}
                 item={mvModal.item}
                 defaultYield={mvModal.yield}
-                onClose={() => setMvModal({ open: false, type: "purchase", item: null, yield: false })}
-                onSave={(payload) => createMovementMutation.mutate(payload)}
-                onSaveYield={(payload) => createYieldMutation.mutate(payload)}
+                saving={createMovementMutation.isPending || createYieldMutation.isPending}
+                onClose={() => {
+                    if (createMovementMutation.isPending || createYieldMutation.isPending) return;
+                    setMvModal({ open: false, type: "purchase", item: null, yield: false });
+                }}
+                onSave={(payload) => createMovementMutation.mutateAsync(payload)}
+                onSaveYield={(payload) => createYieldMutation.mutateAsync(payload)}
             />
         </div>
     );
@@ -1856,6 +1898,7 @@ function YieldMermaDashboard({ tenantId, canUseInventory, ymd, setYmd, moneyRD }
 function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ingredients, tenantId, queryClient, onClose, onSave }) {
     const isEdit = mode === "edit";
     const { enqueueSnackbar } = useSnackbar();
+
 
     const [createMode, setCreateMode] = useState("new"); // new | fromDish
     const [selectedDishId, setSelectedDishId] = useState("");
@@ -2504,13 +2547,53 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
     );
 }
 
-function MovementModal({ open, type, item, defaultYield = false, onClose, onSave, onSaveYield }) {
+function MovementModal({ open, type, item, defaultYield = false, saving = false, onClose, onSave, onSaveYield }) {
     const [qty, setQty] = useState("");
     const [unitCost, setUnitCost] = useState("");
     const [direction, setDirection] = useState("out"); // adjust
     const [note, setNote] = useState("");
     const { enqueueSnackbar } = useSnackbar();
+    const [negativeConfirmOpen, setNegativeConfirmOpen] = useState(false);
+    const [negativeConfirmData, setNegativeConfirmData] = useState(null);
+    const [pendingMovementPayload, setPendingMovementPayload] = useState(null);
 
+    const saveLockRef = useRef(false);
+    const requestIdRef = useRef("");
+    const [localSaving, setLocalSaving] = useState(false);
+
+    const isSaving = Boolean(localSaving || saving);
+
+    const createRequestId = () => {
+        try {
+            return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        } catch {
+            return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        }
+    };
+
+    const unlockSave = () => {
+        saveLockRef.current = false;
+        setLocalSaving(false);
+    };
+
+    const submitMovement = async (payload) => {
+        if (saveLockRef.current) return;
+
+        saveLockRef.current = true;
+        setLocalSaving(true);
+
+        try {
+            await onSave(payload);
+
+            setNegativeConfirmOpen(false);
+            setNegativeConfirmData(null);
+            setPendingMovementPayload(null);
+
+            onClose?.();
+        } catch (error) {
+            unlockSave();
+        }
+    };
     // Yield
     const [useYield, setUseYield] = useState(false);
     const [totalCost, setTotalCost] = useState("");
@@ -2522,6 +2605,11 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
 
     React.useEffect(() => {
         if (!open) return;
+
+        saveLockRef.current = false;
+        requestIdRef.current = createRequestId();
+        setLocalSaving(false);
+
         setQty("");
         setUnitCost("");
         setDirection("out");
@@ -2553,41 +2641,80 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
         return Number.isFinite(n) ? n : 0;
     };
 
-    const handleSave = () => {
-        if (!item?._id) return enqueueSnackbar("Artículo inválido", { variant: "error" });
+    const handleSave = async () => {
+        if (saveLockRef.current) return;
+
+        if (!item?._id) {
+            return enqueueSnackbar("Artículo inválido", { variant: "error" });
+        }
 
         if (useYield) {
             const qtyNum = parseN(qty);
             const totalCostNum = parseN(totalCost);
             const finalQtyNum = parseN(finalQty);
 
-            if (qtyNum <= 0) return enqueueSnackbar("Cantidad comprada inválida", { variant: "warning" });
-            if (finalQtyNum <= 0) return enqueueSnackbar("Cantidad final inválida", { variant: "warning" });
-            if (totalCostNum < 0) return enqueueSnackbar("Costo total inválido", { variant: "warning" });
+            if (qtyNum <= 0) {
+                return enqueueSnackbar("Cantidad comprada inválida", { variant: "warning" });
+            }
+
+            if (finalQtyNum <= 0) {
+                return enqueueSnackbar("Cantidad final inválida", { variant: "warning" });
+            }
+
+            if (totalCostNum < 0) {
+                return enqueueSnackbar("Costo total inválido", { variant: "warning" });
+            }
 
             const cleanedSteps = (steps || [])
-                .map((s) => ({ label: String(s.label || "").trim(), qty: parseN(s.qtyAfter) }))
+                .map((s) => ({
+                    label: String(s.label || "").trim(),
+                    qty: parseN(s.qtyAfter),
+                }))
                 .filter((s) => s.label && s.qty > 0);
 
+            saveLockRef.current = true;
+            setLocalSaving(true);
 
-            return onSaveYield({
-                itemId: item._id,
-                purchasedQty: qtyNum,
-                totalCost: totalCostNum,
-                finalQty: finalQtyNum,
-                steps: cleanedSteps, // ✅ ya viene como {label, qty}
-                note: String(note || "").trim() || null,
-            });
+            try {
+                await onSaveYield({
+                    itemId: item._id,
+                    purchasedQty: qtyNum,
+                    totalCost: totalCostNum,
+                    finalQty: finalQtyNum,
+                    steps: cleanedSteps,
+                    note: String(note || "").trim() || null,
+                    idempotencyKey: requestIdRef.current,
+                });
+
+                onClose?.();
+            } catch (error) {
+                unlockSave();
+            }
+
+            return;
         }
 
         const qtyNum = parseN(qty);
-        if (qtyNum <= 0) return enqueueSnackbar("Cantidad inválida", { variant: "warning" });
+
+        if (qtyNum <= 0) {
+            return enqueueSnackbar("Cantidad inválida", { variant: "warning" });
+        }
+
+        const currentStock = parseN(item?.stockCurrent ?? 0);
+
+        const reducesStock =
+            type === "sale" ||
+            type === "waste" ||
+            (type === "adjust" && direction === "out");
+
+        const nextStock = reducesStock ? currentStock - qtyNum : currentStock;
 
         const payload = {
             itemId: item._id,
             type,
             qty: qtyNum,
             note: String(note || "").trim() || null,
+            idempotencyKey: requestIdRef.current,
         };
 
         if (type === "purchase") {
@@ -2596,14 +2723,30 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
         }
 
         if (type === "adjust") {
-            payload.direction = direction; // out | in
+            payload.direction = direction;
         }
 
-        return onSave(payload);
+        if (reducesStock && nextStock < 0) {
+            setPendingMovementPayload(payload);
+            setNegativeConfirmData({
+                itemName: item?.name || "—",
+                currentStock,
+                qty: qtyNum,
+                nextStock,
+            });
+            setNegativeConfirmOpen(true);
+            return;
+        }
+
+        await submitMovement(payload);
+    };
+    const handleClose = () => {
+        if (isSaving) return;
+        onClose?.();
     };
 
     return (
-        <Modal open={open} title={title} onClose={onClose}>
+        <Modal open={open} title={title} onClose={handleClose}>
             <div className="text-white/70 text-sm mb-3">
                 Artículo: <span className="text-white">{item?.name || "—"}</span>
             </div>
@@ -2614,9 +2757,18 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
                         {useYield ? "Aplicando rendimiento (merma por proceso)" : "Entrada normal"}
                     </div>
                     <button
-                        onClick={() => setUseYield((v) => !v)}
+                        type="button"
+                        onClick={() => {
+                            if (isSaving) return;
+                            setUseYield((v) => !v);
+                        }}
+                        disabled={isSaving}
                         className={`px-3 py-2 rounded-xl border text-sm ${
-                            useYield ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200" : "bg-white/5 border-white/10 text-white/80"
+                            isSaving
+                                ? "opacity-50 cursor-not-allowed bg-white/5 border-white/10 text-white/50"
+                                : useYield
+                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    : "bg-white/5 border-white/10 text-white/80"
                         }`}
                     >
                         {useYield ? "Desactivar" : "Activar"} proceso de merma
@@ -2734,17 +2886,116 @@ function MovementModal({ open, type, item, defaultYield = false, onClose, onSave
             )}
 
             <div className="mt-5 flex gap-2 justify-end">
-                <button onClick={onClose} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80">
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (isSaving) return;
+                        onClose?.();
+                    }}
+                    disabled={isSaving}
+                    className={`px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80 ${
+                        isSaving ? "opacity-50 cursor-not-allowed pointer-events-none" : "hover:bg-white/10"
+                    }`}
+                >
                     Cancelar
                 </button>
 
                 <button
+                    type="button"
                     onClick={handleSave}
-                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200"
+                    disabled={isSaving}
+                    className={`px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 ${
+                        isSaving ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-yellow-500/20"
+                    }`}
                 >
-                    Guardar
+                    {isSaving ? "Guardando..." : "Guardar"}
                 </button>
             </div>
+            {negativeConfirmOpen && negativeConfirmData && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md rounded-2xl border border-yellow-500/20 bg-[#111111] shadow-2xl overflow-hidden">
+                        <div className="px-5 py-4 border-b border-white/10">
+                            <div className="flex items-start gap-3">
+                                <div className="h-11 w-11 rounded-xl bg-yellow-500/15 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                                    <span className="text-yellow-400 text-xl">!</span>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-white text-lg font-semibold">
+                                        Inventario quedará en negativo
+                                    </h3>
+                                    <p className="text-sm text-gray-400 mt-1">
+                                        Este movimiento reducirá el stock por debajo de cero. Verifica si deseas continuar.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4 space-y-3">
+                            <div className="rounded-xl bg-[#181818] border border-white/5 p-4">
+                                <div className="flex items-center justify-between py-1">
+                                    <span className="text-gray-400 text-sm">Artículo</span>
+                                    <span className="text-white text-sm font-medium">
+                            {negativeConfirmData.itemName}
+                        </span>
+                                </div>
+
+                                <div className="flex items-center justify-between py-1">
+                                    <span className="text-gray-400 text-sm">Stock actual</span>
+                                    <span className="text-white text-sm font-medium">
+                            {negativeConfirmData.currentStock}
+                        </span>
+                                </div>
+
+                                <div className="flex items-center justify-between py-1">
+                                    <span className="text-gray-400 text-sm">Cantidad de salida</span>
+                                    <span className="text-white text-sm font-medium">
+                            {negativeConfirmData.qty}
+                        </span>
+                                </div>
+
+                                <div className="flex items-center justify-between py-1">
+                                    <span className="text-gray-400 text-sm">Nuevo stock</span>
+                                    <span className="text-red-400 text-sm font-semibold">
+                            {negativeConfirmData.nextStock}
+                        </span>
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+                                <p className="text-sm text-red-300">
+                                    Si continúas, el producto quedará con existencia negativa. Esto puede afectar tus reportes y conteos.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setNegativeConfirmOpen(false);
+                                    setNegativeConfirmData(null);
+                                    setPendingMovementPayload(null);
+                                }}
+                                className="px-4 py-2 rounded-xl border border-white/10 bg-[#1b1b1b] text-white hover:bg-[#232323] transition"
+                            >
+                                Cancelar
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!pendingMovementPayload) return;
+                                    submitMovement(pendingMovementPayload);
+                                }}
+                                className="px-4 py-2 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition"
+                            >
+                                Continuar de todos modos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Modal>
     );
 }
