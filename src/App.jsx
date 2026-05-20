@@ -229,15 +229,77 @@ function Layout() {
 
     const todayYMD = getLocalYMD();
 
-    const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+    const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
+    const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+    const getCashRegisterStorageScope = () => {
+        const tenantId =
+            userData?.tenantId ||
+            userData?.tenant?.tenantId ||
+            userData?.tenant?._id ||
+            tenant?.tenantId ||
+            tenant?._id ||
+            getScope()?.tenantId ||
+            localStorage.getItem("tenantId") ||
+            "noTenant";
+
+        const clientId =
+            userData?.clientId ||
+            userData?.client?.clientId ||
+            userData?.client?._id ||
+            getScope()?.clientId ||
+            localStorage.getItem("clientId") ||
+            "default";
+
+        const userId =
+            userData?._id ||
+            userData?.id ||
+            userData?.user?._id ||
+            userData?.user?.id ||
+            "noUser";
+
+        const host = typeof window !== "undefined" ? window.location.host : "app";
+
+        return {
+            tenantId: String(tenantId || "noTenant"),
+            clientId: String(clientId || "default"),
+            userId: String(userId || "noUser"),
+            host,
+        };
+    };
+
+    const getScopedRegisterStorageKey = () => {
+        const scope = getCashRegisterStorageScope();
+
+        return [
+            REGISTER_STORAGE_PREFIX,
+            scope.host,
+            scope.tenantId,
+            scope.clientId,
+            scope.userId,
+        ].join(":");
+    };
 
     const getActiveRegisterId = () => {
         try {
-            return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+            return String(localStorage.getItem(getScopedRegisterStorageKey()) || "")
                 .trim()
                 .toUpperCase();
         } catch {
-            return "MAIN";
+            return "";
+        }
+    };
+
+    const saveActiveRegisterId = (value) => {
+        try {
+            const cleanValue = String(value || "").trim().toUpperCase();
+
+            if (!cleanValue) return;
+
+            localStorage.setItem(getScopedRegisterStorageKey(), cleanValue);
+            localStorage.removeItem(LEGACY_REGISTER_STORAGE_KEY);
+        } catch {
+            // ignore
         }
     };
     const ensureCashScope = () => {
@@ -276,6 +338,10 @@ function Layout() {
         try {
             const activeRegisterId = getActiveRegisterId();
             const cashScope = ensureCashScope();
+            if (!activeRegisterId) {
+                setOpenModal(false);
+                return;
+            }
             const cashHeaders = {
                 "x-client-id": cashScope.clientId || "default",
             };
@@ -428,7 +494,7 @@ function Layout() {
             // Si cerraste una caja pendiente, mantenemos esa misma caja activa
             // para abrir la caja de hoy en la caja correcta.
             if (closedRegisterId) {
-                localStorage.setItem(REGISTER_STORAGE_KEY, closedRegisterId);
+                saveActiveRegisterId(closedRegisterId);
             }
 
             localStorage.removeItem("deleonsoft_pending_cash_date");
@@ -601,7 +667,7 @@ function Layout() {
 
                                             if (pendingRegisterId) {
                                                 localStorage.setItem("deleonsoft_pending_cash_register", pendingRegisterId);
-                                                localStorage.setItem("deleonsoft_active_register_id", pendingRegisterId);
+                                                saveActiveRegisterId(pendingRegisterId);
                                             }
 
                                             setOpenModal(false);

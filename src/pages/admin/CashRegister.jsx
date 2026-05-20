@@ -7,22 +7,102 @@ import { saveAs } from "file-saver";
 import api from "../../lib/api";
 const DEFAULT_REGISTER_ID = "MAIN";
 const ALL_REGISTERS_ID = "__ALL_REGISTERS__";
-const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
-import Invoice from "../../components/invoice/Invoice";
 
+const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
+const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
 
+const getCashStorageUser = () => {
+    try {
+        const keys = ["user", "userData", "authUser", "currentUser"];
+
+        for (const key of keys) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+
+            const parsed = JSON.parse(raw);
+
+            if (parsed?.user && typeof parsed.user === "object") return parsed.user;
+            if (parsed?.userData && typeof parsed.userData === "object") return parsed.userData;
+            if (parsed && typeof parsed === "object") return parsed;
+        }
+    } catch {
+        // ignore
+    }
+
+    return {};
+};
+
+const getCashRegisterStorageScope = () => {
+    const u = getCashStorageUser();
+
+    const tenantId =
+        u?.tenantId ||
+        u?.tenant?.tenantId ||
+        u?.tenant?._id ||
+        u?.tenant?.id ||
+        localStorage.getItem("tenantId") ||
+        "noTenant";
+
+    const clientId =
+        u?.clientId ||
+        u?.client?.clientId ||
+        u?.client?._id ||
+        localStorage.getItem("clientId") ||
+        "default";
+
+    const userId =
+        u?._id ||
+        u?.id ||
+        u?.user?._id ||
+        u?.user?.id ||
+        "noUser";
+
+    const host = typeof window !== "undefined" ? window.location.host : "app";
+
+    return {
+        tenantId: String(tenantId || "noTenant"),
+        clientId: String(clientId || "default"),
+        userId: String(userId || "noUser"),
+        host,
+    };
+};
+
+const getRegisterStorageKey = () => {
+    const scope = getCashRegisterStorageScope();
+
+    return [
+        REGISTER_STORAGE_PREFIX,
+        scope.host,
+        scope.tenantId,
+        scope.clientId,
+        scope.userId,
+    ].join(":");
+};
 
 const getSavedRegisterId = () => {
     try {
-        return localStorage.getItem(REGISTER_STORAGE_KEY) || DEFAULT_REGISTER_ID;
+        const scopedValue = localStorage.getItem(getRegisterStorageKey());
+
+        if (scopedValue) {
+            return String(scopedValue).trim().toUpperCase();
+        }
+
+        return "";
     } catch {
-        return DEFAULT_REGISTER_ID;
+        return "";
     }
 };
 
 const saveRegisterId = (value) => {
     try {
-        localStorage.setItem(REGISTER_STORAGE_KEY, String(value || DEFAULT_REGISTER_ID));
+        const cleanValue = String(value || "").trim().toUpperCase();
+
+        if (!cleanValue) return;
+
+        localStorage.setItem(getRegisterStorageKey(), cleanValue);
+
+        // Evita que la llave vieja global siga contaminando otros tenants.
+        localStorage.removeItem(LEGACY_REGISTER_STORAGE_KEY);
     } catch {
         // ignore
     }
@@ -243,9 +323,12 @@ const getOpeningCashStorageKey = () => {
 
 const CashRegister = () => {
     const [batchesModalOpen, setBatchesModalOpen] = useState(false);
+    const [adminCloseTargetSession, setAdminCloseTargetSession] = useState(null);
+    const [hideAdminSelectedSession, setHideAdminSelectedSession] = useState(false);
+    const closeFormRef = useRef(null);
     const [selectedRegisterId, setSelectedRegisterId] = useState(() => {
         const saved = getSavedRegisterId();
-        return saved || ALL_REGISTERS_ID;
+        return saved || "";
     });
     const getLocalYMD = () => {
         const d = new Date();
@@ -285,6 +368,9 @@ const CashRegister = () => {
         localStorage.removeItem("deleonsoft_pending_cash_date");
         localStorage.removeItem("deleonsoft_pending_cash_register");
     }, []);
+
+
+
 
     const [modalFilters, setModalFilters] = useState({
         from: "",
@@ -410,14 +496,41 @@ const CashRegister = () => {
     const currentUserId =
         me?._id ||
         me?.id ||
+        me?.user?._id ||
+        me?.user?.id ||
         userData?._id ||
         userData?.id ||
         userData?.user?._id ||
         userData?.user?.id ||
         getUserIdFromToken?.() ||
         "";
+    const currentTenantId =
+        me?.tenantId ||
+        me?.tenant?.tenantId ||
+        me?.tenant?._id ||
+        userData?.tenantId ||
+        userData?.tenant?.tenantId ||
+        userData?.tenant?._id ||
+        localStorage.getItem("tenantId") ||
+        "NO_TENANT";
+
+    const currentClientId =
+        me?.clientId ||
+        me?.client?.clientId ||
+        me?.client?._id ||
+        userData?.clientId ||
+        userData?.client?.clientId ||
+        userData?.client?._id ||
+        localStorage.getItem("clientId") ||
+        "default";
+
+    const cashScopeKey = [
+        currentTenantId || "NO_TENANT",
+        currentClientId || "default",
+        currentUserId || "NO_USER",
+    ].join(":");
     const { data: registersResp, isLoading: registersLoading } = useQuery({
-        queryKey: ["admin/registers"],
+        queryKey: ["admin/registers", cashScopeKey],
         queryFn: async () => {
             const res = await api.get("/api/admin/registers");
             return res.data;
@@ -429,9 +542,70 @@ const CashRegister = () => {
         return Array.isArray(registersResp?.data) ? registersResp.data : [];
     }, [registersResp]);
     const isAdminLike = ADMIN_ROLES.has(roleUpper);
+    const normalizeId = (value) => {
+        if (!value) return "";
+
+        if (typeof value === "string") return value;
+
+        return String(
+            value?._id ||
+            value?.id ||
+            value?.value ||
+            ""
+        );
+    };
+
+    const getRegisterDefaultCashierId = (register) => {
+        return normalizeId(register?.defaultCashierUserId);
+    };
+
+    const cashierAssignedRegisters = useMemo(() => {
+        if (isAdminLike) return [];
+
+        const userId = String(currentUserId || "").trim();
+
+        if (!userId) return [];
+
+        return registers.filter((register) => {
+            const defaultCashierId = getRegisterDefaultCashierId(register);
+            return defaultCashierId && String(defaultCashierId) === userId;
+        });
+    }, [registers, currentUserId, isAdminLike]);
+
+    const getCashierPreferredRegisterCode = () => {
+        if (isAdminLike) return "";
+
+        const userId = String(currentUserId || "").trim();
+
+        if (!userId) return "";
+
+        const selectedRegister = registers.find((register) => register.code === selectedRegisterId);
+
+        // Si la cajera tiene cajas asignadas, solo puede usar esas como default automático.
+        if (cashierAssignedRegisters.length > 0) {
+            const selectedBelongsToCashier =
+                selectedRegister &&
+                String(getRegisterDefaultCashierId(selectedRegister)) === userId;
+
+            if (selectedBelongsToCashier) {
+                return selectedRegister.code;
+            }
+
+            return cashierAssignedRegisters[0]?.code || "";
+        }
+
+        // Compatibilidad: si no tiene ninguna caja asignada, usa la seleccionada si existe.
+        if (selectedRegister) {
+            return selectedRegister.code;
+        }
+
+        // Último fallback: primera caja activa.
+        return registers[0]?.code || "";
+    };
     const activeRegisterId = useMemo(() => {
+        if (registersLoading) return "";
+
         if (isAdminLike) {
-            if (registersLoading) return "";
             if (!registers.length) return ALL_REGISTERS_ID;
 
             if (!selectedRegisterId || selectedRegisterId === ALL_REGISTERS_ID) {
@@ -445,34 +619,18 @@ const CashRegister = () => {
             return ALL_REGISTERS_ID;
         }
 
-        if (registersLoading) return "";
+        const preferredRegisterCode = getCashierPreferredRegisterCode();
 
-        if (selectedRegisterId && registers.some((r) => r.code === selectedRegisterId)) {
-            return selectedRegisterId;
-        }
+        return preferredRegisterCode || "";
+    }, [
+        selectedRegisterId,
+        registers,
+        registersLoading,
+        isAdminLike,
+        currentUserId,
+        cashierAssignedRegisters,
+    ]);
 
-        if (registers.length > 0) {
-            return registers[0].code;
-        }
-
-        return DEFAULT_REGISTER_ID;
-    }, [selectedRegisterId, registers, registersLoading, isAdminLike]);
-    useEffect(() => {
-        if (isAdminLike) return;
-        if (registersLoading) return;
-        if (!registers.length) return;
-
-        const selectedIsValid = registers.some((r) => r.code === selectedRegisterId);
-
-        if (!selectedIsValid) {
-            const firstRegisterCode = registers[0]?.code;
-
-            if (firstRegisterCode) {
-                setSelectedRegisterId(firstRegisterCode);
-                saveRegisterId(firstRegisterCode);
-            }
-        }
-    }, [isAdminLike, registersLoading, registers, selectedRegisterId]);
 
 
     const isViewingAllRegisters = isAdminLike && activeRegisterId === ALL_REGISTERS_ID;
@@ -497,13 +655,55 @@ const CashRegister = () => {
     const hasUsableRegister =
         Boolean(activeRegisterId) &&
         activeRegisterId !== ALL_REGISTERS_ID &&
-        (!registers.length || registers.some((r) => r.code === activeRegisterId) || activeRegisterId === DEFAULT_REGISTER_ID);
+        registers.some((r) => r.code === activeRegisterId);
 
     const registerFilterValue =
         isViewingAllRegisters || !hasUsableRegister
             ? undefined
             : activeRegisterId;
 
+
+    const { data: adminSessionsResp } = useQuery({
+        queryKey: [
+            "admin/cash-session",
+            "admin-sessions",
+            cashScopeKey,
+            selectedYMD,
+            activeRegisterId,
+        ],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/cash-session/range", {
+                params: {
+                    from: selectedYMD,
+                    to: selectedYMD,
+                    registerId: activeRegisterId,
+                },
+            });
+
+            return res.data;
+        },
+        enabled: Boolean(
+            isAdminLike &&
+            selectedYMD &&
+            activeRegisterId &&
+            activeRegisterId !== ALL_REGISTERS_ID &&
+            hasUsableRegister
+        ),
+        staleTime: 5_000,
+        retry: 1,
+    });
+
+    const adminSessions = Array.isArray(adminSessionsResp?.data?.sessions)
+        ? adminSessionsResp.data.sessions
+        : [];
+
+    const adminOpenSessions = adminSessions.filter(
+        (s) => String(s?.status || "").toUpperCase() === "OPEN" && !s?.closedAt
+    );
+    const adminVisibleOpenSessions =
+        hideAdminSelectedSession && adminCloseTargetSession
+            ? adminOpenSessions.filter((s) => s._id !== adminCloseTargetSession._id)
+            : adminOpenSessions;
     const defaultModalRegisterId = useMemo(() => {
         if (isAdminLike) return activeRegisterId || ALL_REGISTERS_ID;
         return activeRegisterId || DEFAULT_REGISTER_ID;
@@ -520,7 +720,7 @@ const CashRegister = () => {
     } = useQuery({
         queryKey: [
             "admin/cash-session",
-            currentUserId || "NO_USER",
+            cashScopeKey,
             selectedYMD,
             registerFilterValue || "ALL",
         ],
@@ -565,7 +765,7 @@ const CashRegister = () => {
         queryKey: [
             "admin/cash-session",
             "summary-range",
-            currentUserId || "NO_USER",
+            cashScopeKey,
             selectedYMD,
             summaryRegisterId,
         ],
@@ -659,10 +859,26 @@ const CashRegister = () => {
     const showSummary =
         adminCanSeeSummary ||
         (sessionClosed && (isCajera || isCashier));
+    const closeTargetSession = isAdminLike ? adminCloseTargetSession : session;
+
+    const closeTargetClosed =
+        String(closeTargetSession?.status || "").toUpperCase() === "CLOSED" ||
+        Boolean(closeTargetSession?.closedAt);
+
+    const closeTargetOpeningSet =
+        Number(closeTargetSession?.openingFloatInitial || 0) > 0 ||
+        (
+            Array.isArray(closeTargetSession?.movements) &&
+            closeTargetSession.movements.some(
+                (m) =>
+                    String(m?.type || "").toUpperCase() === "OPEN" &&
+                    Number(m?.amount || 0) > 0
+            )
+        );
     const canCloseSelectedSession =
-        sessionExists &&
-        !sessionClosed &&
-        openingAlreadySet &&
+        Boolean(closeTargetSession) &&
+        !closeTargetClosed &&
+        closeTargetOpeningSet &&
         !isViewingAllRegisters &&
         (isAdminLike || isCashier || isCajera);
 
@@ -673,7 +889,21 @@ const CashRegister = () => {
     const queryClient = useQueryClient();
     useEffect(() => {
         queryClient.removeQueries({ queryKey: ["admin/cash-session"] });
-    }, [currentUserId, queryClient]);
+        queryClient.removeQueries({ queryKey: ["admin/registers"] });
+        queryClient.removeQueries({ queryKey: ["admin/reports"] });
+        queryClient.removeQueries({ queryKey: ["admin/expenses"] });
+        queryClient.removeQueries({ queryKey: ["accounts-receivable"] });
+
+        const scopedSavedRegister = getSavedRegisterId();
+
+        setSelectedRegisterId(scopedSavedRegister || "");
+        setForceSummary(false);
+        setIsEditingOpening(false);
+        setClosingCountedInput("");
+        setClosingNote("");
+        setCloseManagerCode("");
+        setOpeningManagerCode("");
+    }, [cashScopeKey, queryClient]);
 
 
 // Usa todas las fuentes posibles (storage, redux, token)
@@ -908,8 +1138,12 @@ const CashRegister = () => {
             return res.data;
         },
         onSuccess: (payload) => {
+            setAdminCloseTargetSession(null);
+            setHideAdminSelectedSession(false);
+
             const sessionDoc = payload?.data ?? null;
 
+            queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
             if (sessionDoc?._id) {
                 queryClient.setQueryData(
                     [
@@ -974,6 +1208,8 @@ const CashRegister = () => {
     });
 
     useEffect(() => {
+        if (registersLoading) return;
+
         if (isAdminLike) {
             if (!registers.length) {
                 setSelectedRegisterId(ALL_REGISTERS_ID);
@@ -988,6 +1224,7 @@ const CashRegister = () => {
             }
 
             const exists = registers.some((r) => r.code === selectedRegisterId);
+
             if (!exists) {
                 setSelectedRegisterId(ALL_REGISTERS_ID);
                 saveRegisterId(ALL_REGISTERS_ID);
@@ -1000,17 +1237,25 @@ const CashRegister = () => {
 
         if (!registers.length) return;
 
-        const exists = registers.some((r) => r.code === selectedRegisterId);
+        const preferredRegisterCode = getCashierPreferredRegisterCode();
 
-        if (!exists) {
-            const fallback = registers[0]?.code || DEFAULT_REGISTER_ID;
-            setSelectedRegisterId(fallback);
-            saveRegisterId(fallback);
+        if (!preferredRegisterCode) return;
+
+        if (selectedRegisterId !== preferredRegisterCode) {
+            setSelectedRegisterId(preferredRegisterCode);
+            saveRegisterId(preferredRegisterCode);
             return;
         }
 
-        saveRegisterId(selectedRegisterId);
-    }, [registers, selectedRegisterId, isAdminLike]);
+        saveRegisterId(preferredRegisterCode);
+    }, [
+        registersLoading,
+        registers,
+        selectedRegisterId,
+        isAdminLike,
+        currentUserId,
+        cashierAssignedRegisters,
+    ]);
 
 
     const [batchesTab, setBatchesTab] = useState("open"); // "open" | "closed" | "all"
@@ -2871,14 +3116,37 @@ const CashRegister = () => {
         });
     };
 
+
     const closeModal = () => {
         setShowFullView(false);
         setShowFiltersMenu(false);
         resetModalFilters();
     };
 
+    const handleSelectAdminSessionToClose = (s) => {
+        setAdminCloseTargetSession(s);
+        setHideAdminSelectedSession(true);
+
+        setClosingCountedInput("");
+        setClosingNote("");
+        setCloseManagerCode("");
+        setClosingInputMode(CLOSING_INPUT_MODE_TOTAL);
+        setClosingDenominationCounts(createEmptyDenominationCounts());
+
+        setTimeout(() => {
+            closeFormRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+            });
+        }, 80);
+    };
+    useEffect(() => {
+        setAdminCloseTargetSession(null);
+        setHideAdminSelectedSession(false);
+    }, [selectedYMD, activeRegisterId]);
     return (
         <>
+
             {/* Contenido normal (fondo). Se bloquea cuando el modal está abierto */}
             <div className={showFullView ? "pointer-events-none select-none" : ""}>
                 {/* TODO tu contenido actual de la página (header, cards, tabla, etc.) */}
@@ -3396,11 +3664,91 @@ const CashRegister = () => {
                 </div>
 
             )}
+            {isAdminLike && adminVisibleOpenSessions.length > 0 && (
+                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+                    <h3 className="text-white font-semibold text-lg">
+                        Sesiones abiertas de esta caja
+                    </h3>
 
+                    <p className="text-sm text-gray-400 mt-1">
+                        Selecciona la sesión de la cajera que deseas cerrar.
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                        {adminVisibleOpenSessions.map((s) => (
+                            <div
+                                key={s._id}
+                                className={`rounded-xl border p-4 ${
+                                    adminCloseTargetSession?._id === s._id
+                                        ? "border-[#f6b100] bg-[#f6b100]/10"
+                                        : "border-gray-800/50 bg-[#151515]"
+                                }`}
+                            >
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <div className="text-white font-semibold">
+                                            {s?.openedBy?.name || "Cajera sin nombre"}
+                                        </div>
+
+                                        <div className="text-xs text-gray-400 mt-1">
+                                            Caja: {s.registerId} · Fondo inicial: {currency(s.openingFloatInitial || 0)}
+                                        </div>
+
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Abierta: {s.openedAt ? new Date(s.openedAt).toLocaleString() : "—"}
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSelectAdminSessionToClose(s)}
+                                        className="px-4 py-2 rounded-lg bg-[#f6b100] text-black font-semibold"
+                                    >
+                                        Cerrar esta sesión
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {canCloseSelectedSession && (
-                <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
+                <div
+                    ref={closeFormRef}
+                    className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
+                >
                     <h3 className="text-white font-semibold text-lg">Cierre final de caja</h3>
+                    {isAdminLike && closeTargetSession && (
+                        <div className="mt-3 mb-4 rounded-xl border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
+                            <div className="text-sm text-[#f6b100] font-semibold">
+                                Sesión seleccionada para cierre
+                            </div>
+
+                            <div className="mt-1 text-white font-semibold">
+                                {closeTargetSession?.openedBy?.name || "Cajera sin nombre"}
+                            </div>
+
+                            <div className="mt-1 text-xs text-gray-400">
+                                Caja: {closeTargetSession?.registerId} · Fondo inicial:{" "}
+                                {currency(closeTargetSession?.openingFloatInitial || 0)}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAdminCloseTargetSession(null);
+                                    setHideAdminSelectedSession(false);
+                                    setClosingCountedInput("");
+                                    setClosingNote("");
+                                    setCloseManagerCode("");
+                                }}
+                                className="mt-3 px-3 py-2 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white text-sm font-semibold hover:bg-[#222]"
+                            >
+                                Ocultar sesion
+                            </button>
+                        </div>
+                    )}
                     <p className="text-sm text-gray-400 mt-1">
                         Para ver el resumen, primero registra el efectivo contado al cierre.
                     </p>
@@ -3582,13 +3930,17 @@ const CashRegister = () => {
                                 return;
                             }
 
-                            const fid = session?._id || session?.id;
+                            const fid = closeTargetSession?._id || closeTargetSession?.id;
                             if (!fid) {
                                 showToast("No se encontró el ID de la sesión.");
                                 return;
                             }
 
-                            const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
+                            const cleanRegisterId = String(
+                                closeTargetSession?.registerId || activeRegisterId || ""
+                            )
+                                .trim()
+                                .toUpperCase();
 
                             if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
                                 showToast("Selecciona una caja específica antes de cerrar.", "error");
