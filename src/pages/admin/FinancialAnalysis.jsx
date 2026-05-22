@@ -29,6 +29,7 @@ const FinancialAnalysis = () => {
         return {
             from: today,
             to: today,
+            method: "",
             category: "",
         };
     });
@@ -43,14 +44,112 @@ const FinancialAnalysis = () => {
     };
 
 
-    const getItemName = (item) => item?.name || item?.title || item?.productName || "Producto";
-    const getItemCategory = (item) => item?.category || item?.categoryName || item?.categoryLabel || "Sin categoría";
-    const getItemQuantity = (item) => Number(item?.quantity ?? item?.qty ?? item?.count ?? 0);
-    const getItemPrice = (item) => Number(item?.price ?? item?.unitPrice ?? item?.amount ?? 0);
+    const toNumber = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    };
+
+    const normalizeText = (value) =>
+        (value ?? "")
+            .toString()
+            .trim()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+
+    const isEmptyCategory = (value) => {
+        const txt = normalizeText(value);
+        return !txt || txt === "sin categoria" || txt === "sin category";
+    };
+
+    const pickFirstText = (...values) => {
+        for (const value of values) {
+            const text = (value ?? "").toString().trim();
+            if (text) return text;
+        }
+        return "";
+    };
+
+    const getProductNameFromRow = (row) =>
+        pickFirstText(
+            row?.product,
+            row?.name,
+            row?.productName,
+            row?.itemName,
+            row?.dishName,
+            row?.description
+        ) || "Producto";
+
+    const getInventoryCategoryFromRow = (row) => {
+        const candidates = [
+            row?.inventoryCategoryName,
+            row?.inventoryCategory?.name,
+            row?.inventoryCategory?.title,
+            row?.inventoryCategory,
+            row?.categoryName,
+            row?.category?.name,
+            row?.category?.title,
+            row?.category,
+        ];
+
+        for (const value of candidates) {
+            const text = (value ?? "").toString().trim();
+            if (text && !isEmptyCategory(text)) return text;
+        }
+
+        return "Sin Categoría";
+    };
+
+    const getItemName = (item) =>
+        pickFirstText(
+            item?.name,
+            item?.title,
+            item?.product,
+            item?.productName,
+            item?.itemName,
+            item?.dishName
+        ) || "Producto";
+
+    const getItemCategory = (item, categoryMap = new Map()) => {
+        const directCategory = pickFirstText(
+            item?.inventoryCategoryName,
+            item?.inventoryCategory?.name,
+            item?.inventoryCategory,
+            item?.categoryName,
+            item?.categoryLabel,
+            item?.category
+        );
+
+        if (directCategory && !isEmptyCategory(directCategory)) {
+            return directCategory;
+        }
+
+        const mappedCategory = categoryMap.get(normalizeText(getItemName(item)));
+        return mappedCategory || "Sin Categoría";
+    };
+
+    const getItemQuantity = (item) => toNumber(item?.quantity ?? item?.qty ?? item?.count ?? 0);
+
+    const getItemPrice = (item) =>
+        toNumber(
+            item?.lineTotal ??
+            item?.price ??
+            item?.unitPrice ??
+            item?.amount ??
+            0
+        );
+
     const getItemRevenue = (item, qty) => {
-        if (item?.lineTotal != null) return Number(item.lineTotal) || 0;
+        if (item?.lineTotal != null) return toNumber(item.lineTotal);
+        if (item?.price != null) return toNumber(item.price);
         return getItemPrice(item) * qty;
     };
+
+    const getReportDate = (order) =>
+        order?.paidAt ||
+        order?.invoicedAt ||
+        order?.completedAt ||
+        order?.createdAt;
 
     const addDaysISOStart = (ymd, days) => {
         const d = new Date(`${ymd}T00:00:00`);
@@ -63,31 +162,26 @@ const FinancialAnalysis = () => {
     };
 
     const cleanedParams = useMemo(() => {
-        const obj = { ...filters };
+        const obj = {};
 
-        const hasFrom = !!obj.from;
-        const hasTo = !!obj.to;
+        let fromYMD = filters.from || filters.to || "";
+        let toYMD = filters.to || filters.from || "";
 
-        let fromYMD = obj.from || obj.to || "";
-        let toYMD = obj.to || obj.from || "";
-
-        // Evita rango invertido
         if (fromYMD && toYMD && toYMD < fromYMD) {
             const tmp = fromYMD;
             fromYMD = toYMD;
             toYMD = tmp;
         }
 
-        // Normaliza rango (días completos):
         if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo
+        if (toYMD) obj.to = addDaysISOStart(toYMD, 1);
 
-        Object.keys(obj).forEach((k) => {
-            if (obj[k] === "" || obj[k] == null) delete obj[k];
-        });
+        if (filters.method) {
+            obj.method = filters.method;
+        }
 
         return obj;
-    }, [filters]);
+    }, [filters.from, filters.to, filters.method]);
 
 
 
@@ -100,29 +194,189 @@ const FinancialAnalysis = () => {
         keepPreviousData: true,
         staleTime: 30_000,
     });
+    const productReportParams = useMemo(() => {
+        let from = filters.from || filters.to || "";
+        let to = filters.to || filters.from || "";
 
-    const orders = data?.data || [];
+        if (from && to && to < from) {
+            const tmp = from;
+            from = to;
+            to = tmp;
+        }
+
+        const params = {};
+        if (from) params.from = from;
+        if (to) params.to = to;
+        if (filters.method) params.paymentMethod = filters.method;
+
+        return params;
+    }, [filters.from, filters.to, filters.method]);
+
+    async function fetchProductDetail(params) {
+        const res = await api.get("/api/order/report/sales-by-product", { params });
+
+        const payload = res.data?.data ?? res.data;
+
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.products)) return payload.products;
+        if (Array.isArray(payload?.rows)) return payload.rows;
+        if (Array.isArray(payload?.items)) return payload.items;
+
+        return [];
+    }
+
+    const productReportQuery = useQuery({
+        queryKey: ["financial-sales-by-product", productReportParams],
+        queryFn: async () => fetchProductDetail(productReportParams),
+        enabled: true,
+        keepPreviousData: true,
+        staleTime: 30_000,
+    });
+
+    const productRows = productReportQuery.data || [];
+
+    const categoryOptions = useMemo(() => {
+        return Array.from(
+            new Set(
+                productRows
+                    .map((row) => getInventoryCategoryFromRow(row))
+                    .filter((cat) => cat && !isEmptyCategory(cat))
+            )
+        ).sort((a, b) => a.localeCompare(b));
+    }, [productRows]);
+
+    const productCategoryMap = useMemo(() => {
+        const map = new Map();
+
+        productRows.forEach((row) => {
+            const productName = normalizeText(getProductNameFromRow(row));
+            const category = getInventoryCategoryFromRow(row);
+
+            if (productName && category && !isEmptyCategory(category)) {
+                map.set(productName, category);
+            }
+        });
+
+        return map;
+    }, [productRows]);
+
+    const rawOrders = data?.data || [];
     const dailySummary = data?.dailySummary || {};
+
+    const orders = useMemo(() => {
+        const selectedCategory = normalizeText(filters.category);
+        const selectedMethod = normalizeText(filters.method);
+
+        return rawOrders.filter((order) => {
+            if (selectedMethod && normalizeText(order?.paymentMethod) !== selectedMethod) {
+                return false;
+            }
+
+            if (!selectedCategory) return true;
+
+            const items = Array.isArray(order?.items) ? order.items : [];
+
+            return items.some((item) => {
+                const itemCategory = normalizeText(getItemCategory(item, productCategoryMap));
+                return itemCategory === selectedCategory;
+            });
+        });
+    }, [rawOrders, filters.category, filters.method, productCategoryMap]);
 
     // Análisis financiero completo
     const financialAnalysis = useMemo(() => {
-        const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.bills?.totalWithTax) || 0), 0);
-        const totalTax = orders.reduce((sum, o) => sum + (Number(o.bills?.tax) || 0), 0);
-        const totalTip = orders.reduce((sum, o) => sum + (Number(o.bills?.tip) || 0), 0);
-        const totalSubtotal = orders.reduce((sum, o) => sum + (Number(o.bills?.subtotal) || 0), 0);
-        const totalCommission = orders.reduce((sum, o) => sum + (Number(o.commissionAmount) || 0), 0);
-        const totalNet = orders.reduce((sum, o) => sum + (Number(o.netTotal) || 0), 0);
+        const selectedCategory = normalizeText(filters.category);
+
+        const getOrderMetrics = (order) => {
+            const items = Array.isArray(order?.items) ? order.items : [];
+
+            const filteredItems = selectedCategory
+                ? items.filter(
+                    (item) =>
+                        normalizeText(getItemCategory(item, productCategoryMap)) === selectedCategory
+                )
+                : items;
+
+            const selectedSubtotal = filteredItems.reduce((sum, item) => {
+                const qty = getItemQuantity(item);
+                return sum + getItemRevenue(item, qty);
+            }, 0);
+
+            const allItemsSubtotal = items.reduce((sum, item) => {
+                const qty = getItemQuantity(item);
+                return sum + getItemRevenue(item, qty);
+            }, 0);
+
+            const orderSubtotal = toNumber(order?.bills?.subtotal) || allItemsSubtotal;
+
+            const ratio =
+                selectedCategory && orderSubtotal > 0
+                    ? Math.min(selectedSubtotal / orderSubtotal, 1)
+                    : 1;
+
+            const subtotal = selectedCategory
+                ? selectedSubtotal
+                : orderSubtotal;
+
+            const tax = toNumber(order?.bills?.tax) * ratio;
+            const tip = toNumber(order?.bills?.tip) * ratio;
+            const commission = toNumber(order?.commissionAmount) * ratio;
+
+            const revenue = selectedCategory
+                ? subtotal + tax + tip
+                : toNumber(order?.bills?.totalWithTax);
+
+            const net = selectedCategory
+                ? Math.max(revenue - commission, 0)
+                : toNumber(order?.netTotal) || Math.max(revenue - commission, 0);
+
+            return {
+                subtotal,
+                tax,
+                tip,
+                commission,
+                revenue,
+                net,
+            };
+        };
+
+        const totals = orders.reduce(
+            (acc, order) => {
+                const m = getOrderMetrics(order);
+
+                acc.totalRevenue += m.revenue;
+                acc.totalTax += m.tax;
+                acc.totalTip += m.tip;
+                acc.totalSubtotal += m.subtotal;
+                acc.totalCommission += m.commission;
+                acc.totalNet += m.net;
+
+                return acc;
+            },
+            {
+                totalRevenue: 0,
+                totalTax: 0,
+                totalTip: 0,
+                totalSubtotal: 0,
+                totalCommission: 0,
+                totalNet: 0,
+            }
+        );
+
         const totalOrders = orders.length;
+        const avgTicket = totalOrders > 0 ? totals.totalRevenue / totalOrders : 0;
+        const avgNet = totalOrders > 0 ? totals.totalNet / totalOrders : 0;
+        const taxRate = totals.totalSubtotal > 0 ? (totals.totalTax / totals.totalSubtotal) * 100 : 0;
+        const commissionRate = totals.totalRevenue > 0 ? (totals.totalCommission / totals.totalRevenue) * 100 : 0;
 
-        const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-        const avgNet = totalOrders > 0 ? totalNet / totalOrders : 0;
-        const taxRate = totalSubtotal > 0 ? (totalTax / totalSubtotal) * 100 : 0;
-        const commissionRate = totalRevenue > 0 ? (totalCommission / totalRevenue) * 100 : 0;
-
-        // Agrupar por fecha para tendencias
         const byDate = {};
         orders.forEach((order) => {
-            const date = new Date(order.createdAt).toISOString().split("T")[0];
+            const reportDate = getReportDate(order);
+            if (!reportDate) return;
+
+            const date = new Date(reportDate).toISOString().split("T")[0];
+            const m = getOrderMetrics(order);
+
             if (!byDate[date]) {
                 byDate[date] = {
                     revenue: 0,
@@ -133,47 +387,47 @@ const FinancialAnalysis = () => {
                     orders: 0,
                 };
             }
-            byDate[date].revenue += Number(order.bills?.totalWithTax) || 0;
-            byDate[date].tax += Number(order.bills?.tax) || 0;
-            byDate[date].tip += Number(order.bills?.tip) || 0;
-            byDate[date].net += Number(order.netTotal) || 0;
-            byDate[date].commission += Number(order.commissionAmount) || 0;
+
+            byDate[date].revenue += m.revenue;
+            byDate[date].tax += m.tax;
+            byDate[date].tip += m.tip;
+            byDate[date].net += m.net;
+            byDate[date].commission += m.commission;
             byDate[date].orders += 1;
         });
 
-        // Ordenar fechas
         const sortedDates = Object.keys(byDate).sort();
 
-        // Calcular crecimiento (si hay al menos 2 días)
         let growthRate = 0;
         if (sortedDates.length >= 2) {
             const lastDate = sortedDates[sortedDates.length - 1];
             const previousDate = sortedDates[sortedDates.length - 2];
             const lastRevenue = byDate[lastDate]?.revenue || 0;
             const previousRevenue = byDate[previousDate]?.revenue || 0;
+
             if (previousRevenue > 0) {
                 growthRate = ((lastRevenue - previousRevenue) / previousRevenue) * 100;
             }
         }
 
-        // Análisis por hora del día
         const byHour = {};
         orders.forEach((order) => {
-            const hour = new Date(order.createdAt).getHours();
+            const reportDate = getReportDate(order);
+            if (!reportDate) return;
+
+            const hour = new Date(reportDate).getHours();
+            const m = getOrderMetrics(order);
+
             if (!byHour[hour]) {
                 byHour[hour] = { revenue: 0, orders: 0 };
             }
-            byHour[hour].revenue += Number(order.bills?.totalWithTax) || 0;
+
+            byHour[hour].revenue += m.revenue;
             byHour[hour].orders += 1;
         });
 
         return {
-            totalRevenue,
-            totalTax,
-            totalTip,
-            totalSubtotal,
-            totalCommission,
-            totalNet,
+            ...totals,
             totalOrders,
             avgTicket,
             avgNet,
@@ -184,10 +438,12 @@ const FinancialAnalysis = () => {
             sortedDates,
             byHour,
         };
-    }, [orders]);
+    }, [orders, filters.category, productCategoryMap]);
 
     const hourProductBreakdown = useMemo(() => {
         if (selectedHour == null) return { totalRevenue: 0, totalOrders: 0, products: [] };
+
+        const selectedCategory = normalizeText(filters.category);
 
         let totalRevenue = 0;
         let totalOrders = 0;
@@ -195,33 +451,50 @@ const FinancialAnalysis = () => {
 
         orders.forEach((order) => {
             if (!order) return;
-            const hour = new Date(order.createdAt).getHours();
+
+            const reportDate = getReportDate(order);
+            if (!reportDate) return;
+
+            const hour = new Date(reportDate).getHours();
             if (hour !== selectedHour) return;
 
-            totalOrders += 1;
+            let orderHasMatchingItem = false;
 
             (order.items || []).forEach((item) => {
                 const quantity = getItemQuantity(item);
                 if (!quantity) return;
 
+                const category = getItemCategory(item, productCategoryMap);
+                const normalizedCategory = normalizeText(category);
+
+                if (selectedCategory && normalizedCategory !== selectedCategory) {
+                    return;
+                }
+
                 const revenue = getItemRevenue(item, quantity);
                 totalRevenue += revenue;
+                orderHasMatchingItem = true;
 
                 const name = getItemName(item);
-                const category = getItemCategory(item);
-                const key = `${name}__${category}`;
+                const key = `${normalizeText(name)}__${normalizedCategory || "sin-categoria"}`;
 
                 if (!productMap[key]) {
                     productMap[key] = { name, category, quantity: 0, revenue: 0 };
                 }
+
                 productMap[key].quantity += quantity;
                 productMap[key].revenue += revenue;
             });
+
+            if (orderHasMatchingItem) {
+                totalOrders += 1;
+            }
         });
 
         const products = Object.values(productMap).sort((a, b) => b.revenue - a.revenue);
+
         return { totalRevenue, totalOrders, products };
-    }, [orders, selectedHour]);
+    }, [orders, selectedHour, filters.category, productCategoryMap]);
 
     const downloadExcel = async () => {
         try {
@@ -305,24 +578,72 @@ const FinancialAnalysis = () => {
 
             {/* Filtros */}
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label className="text-xs text-gray-400 mb-1 block">Fecha desde</label>
                         <input
                             type="date"
                             value={filters.from}
-                            onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
+                            onChange={(e) => {
+                                setFilters((f) => ({ ...f, from: e.target.value }));
+                                setSelectedHour(null);
+                                setHourDetailsOpen(false);
+                            }}
                             className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                         />
                     </div>
+
                     <div>
                         <label className="text-xs text-gray-400 mb-1 block">Fecha hasta</label>
                         <input
                             type="date"
                             value={filters.to}
-                            onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+                            onChange={(e) => {
+                                setFilters((f) => ({ ...f, to: e.target.value }));
+                                setSelectedHour(null);
+                                setHourDetailsOpen(false);
+                            }}
                             className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                         />
+                    </div>
+
+                    <div>
+                        <label className="text-xs text-gray-400 mb-1 block">Método de pago</label>
+                        <select
+                            value={filters.method}
+                            onChange={(e) => {
+                                setFilters((f) => ({ ...f, method: e.target.value }));
+                                setSelectedHour(null);
+                                setHourDetailsOpen(false);
+                            }}
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        >
+                            <option value="">Todos los métodos</option>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Credito">Crédito</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="text-xs text-gray-400 mb-1 block">Categoría</label>
+                        <select
+                            value={filters.category}
+                            onChange={(e) => {
+                                setFilters((f) => ({ ...f, category: e.target.value }));
+                                setSelectedHour(null);
+                                setHourDetailsOpen(false);
+                            }}
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        >
+                            <option value="">Todas las categorías</option>
+                            {categoryOptions.map((cat) => (
+                                <option key={cat} value={cat}>
+                                    {cat}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </div>
             </div>

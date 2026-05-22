@@ -121,7 +121,7 @@ const SalesReports = () => {
             // El backend los parsea bien con new Date(...)
             return fetchProductDetail({
                 from: `${filters.from}T00:00:00.000`,
-                to: addDaysISOStart(filters.to, 1), // fin exclusivo: día siguiente 00:00
+                to: filters.to,
                 paymentMethod: filters.method || undefined,
             });
         },

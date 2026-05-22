@@ -38,79 +38,85 @@ const ProductReports = () => {
         window.clearTimeout(showToast._t);
         showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
     };
-    const addDays = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
-        return d.toISOString().slice(0, 19) + ".000";
-    };
-    const getItemCategory = (item) => {
-        const cat =
-            item?.inventoryCategory?.name ??
-            item?.inventoryCategory?.title ??
-            item?.inventoryCategoryName ??
-            item?.inventoryCategory ??
-            item?.category;
-
-        const out = (cat || "Sin Categoría").toString().trim();
-        return out || "Sin Categoría";
+    const toNumber = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
     };
 
-    const cleanedParams = useMemo(() => {
-        const obj = { ...filters };
+    const normalizeText = (value) =>
+        (value ?? "")
+            .toString()
+            .trim()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
 
-        const hasFrom = !!obj.from;
-        const hasTo = !!obj.to;
+    const isEmptyCategory = (value) => {
+        const txt = normalizeText(value);
+        return !txt || txt === "sin categoria" || txt === "sin category";
+    };
 
-        // Si solo selecciona "desde", asumimos "hasta" = mismo día
-        // Si solo selecciona "hasta", asumimos "desde" = mismo día
-        let fromYMD = obj.from || obj.to || "";
-        let toYMD = obj.to || obj.from || "";
+    const pickFirstText = (...values) => {
+        for (const value of values) {
+            const text = (value ?? "").toString().trim();
+            if (text) return text;
+        }
+        return "";
+    };
 
-        // Evita rango invertido (to < from)
-        if (fromYMD && toYMD && toYMD < fromYMD) {
-            const tmp = fromYMD;
-            fromYMD = toYMD;
-            toYMD = tmp;
+    const getInventoryCategoryFromRow = (row) => {
+        const candidates = [
+            row?.inventoryCategoryName,
+            row?.inventoryCategory?.name,
+            row?.inventoryCategory?.title,
+            row?.inventoryCategory,
+            row?.categoryName,
+            row?.category?.name,
+            row?.category?.title,
+            row?.category,
+        ];
+
+        for (const value of candidates) {
+            const text = (value ?? "").toString().trim();
+            if (text && !isEmptyCategory(text)) return text;
         }
 
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDays(toYMD, 1); // fin exclusivo (día siguiente 00:00)
+        return "Sin Categoría";
+    };
 
-        Object.keys(obj).forEach((k) => {
-            if (obj[k] === "" || obj[k] == null) delete obj[k];
-        });
+    const productDateParams = useMemo(() => {
+        let from = filters.from || filters.to || "";
+        let to = filters.to || filters.from || "";
 
-        return obj;
-    }, [filters]);
+        if (from && to && to < from) {
+            const tmp = from;
+            from = to;
+            to = tmp;
+        }
 
+        const params = {};
+        if (from) params.from = from;
+        if (to) params.to = to;
 
+        return params;
+    }, [filters.from, filters.to]);
 
-    const { data, isLoading, isError, error } = useQuery({
-        queryKey: ["admin/reports", cleanedParams],
-        queryFn: async () => {
-            const res = await api.get("/api/admin/reports", { params: cleanedParams });
-            return res.data;
-        },
-        keepPreviousData: true,
-        staleTime: 30_000,
-    });
-    async function fetchProductDetail({ from, to }) {
-        const params = new URLSearchParams();
-        params.append("from", from);
-        params.append("to", to);
+    async function fetchProductDetail(params) {
+        const res = await api.get("/api/order/report/sales-by-product", { params });
 
-        const res = await api.get(`/api/order/report/sales-by-product?${params.toString()}`);
-        return res.data?.data || [];
+        const payload = res.data?.data ?? res.data;
+
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.products)) return payload.products;
+        if (Array.isArray(payload?.rows)) return payload.rows;
+        if (Array.isArray(payload?.items)) return payload.items;
+
+        return [];
     }
 
     const productReportQuery = useQuery({
-        queryKey: ["sales-by-product-report", filters.from, filters.to],
-        queryFn: async () => {
-            return fetchProductDetail({
-                from: filters.from,
-                to: filters.to,
-            });
-        },
+        queryKey: ["sales-by-product-report", productDateParams],
+        queryFn: async () => fetchProductDetail(productDateParams),
         enabled: true,
         keepPreviousData: true,
         staleTime: 30_000,
@@ -118,85 +124,112 @@ const ProductReports = () => {
 
     const detailRows = productReportQuery.data || [];
 
-    const categoryByProductName = useMemo(() => {
-        const m = new Map();
-        for (const r of detailRows) {
-            const name = (r?.name || "").toString().trim();   // en SalesReports el campo es r.name
-            const cat = (r?.category || "Sin Categoría").toString().trim();
-            if (name) m.set(name, cat);
-        }
-        return m;
-    }, [detailRows]);
+    const isLoading = productReportQuery.isLoading;
+    const isError = productReportQuery.isError;
+    const error = productReportQuery.error;
 
-    const orders = data?.data || [];
-
-    // Análisis de productos
     const productAnalysis = useMemo(() => {
         const productStats = {};
         const categoryStats = {};
 
-        orders.forEach((order) => {
-            const items = order.items || [];
-            items.forEach((item) => {
-                const productName = item.name || "Producto Desconocido";
-                const category =
-                    categoryByProductName.get((item.name || "").toString().trim()) ||
-                    getItemCategory(item);
-                const quantity = Number(item.quantity || 0);
-                const price = Number(item.price || 0);
-                const total = quantity * price;
+        detailRows.forEach((row) => {
+            const productName =
+                pickFirstText(
+                    row?.product,
+                    row?.name,
+                    row?.productName,
+                    row?.itemName,
+                    row?.dishName,
+                    row?.description
+                ) || "Producto Desconocido";
 
-                // Estadísticas por producto
-                if (!productStats[productName]) {
-                    productStats[productName] = {
-                        name: productName,
-                        category: category,
-                        totalQuantity: 0,
-                        totalRevenue: 0,
-                        orderCount: 0,
-                        avgPrice: 0,
-                    };
-                }
-                productStats[productName].totalQuantity += quantity;
-                productStats[productName].totalRevenue += total;
-                productStats[productName].orderCount += 1;
+            const category = getInventoryCategoryFromRow(row);
 
-                // Estadísticas por categoría
-                if (!categoryStats[category]) {
-                    categoryStats[category] = {
-                        name: category,
-                        totalQuantity: 0,
-                        totalRevenue: 0,
-                        productCount: 0,
-                        orders: new Set(),
-                    };
-                }
-                categoryStats[category].totalQuantity += quantity;
-                categoryStats[category].totalRevenue += total;
-                if (!categoryStats[category].orders.has(order._id)) {
-                    categoryStats[category].orders.add(order._id);
-                }
-            });
+            const quantity = toNumber(
+                row?.totalQuantity ??
+                row?.quantity ??
+                row?.qty ??
+                row?.cantidad ??
+                row?.cantidadVendida ??
+                row?.totalQty
+            );
+
+            const revenue = toNumber(
+                row?.totalRevenue ??
+                row?.revenue ??
+                row?.ingresos ??
+                row?.amount ??
+                row?.totalAmount ??
+                row?.total
+            );
+
+            const orderCountRaw =
+                row?.orderCount ??
+                row?.ordersCount ??
+                row?.totalOrders ??
+                row?.ordenes ??
+                row?.orders;
+
+            const orderCount = Array.isArray(orderCountRaw)
+                ? orderCountRaw.length
+                : toNumber(orderCountRaw);
+
+            if (!productStats[productName]) {
+                productStats[productName] = {
+                    name: productName,
+                    category,
+                    totalQuantity: 0,
+                    totalRevenue: 0,
+                    orderCount: 0,
+                    avgPrice: 0,
+                };
+            }
+
+            productStats[productName].totalQuantity += quantity;
+            productStats[productName].totalRevenue += revenue;
+            productStats[productName].orderCount += orderCount;
+
+            if (
+                productStats[productName].category === "Sin Categoría" &&
+                category !== "Sin Categoría"
+            ) {
+                productStats[productName].category = category;
+            }
+
+            if (!categoryStats[category]) {
+                categoryStats[category] = {
+                    name: category,
+                    totalQuantity: 0,
+                    totalRevenue: 0,
+                    productCount: 0,
+                    orderCount: 0,
+                    products: new Set(),
+                };
+            }
+
+            categoryStats[category].totalQuantity += quantity;
+            categoryStats[category].totalRevenue += revenue;
+            categoryStats[category].orderCount += orderCount;
+            categoryStats[category].products.add(productName);
         });
 
-        // Calcular precio promedio por producto
         Object.keys(productStats).forEach((productName) => {
             const stats = productStats[productName];
-            stats.avgPrice = stats.orderCount > 0 ? stats.totalRevenue / stats.totalQuantity : 0;
+            stats.avgPrice =
+                stats.totalQuantity > 0
+                    ? stats.totalRevenue / stats.totalQuantity
+                    : 0;
         });
 
-        // Convertir Set a número para categorías
         Object.keys(categoryStats).forEach((cat) => {
-            categoryStats[cat].orderCount = categoryStats[cat].orders.size;
-            delete categoryStats[cat].orders;
+            categoryStats[cat].productCount = categoryStats[cat].products.size;
+            delete categoryStats[cat].products;
         });
 
-        // Productos más vendidos (por cantidad)
         const topProductsByQuantity = Object.values(productStats)
             .sort((a, b) => b.totalQuantity - a.totalQuantity)
             .slice(0, 10);
 
-        // Productos más vendidos (por revenue)
         const topProductsByRevenue = Object.values(productStats)
             .sort((a, b) => b.totalRevenue - a.totalRevenue)
             .slice(0, 10);
@@ -208,8 +241,7 @@ const ProductReports = () => {
             topProductsByRevenue,
             totalProducts: Object.keys(productStats).length,
         };
-    }, [orders]);
-
+    }, [detailRows]);
     const allProducts = useMemo(() => {
         const products = Object.values(productAnalysis.productStats || {});
         const filtered = productSearch
