@@ -163,6 +163,15 @@ const safeNumber = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
 };
+const parseMoneyInput = (value) => {
+    const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+};
+
+const parseCountInput = (value) => {
+    const n = Number(String(value ?? "").replace(/[^\d]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+};
 
 const CLOSING_INPUT_MODE_TOTAL = "total";
 const CLOSING_INPUT_MODE_BREAKDOWN = "breakdown";
@@ -193,6 +202,7 @@ const buildCashBreakdownPayload = (counts = {}) =>
             label: item.label,
             value: item.value,
             count: Number.isFinite(count) ? count : 0,
+            kind: "cash",
         };
     }).filter((item) => item.count > 0);
 
@@ -406,6 +416,10 @@ const CashRegister = () => {
     const [closingDenominationCounts, setClosingDenominationCounts] = useState(() =>
         createEmptyDenominationCounts()
     );
+    const [ticketAmountInput, setTicketAmountInput] = useState("");
+    const [ticketCountInput, setTicketCountInput] = useState("");
+    const [transferCountedInput, setTransferCountedInput] = useState("");
+    const [otherCountedInput, setOtherCountedInput] = useState("");
 
     const [adjustCloseOpen, setAdjustCloseOpen] = useState(false);
     const [adjustCountedInput, setAdjustCountedInput] = useState("");
@@ -427,6 +441,60 @@ const CashRegister = () => {
         [closingDenominationCounts]
     );
 
+    const ticketAmount = useMemo(
+        () => parseMoneyInput(ticketAmountInput),
+        [ticketAmountInput]
+    );
+
+    const ticketCount = useMemo(
+        () => parseCountInput(ticketCountInput),
+        [ticketCountInput]
+    );
+
+    const closingTicketTotal = useMemo(
+        () => Number((ticketAmount * ticketCount).toFixed(2)),
+        [ticketAmount, ticketCount]
+    );
+
+    const transferCountedTotal = useMemo(
+        () => parseMoneyInput(transferCountedInput),
+        [transferCountedInput]
+    );
+
+    const otherCountedTotal = useMemo(
+        () => parseMoneyInput(otherCountedInput),
+        [otherCountedInput]
+    );
+
+    const ticketBreakdownPayload = useMemo(() => {
+        if (ticketAmount <= 0 || ticketCount <= 0) return [];
+
+        return [
+            {
+                label: `Ticket RD$ ${ticketAmount}`,
+                value: ticketAmount,
+                count: ticketCount,
+                kind: "ticket",
+            },
+        ];
+    }, [ticketAmount, ticketCount]);
+
+    const cashEquivalentCountedTotal = useMemo(
+        () => Number((closingBreakdownTotal + closingTicketTotal).toFixed(2)),
+        [closingBreakdownTotal, closingTicketTotal]
+    );
+
+    const totalDeclaredAtClose = useMemo(
+        () =>
+            Number(
+                (
+                    cashEquivalentCountedTotal +
+                    transferCountedTotal +
+                    otherCountedTotal
+                ).toFixed(2)
+            ),
+        [cashEquivalentCountedTotal, transferCountedTotal, otherCountedTotal]
+    );
 
     const me = getUserFromStorage();
     const userData = useSelector(
@@ -1125,7 +1193,18 @@ const CashRegister = () => {
     });
 
     const closeCashSessionMutation = useMutation({
-        mutationFn: async ({ fid, dateYMD, registerId, countedTotal, note, breakdown, managerCode }) => {
+        mutationFn: async ({
+                               fid,
+                               dateYMD,
+                               registerId,
+                               countedTotal,
+                               note,
+                               breakdown,
+                               managerCode,
+                               transferCountedTotal,
+                               otherCountedTotal,
+                               totalDeclaredAtClose,
+                           }) => {
             const res = await api.post("/api/admin/cash-session/close", {
                 fid,
                 dateYMD,
@@ -1134,6 +1213,9 @@ const CashRegister = () => {
                 note,
                 breakdown,
                 managerCode,
+                transferCountedTotal,
+                otherCountedTotal,
+                totalDeclaredAtClose,
             });
             return res.data;
         },
@@ -2407,6 +2489,7 @@ const CashRegister = () => {
             pedidoya: { label: "Pedido Ya", total: 0, count: 0 },
             ubereats: { label: "Uber Eats", total: 0, count: 0 },
             otros: { label: "Otros", total: 0, count: 0 },
+            ticket: { label: "Ticket", total: 0, count: 0 },
         };
 
         let grandTotal = 0;
@@ -2471,6 +2554,7 @@ const CashRegister = () => {
             } else if (channel.includes("delivery")) {
                 key = "delivery";
             }
+            else if (pmRaw.includes("ticket")) key = "ticket";
 
             buckets[key].total += total;
             buckets[key].count += 1;
@@ -2507,7 +2591,7 @@ const CashRegister = () => {
         const openingVal = safeNumber(openingInitial);
         const addedVal = safeNumber(addedTotal);
 
-        const cashSales = safeNumber(buckets.efectivo.total);
+        const cashSales = safeNumber(buckets.efectivo.total) + safeNumber(buckets.ticket.total);
 
         const totalExpenses = safeNumber(expensesSummary?.totalExpenses);
         const cashExpenses = safeNumber(expensesSummary?.cashExpenses);
@@ -3655,6 +3739,7 @@ const CashRegister = () => {
                                 </div>
                             </div>
                         )}
+
                     {session?.closing?.adjustedAt && (
                         <div className="mt-2 text-xs text-gray-500">
                             Ajustado: {new Date(session.closing.adjustedAt).toLocaleString()} por {session?.closing?.adjustedBy?.name || "Admin"}
@@ -3858,10 +3943,155 @@ const CashRegister = () => {
                                             </div>
                                         </div>
                                     );
+
                                 })}
-                            </div>
+
                         </div>
+
+                        <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
+                        <div className="text-base md:text-lg font-semibold text-white">Tickets</div>
+
+                        <div className="text-sm text-white/75 mb-4">
+                        Crédito físico contado como efectivo.
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                        <div>
+                        <label className="block text-sm font-medium text-white/90 mb-1">
+                        Monto ticket
+                        </label>
+
+                        <input
+                        value={ticketAmountInput}
+                    onChange={(e) => setTicketAmountInput(formatThousands(e.target.value))}
+                    inputMode="decimal"
+                    className="mt-1 w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
+                    placeholder="Ej: 100"
+                />
+                </div>
+
+                <div>
+                <label className="block text-sm font-medium text-white/90 mb-1">
+                Cantidad
+                </label>
+
+                <input
+                value={ticketCountInput}
+            onChange={(e) =>
+                setTicketCountInput(
+                    e.target.value.replace(/[^\d]/g, "").slice(0, 6)
+                )
+            }
+            inputMode="numeric"
+            className="mt-1 w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
+            placeholder="0"
+        />
+            </div>
+        </div>
+
+    <div className="mt-3 text-sm text-white/85 text-right">
+        Subtotal tickets:{" "}
+        <span className="text-white font-bold text-base">
+                {currency(closingTicketTotal)}
+            </span>
+    </div>
+</div>
+
+    <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
+        <div className="text-base md:text-lg font-semibold text-white">
+            Transferencias
+        </div>
+
+        <div className="text-sm text-white/75 mb-4">
+            Monto confirmado por transferencia.
+        </div>
+
+        <label className="block text-sm font-medium text-white/90 mb-1">
+            Monto transferencia
+        </label>
+
+        <input
+            value={transferCountedInput}
+            onChange={(e) => setTransferCountedInput(formatThousands(e.target.value))}
+            inputMode="decimal"
+            className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
+            placeholder="Ej: 1,500"
+        />
+
+        <div className="mt-3 text-sm text-white/85 text-right">
+            Total transferencia:{" "}
+            <span className="text-white font-bold text-base">
+                {currency(transferCountedTotal)}
+            </span>
+        </div>
+    </div>
+
+    <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
+        <div className="text-base md:text-lg font-semibold text-white">Otros</div>
+
+        <div className="text-sm text-white/75 mb-4">
+            Otro método o ajuste contado.
+        </div>
+
+        <label className="block text-sm font-medium text-white/90 mb-1">
+            Monto otros
+        </label>
+
+        <input
+            value={otherCountedInput}
+            onChange={(e) => setOtherCountedInput(formatThousands(e.target.value))}
+            inputMode="decimal"
+            className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
+            placeholder="Ej: 500"
+        />
+
+        <div className="mt-3 text-sm text-white/85 text-right">
+            Total otros:{" "}
+            <span className="text-white font-bold text-base">
+                {currency(otherCountedTotal)}
+            </span>
+        </div>
+    </div>
+</div>
+
+    <div className="mt-5 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div>
+                <div className="text-sm text-white/80">Billetes/monedas</div>
+                <div className="text-lg font-bold text-white">
+                    {currency(closingBreakdownTotal)}
+                </div>
+            </div>
+
+            <div>
+                <div className="text-sm text-white/80">Tickets</div>
+                <div className="text-lg font-bold text-white">
+                    {currency(closingTicketTotal)}
+                </div>
+            </div>
+
+            <div>
+                <div className="text-sm text-white/80">Transferencia + otros</div>
+                <div className="text-lg font-bold text-white">
+                    {currency(transferCountedTotal + otherCountedTotal)}
+                </div>
+            </div>
+
+            <div>
+                <div className="text-sm text-white/90 font-medium">
+                    Total declarado
+                </div>
+                <div className="text-xl font-extrabold text-white">
+                    {currency(totalDeclaredAtClose)}
+                </div>
+            </div>
+        </div>
+    </div>
+                        </div>
+
                     )}
+
 
                     <div className="mt-4">
                         <label className="text-xs text-gray-400">Nota del cierre (opcional)</label>
@@ -3912,21 +4142,36 @@ const CashRegister = () => {
 
                             const breakdown =
                                 closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
-                                    ? closingBreakdownPayload
+                                    ? [...closingBreakdownPayload, ...ticketBreakdownPayload]
                                     : [];
 
                             const countedTotal =
                                 closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
-                                    ? closingBreakdownTotal
+                                    ? cashEquivalentCountedTotal
                                     : Number(String(closingCountedInput ?? "").replace(/[^\d.-]/g, ""));
+
+                            const manualTransferTotal =
+                                closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                    ? transferCountedTotal
+                                    : 0;
+
+                            const manualOtherTotal =
+                                closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                    ? otherCountedTotal
+                                    : 0;
 
                             if (!Number.isFinite(countedTotal) || countedTotal < 0) {
                                 showToast("Monto inválido.", "error");
                                 return;
                             }
 
-                            if (closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN && breakdown.length === 0) {
-                                showToast("Debes ingresar al menos una denominación.", "error");
+                            if (
+                                closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN &&
+                                breakdown.length === 0 &&
+                                manualTransferTotal <= 0 &&
+                                manualOtherTotal <= 0
+                            ) {
+                                showToast("Debes ingresar billetes, tickets, transferencia u otros.", "error");
                                 return;
                             }
 
@@ -3953,6 +4198,12 @@ const CashRegister = () => {
                                 registerId: cleanRegisterId,
                                 countedTotal,
                                 breakdown,
+                                transferCountedTotal: manualTransferTotal,
+                                otherCountedTotal: manualOtherTotal,
+                                totalDeclaredAtClose:
+                                    closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
+                                        ? totalDeclaredAtClose
+                                        : countedTotal,
                                 note: closingNote,
                                 managerCode: closeManagerCode.trim(),
                             });
@@ -3987,6 +4238,8 @@ const CashRegister = () => {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                     {[
                         ["efectivo", initialCashClosure.buckets.efectivo],
+                        ["ticket", initialCashClosure.buckets.ticket],
+
                         ["tarjeta", initialCashClosure.buckets.tarjeta],
                         ["transferencia", initialCashClosure.buckets.transferencia],
 

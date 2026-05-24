@@ -12,6 +12,19 @@ const currency = (n) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
         .format(Number(n || 0));
 
+const normalizePaymentMethodLabel = (value) => {
+    const raw = String(value || "").trim();
+    const key = raw.toLowerCase();
+
+    if (!key) return "Efectivo";
+
+    if (["efectivo", "cash"].includes(key)) return "Efectivo";
+    if (["tarjeta", "card", "credit_card", "debit_card"].includes(key)) return "Tarjeta";
+    if (["transferencia", "transfer", "bank_transfer"].includes(key)) return "Transferencia";
+    if (["otros", "otro", "other"].includes(key)) return "Otros";
+
+    return raw || "Desconocido";
+};
 const getLocalYMD = () => {
     const d = new Date();
     const yyyy = d.getFullYear();
@@ -163,17 +176,18 @@ const SalesReports = () => {
                 r?.name ||
                 "Producto";
 
-            const resolvedPaymentMethod =
+            const resolvedPaymentMethod = normalizePaymentMethodLabel(
                 r?.paymentMethod ||
                 r?.method ||
-                "Desconocido";
+                "Desconocido"
+            );
 
             return {
                 ...r,
                 category: String(resolvedCategory || "").trim() || "Sin categoría",
                 presentation: String(resolvedPresentation || "").trim() || "Regular",
                 product: String(resolvedProduct || "").trim() || "Producto",
-                paymentMethod: String(resolvedPaymentMethod || "").trim() || "Desconocido",
+                paymentMethod: resolvedPaymentMethod,
                 qty: safeNumber(r?.qty ?? r?.quantity ?? 0),
                 revenue: safeNumber(r?.revenue ?? r?.sales ?? r?.total ?? 0),
                 unitCost: safeNumber(r?.unitCost ?? r?.costUnit ?? 0),
@@ -201,10 +215,18 @@ const SalesReports = () => {
 
         const byMethod = {};
         orders.forEach((o) => {
-            const method = o.paymentMethod || "Efectivo";
+            const method = normalizePaymentMethodLabel(
+                o.paymentMethod ||
+                o.paymentMethodType ||
+                o.paymentMethodReal ||
+                o.paidWith ||
+                "Efectivo"
+            );
+
             if (!byMethod[method]) {
                 byMethod[method] = { total: 0, count: 0 };
             }
+
             byMethod[method].total += Number(o.bills?.totalWithTax) || 0;
             byMethod[method].count += 1;
         });
@@ -240,6 +262,76 @@ const SalesReports = () => {
             byDayOfWeek,
         };
     }, [orders]);
+    const paymentCards = useMemo(() => {
+        const baseMethods = ["Efectivo", "Tarjeta", "Transferencia", "Otros"];
+        const extraMethods = Object.keys(salesAnalysis.byMethod || {}).filter(
+            (method) => !baseMethods.includes(method)
+        );
+
+        return [...baseMethods, ...extraMethods].map((method) => [
+            method,
+            salesAnalysis.byMethod?.[method] || { total: 0, count: 0 },
+        ]);
+    }, [salesAnalysis.byMethod]);
+    const cashSessionRangeQuery = useQuery({
+        queryKey: ["cash-session-range-for-sales-report", filters.from, filters.to],
+        queryFn: async () => {
+            const from = filters.from || getLocalYMD();
+            const to = filters.to || from;
+
+            const res = await api.get("/api/admin/cash-session/range", {
+                params: { from, to },
+            });
+
+            return res.data?.data || {};
+        },
+        enabled: !!(filters.from || filters.to),
+        keepPreviousData: true,
+        staleTime: 30_000,
+    });
+
+    const closureReportTotals = useMemo(() => {
+        const sessions = cashSessionRangeQuery.data?.sessions || [];
+
+        return sessions.reduce(
+            (acc, session) => {
+                const closing = session?.closing || {};
+
+                let ticketTotal = safeNumber(closing.ticketTotal);
+
+                if (!ticketTotal && Array.isArray(closing.breakdown)) {
+                    ticketTotal = closing.breakdown
+                        .filter((item) => String(item?.kind || "").toLowerCase() === "ticket")
+                        .reduce(
+                            (sum, item) =>
+                                sum + safeNumber(item?.value) * safeNumber(item?.count),
+                            0
+                        );
+                }
+
+                acc.ticketTotal += ticketTotal;
+                acc.transferCountedTotal += safeNumber(closing.transferCountedTotal);
+                acc.otherCountedTotal += safeNumber(closing.otherCountedTotal);
+                acc.totalDeclaredAtClose += safeNumber(closing.totalDeclaredAtClose);
+
+                return acc;
+            },
+            {
+                ticketTotal: 0,
+                transferCountedTotal: 0,
+                otherCountedTotal: 0,
+                totalDeclaredAtClose: 0,
+            }
+        );
+    }, [cashSessionRangeQuery.data]);
+    const hasClosureReportData = useMemo(() => {
+        return (
+            safeNumber(closureReportTotals.ticketTotal) > 0 ||
+            safeNumber(closureReportTotals.transferCountedTotal) > 0 ||
+            safeNumber(closureReportTotals.otherCountedTotal) > 0 ||
+            safeNumber(closureReportTotals.totalDeclaredAtClose) > 0
+        );
+    }, [closureReportTotals]);
     async function fetchProductDetail({ from, to, paymentMethod }) {
         const params = new URLSearchParams();
         params.append("from", from);
@@ -639,6 +731,7 @@ const SalesReports = () => {
                             <option value="Efectivo">Efectivo</option>
                             <option value="Tarjeta">Tarjeta</option>
                             <option value="Transferencia">Transferencia</option>
+                            <option value="Otros">Otros</option>
                         </select>
                     </div>
                 </div>
@@ -657,7 +750,7 @@ const SalesReports = () => {
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">Ticket Promedio</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">Promedio por orden</p>
                         <ShoppingCart className="w-4 h-4 text-green-400" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(salesAnalysis.avgTicket)}</p>
@@ -683,6 +776,62 @@ const SalesReports = () => {
                 </div>
             </div>
 
+        {hasClosureReportData && (
+            <div className="mb-6 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 className="text-lg font-semibold text-white">
+                            Resumen declarado en cierre
+                        </h3>
+                        <p className="text-sm text-white/70">
+                            Tickets, transferencias y otros montos registrados al cerrar caja.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
+                        <p className="text-sm text-white/75 mb-1">Tickets contados</p>
+                        <p className="text-2xl font-bold text-white">
+                            {currency(closureReportTotals.ticketTotal)}
+                        </p>
+                        <p className="text-xs text-white/50 mt-1">
+                            Crédito físico contado como efectivo
+                        </p>
+                    </div>
+
+                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
+                        <p className="text-sm text-white/75 mb-1">Transferencias declaradas</p>
+                        <p className="text-2xl font-bold text-white">
+                            {currency(closureReportTotals.transferCountedTotal)}
+                        </p>
+                        <p className="text-xs text-white/50 mt-1">
+                            Registradas en cierre
+                        </p>
+                    </div>
+
+                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
+                        <p className="text-sm text-white/75 mb-1">Otros declarados</p>
+                        <p className="text-2xl font-bold text-white">
+                            {currency(closureReportTotals.otherCountedTotal)}
+                        </p>
+                        <p className="text-xs text-white/50 mt-1">
+                            Otros montos del cierre
+                        </p>
+                    </div>
+
+                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
+                        <p className="text-sm text-white/75 mb-1">Total declarado</p>
+                        <p className="text-2xl font-bold text-[#f6b100]">
+                            {currency(closureReportTotals.totalDeclaredAtClose)}
+                        </p>
+                        <p className="text-xs text-white/50 mt-1">
+                            Según cierres de caja
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )}
             {/* ✅ Reporte por Producto/Categoría/Método (nuevo) */}
             <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2 text-sm text-gray-300">
@@ -842,8 +991,8 @@ const SalesReports = () => {
             {/* Análisis por método de pago */}
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
                 <h3 className="text-lg font-semibold text-white mb-4">Ventas por Método de Pago</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {Object.entries(salesAnalysis.byMethod).map(([method, data]) => (
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    {paymentCards.map(([method, data]) => (
                         <div key={method} className="bg-[#1a1a1a] border border-gray-800/30 rounded-lg p-3">
                             <p className="text-sm text-gray-400 mb-1">{method}</p>
                             <p className="text-lg font-bold text-white">{currency(data.total)}</p>
