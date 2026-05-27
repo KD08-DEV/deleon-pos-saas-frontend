@@ -141,6 +141,35 @@ export default function AccountsReceivable() {
         setMethod("Efectivo");
         setNote("");
     };
+    const renderReceivableActions = (row, mobile = false) => {
+        if (!["pending", "partial"].includes(row.status)) {
+            return <span className="text-gray-500 text-sm">Sin acciones</span>;
+        }
+
+        return (
+            <div className={`flex gap-2 ${mobile ? "flex-col sm:flex-row" : "justify-end"}`}>
+                <button
+                    type="button"
+                    onClick={() => openPaymentModal(row, false)}
+                    className={`rounded-lg bg-[#232323] hover:bg-[#2f2f2f] font-semibold transition-colors ${
+                        mobile ? "w-full px-3 py-2.5" : "px-3 py-2"
+                    }`}
+                >
+                    Abonar
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => openPaymentModal(row, true)}
+                    className={`rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors ${
+                        mobile ? "w-full px-3 py-2.5" : "px-3 py-2"
+                    }`}
+                >
+                    Pago completo
+                </button>
+            </div>
+        );
+    };
 
     return (
         <div className="p-4 md:p-6 text-white">
@@ -152,18 +181,18 @@ export default function AccountsReceivable() {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-2 bg-[#111] border border-[#2b2b2b] rounded-xl px-3 py-2">
-                    <Search className="w-4 h-4 text-gray-400" />
+                <div className="w-full md:w-auto flex items-center gap-2 bg-[#111] border border-[#2b2b2b] rounded-xl px-3 py-2">
+                    <Search className="w-4 h-4 text-gray-400 shrink-0" />
                     <input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Buscar cliente, teléfono o factura..."
-                        className="bg-transparent outline-none text-sm w-64 max-w-full"
+                        className="bg-transparent outline-none text-sm w-full md:w-64 min-w-0"
                     />
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
                 <div className="bg-[#111] border border-[#2b2b2b] rounded-2xl p-4">
                     <p className="text-xs text-gray-400">Balance pendiente</p>
                     <p className="text-xl font-bold mt-1">{money(summary.totalOpenBalance)}</p>
@@ -207,7 +236,7 @@ export default function AccountsReceivable() {
                 ))}
             </div>
 
-            <div className="bg-[#111] border border-[#2b2b2b] rounded-2xl overflow-hidden">
+            <div className="bg-[#111] border border-[#2b2b2b] rounded-2xl overflow-hidden max-w-full min-w-0">
                 {receivablesQuery.isLoading ? (
                     <div className="p-6 text-gray-400">Cargando cuentas por cobrar...</div>
                 ) : rows.length === 0 ? (
@@ -215,89 +244,150 @@ export default function AccountsReceivable() {
                         No hay cuentas por cobrar para este filtro.
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-[#181818] text-gray-400">
-                            <tr>
-                                <th className="text-left p-3">Cliente</th>
-                                <th className="text-left p-3">Factura</th>
-                                <th className="text-left p-3">Fecha</th>
-                                <th className="text-right p-3">Monto</th>
-                                <th className="text-right p-3">Abonado</th>
-                                <th className="text-right p-3">Pendiente</th>
-                                <th className="text-center p-3">Estado</th>
-                                <th className="text-right p-3">Acciones</th>
-                            </tr>
-                            </thead>
+                    <>
+                        {/* Vista responsive: tarjetas para pantallas pequeñas y medianas */}
+                        <div className="2xl:hidden divide-y divide-[#2b2b2b]">
+                            {rows.map((row) => {
+                                const customerName =
+                                    row.customerSnapshot?.name || row.customerId?.name || "Cliente";
 
-                            <tbody>
-                            {rows.map((row) => (
-                                <tr key={row._id} className="border-t border-[#2b2b2b]">
-                                    <td className="p-3">
-                                        <p className="font-semibold">
-                                            {row.customerSnapshot?.name || row.customerId?.name || "Cliente"}
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                            {row.customerSnapshot?.phone || row.customerId?.phone || "Sin teléfono"}
-                                        </p>
-                                    </td>
+                                const customerPhone =
+                                    row.customerSnapshot?.phone || row.customerId?.phone || "Sin teléfono";
 
-                                    <td className="p-3">
-                                        {row.invoiceNumber || row.facturaNo || row.orderId?.invoiceNumber || "N/A"}
-                                    </td>
+                                const invoiceNumber =
+                                    row.invoiceNumber || row.facturaNo || row.orderId?.invoiceNumber || "N/A";
 
-                                    <td className="p-3 text-gray-400">
-                                        {formatDate(row.createdAt)}
-                                    </td>
+                                return (
+                                    <div key={row._id} className="p-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-white truncate">
+                                                    {customerName}
+                                                </p>
 
-                                    <td className="p-3 text-right">
-                                        {money(row.originalAmount)}
-                                    </td>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    {customerPhone}
+                                                </p>
 
-                                    <td className="p-3 text-right text-emerald-300">
-                                        {money(row.paidAmount)}
-                                    </td>
+                                                <p className="text-xs text-gray-400 mt-2">
+                                                    Factura:{" "}
+                                                    <span className="text-white font-semibold">
+                                            {invoiceNumber}
+                                        </span>
+                                                </p>
 
-                                    <td className="p-3 text-right text-yellow-300 font-semibold">
-                                        {money(row.balance)}
-                                    </td>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {formatDate(row.createdAt)}
+                                                </p>
+                                            </div>
 
-                                    <td className="p-3 text-center">
                                             <span
-                                                className={`inline-flex px-3 py-1 rounded-full border text-xs font-semibold ${
+                                                className={`w-fit inline-flex px-3 py-1 rounded-full border text-xs font-semibold ${
                                                     statusClass[row.status] || statusClass.pending
                                                 }`}
                                             >
-                                                {statusLabel[row.status] || row.status}
-                                            </span>
-                                    </td>
+                                    {statusLabel[row.status] || row.status}
+                                </span>
+                                        </div>
 
-                                    <td className="p-3 text-right">
-                                        {["pending", "partial"].includes(row.status) ? (
-                                            <div className="flex justify-end gap-2">
-                                                <button
-                                                    onClick={() => openPaymentModal(row, false)}
-                                                    className="px-3 py-2 rounded-lg bg-[#232323] hover:bg-[#2f2f2f] font-semibold"
-                                                >
-                                                    Abonar
-                                                </button>
-
-                                                <button
-                                                    onClick={() => openPaymentModal(row, true)}
-                                                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold"
-                                                >
-                                                    Pago completo
-                                                </button>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
+                                            <div className="rounded-xl bg-[#181818] border border-[#2b2b2b] p-3">
+                                                <p className="text-xs text-gray-500">Monto</p>
+                                                <p className="font-bold text-white mt-1">
+                                                    {money(row.originalAmount)}
+                                                </p>
                                             </div>
-                                        ) : (
-                                            <span className="text-gray-500">Sin acciones</span>
-                                        )}
-                                    </td>
+
+                                            <div className="rounded-xl bg-[#181818] border border-[#2b2b2b] p-3">
+                                                <p className="text-xs text-gray-500">Abonado</p>
+                                                <p className="font-bold text-emerald-300 mt-1">
+                                                    {money(row.paidAmount)}
+                                                </p>
+                                            </div>
+
+                                            <div className="rounded-xl bg-[#181818] border border-[#2b2b2b] p-3">
+                                                <p className="text-xs text-gray-500">Pendiente</p>
+                                                <p className="font-bold text-yellow-300 mt-1">
+                                                    {money(row.balance)}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4">
+                                            {renderReceivableActions(row, true)}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Vista tabla: solo para pantallas muy grandes */}
+                        <div className="hidden 2xl:block overflow-x-auto max-w-full">
+                            <table className="w-full text-sm table-fixed">
+                                <thead className="bg-[#181818] text-gray-400">
+                                <tr>
+                                    <th className="text-left p-3 w-[20%]">Cliente</th>
+                                    <th className="text-left p-3 w-[12%]">Factura</th>
+                                    <th className="text-left p-3 w-[16%]">Fecha</th>
+                                    <th className="text-right p-3 w-[12%]">Monto</th>
+                                    <th className="text-right p-3 w-[12%]">Abonado</th>
+                                    <th className="text-right p-3 w-[12%]">Pendiente</th>
+                                    <th className="text-center p-3 w-[10%]">Estado</th>
+                                    <th className="text-right p-3 w-[20%]">Acciones</th>
                                 </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+
+                                <tbody>
+                                {rows.map((row) => (
+                                    <tr key={row._id} className="border-t border-[#2b2b2b]">
+                                        <td className="p-3 min-w-0">
+                                            <p className="font-semibold truncate">
+                                                {row.customerSnapshot?.name || row.customerId?.name || "Cliente"}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {row.customerSnapshot?.phone || row.customerId?.phone || "Sin teléfono"}
+                                            </p>
+                                        </td>
+
+                                        <td className="p-3 truncate">
+                                            {row.invoiceNumber || row.facturaNo || row.orderId?.invoiceNumber || "N/A"}
+                                        </td>
+
+                                        <td className="p-3 text-gray-400">
+                                            {formatDate(row.createdAt)}
+                                        </td>
+
+                                        <td className="p-3 text-right">
+                                            {money(row.originalAmount)}
+                                        </td>
+
+                                        <td className="p-3 text-right text-emerald-300">
+                                            {money(row.paidAmount)}
+                                        </td>
+
+                                        <td className="p-3 text-right text-yellow-300 font-semibold">
+                                            {money(row.balance)}
+                                        </td>
+
+                                        <td className="p-3 text-center">
+                                    <span
+                                        className={`inline-flex px-3 py-1 rounded-full border text-xs font-semibold ${
+                                            statusClass[row.status] || statusClass.pending
+                                        }`}
+                                    >
+                                        {statusLabel[row.status] || row.status}
+                                    </span>
+                                        </td>
+
+                                        <td className="p-3 text-right">
+                                            {renderReceivableActions(row, false)}
+                                        </td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
 
