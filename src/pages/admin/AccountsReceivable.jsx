@@ -147,12 +147,12 @@ export default function AccountsReceivable() {
         }
 
         return (
-            <div className={`flex gap-2 ${mobile ? "flex-col sm:flex-row" : "justify-end"}`}>
+            <div className={`flex gap-2 ${mobile ? "flex-col sm:flex-row" : "justify-end flex-wrap"}`}>
                 <button
                     type="button"
                     onClick={() => openPaymentModal(row, false)}
-                    className={`rounded-lg bg-[#232323] hover:bg-[#2f2f2f] font-semibold transition-colors ${
-                        mobile ? "w-full px-3 py-2.5" : "px-3 py-2"
+                    className={`rounded-lg bg-[#232323] hover:bg-[#2f2f2f] font-semibold transition-colors whitespace-nowrap ${
+                        mobile ? "w-full px-3 py-2.5" : "px-2.5 py-2 text-xs"
                     }`}
                 >
                     Abonar
@@ -161,8 +161,8 @@ export default function AccountsReceivable() {
                 <button
                     type="button"
                     onClick={() => openPaymentModal(row, true)}
-                    className={`rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors ${
-                        mobile ? "w-full px-3 py-2.5" : "px-3 py-2"
+                    className={`rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors whitespace-nowrap ${
+                        mobile ? "w-full px-3 py-2.5" : "px-2.5 py-2 text-xs"
                     }`}
                 >
                     Pago completo
@@ -326,14 +326,14 @@ export default function AccountsReceivable() {
                             <table className="w-full text-sm table-fixed">
                                 <thead className="bg-[#181818] text-gray-400">
                                 <tr>
-                                    <th className="text-left p-3 w-[20%]">Cliente</th>
-                                    <th className="text-left p-3 w-[12%]">Factura</th>
-                                    <th className="text-left p-3 w-[16%]">Fecha</th>
-                                    <th className="text-right p-3 w-[12%]">Monto</th>
-                                    <th className="text-right p-3 w-[12%]">Abonado</th>
-                                    <th className="text-right p-3 w-[12%]">Pendiente</th>
-                                    <th className="text-center p-3 w-[10%]">Estado</th>
-                                    <th className="text-right p-3 w-[20%]">Acciones</th>
+                                    <th className="text-left p-3 w-[17%]">Cliente</th>
+                                    <th className="text-left p-3 w-[11%]">Factura</th>
+                                    <th className="text-left p-3 w-[13%]">Fecha</th>
+                                    <th className="text-right p-3 w-[10%]">Monto</th>
+                                    <th className="text-right p-3 w-[10%]">Abonado</th>
+                                    <th className="text-right p-3 w-[10%]">Pendiente</th>
+                                    <th className="text-center p-3 w-[11%]">Estado</th>
+                                    <th className="text-right p-3 w-[18%]">Acciones</th>
                                 </tr>
                                 </thead>
 
@@ -369,17 +369,17 @@ export default function AccountsReceivable() {
                                             {money(row.balance)}
                                         </td>
 
-                                        <td className="p-3 text-center">
-                                    <span
-                                        className={`inline-flex px-3 py-1 rounded-full border text-xs font-semibold ${
-                                            statusClass[row.status] || statusClass.pending
-                                        }`}
-                                    >
-                                        {statusLabel[row.status] || row.status}
-                                    </span>
+                                        <td className="p-3 text-center align-middle">
+                                            <span
+                                                className={`inline-flex items-center justify-center min-w-[76px] px-2.5 py-1 rounded-full border text-[11px] font-semibold whitespace-nowrap ${
+                                                    statusClass[row.status] || statusClass.pending
+                                                }`}
+                                            >
+                                                {statusLabel[row.status] || row.status}
+                                            </span>
                                         </td>
 
-                                        <td className="p-3 text-right">
+                                        <td className="p-3 text-right align-middle">
                                             {renderReceivableActions(row, false)}
                                         </td>
                                     </tr>
