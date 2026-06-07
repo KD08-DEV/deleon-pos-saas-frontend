@@ -4,6 +4,7 @@
   "description": "Sistema de Punto de Venta De Leon Soft",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "landscape", //any
   "background_color": "#111827",
   "theme_color": "#111827",
   "icons": [

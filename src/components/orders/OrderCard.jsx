@@ -138,15 +138,14 @@ const getOrderProductTypes = (order) => {
     return Array.from(unique);
 };
 
-const getWaitTimeConfig = (order) => {
+const getWaitTimeConfig = (order, currentTime = Date.now()) => {
     const status = String(order?.orderStatus || "");
     if (["Completado", "Cancelado"].includes(status)) return null;
 
     const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
 
-    const minutes = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 60000));
-
+    const minutes = Math.max(0, Math.floor((currentTime - createdAt.getTime()) / 60000));
     if (minutes < 5) {
         return {
             label: "Recién entró",
@@ -222,7 +221,21 @@ const getActiveRegisterId = () => {
     }
 };
 
-const OrderCard = ({ order, onStatusChanged, onPrint }) => {
+const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "comfortable" }) => {
+    const isCompactView = viewMode === "compact";
+    const isListView = viewMode === "list";
+
+    const cardSizeClass = isCompactView
+        ? "px-3 py-3 sm:px-4 sm:py-4 min-h-[220px]"
+        : isListView
+            ? "px-4 py-4 sm:px-5 sm:py-5 min-h-[180px]"
+            : "px-4 py-4 sm:px-5 sm:py-5 min-h-[280px]";
+
+    const itemListHeightClass = isCompactView
+        ? "max-h-16"
+        : isListView
+            ? "max-h-20"
+            : "max-h-24";
     const { enqueueSnackbar } = useSnackbar();
 
     const userState = useSelector((state) => state.user);
@@ -401,8 +414,8 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
 
     const productTypes = useMemo(() => getOrderProductTypes(localOrder), [localOrder]);
     const waitTimeConfig = useMemo(
-        () => getWaitTimeConfig(localOrder),
-        [localOrder?.createdAt, localOrder?.orderStatus]
+        () => getWaitTimeConfig(localOrder, currentTime),
+        [localOrder?.createdAt, localOrder?.orderStatus, currentTime]
     );
     const statusHistory = useMemo(() => {
         const safeHistory = Array.isArray(localOrder?.statusHistory) ? [...localOrder.statusHistory] : [];
@@ -811,7 +824,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ scale: 1.02, y: -2 }}
-                className={`flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50 px-4 py-4 sm:px-5 sm:py-5 h-full min-h-[280px] hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group ${waitTimeConfig?.cardBorder || ""}`}
+                className={`flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50${cardSizeClass} h-full hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group ${waitTimeConfig?.cardBorder || ""}`}
             >
                 {/* HEADER */}
                 <div className="flex items-start gap-3 justify-between mb-4">
@@ -863,7 +876,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                                         {waitTimeConfig.label} · {waitTimeConfig.elapsed}
                                     </span>
                                 )}
-                                {productTypes.slice(0, 3).map((type) => (
+                                {!isCompactView && productTypes.slice(0, 3).map((type) => (
                                     <span
                                         key={type}
                                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25 text-[10px] font-medium"
@@ -911,7 +924,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint }) => {
                             </span>
                         </div>
 
-                        <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                        <div className={`space-y-1.5 ${itemListHeightClass} overflow-y-auto`}>
                             {itemsSummary.slice(0, 3).map((line, idx) => (
                                 <div key={idx} className="text-sm text-[#f5f5f5] truncate flex items-center gap-2">
                                     <span className="text-blue-400 shrink-0">•</span>

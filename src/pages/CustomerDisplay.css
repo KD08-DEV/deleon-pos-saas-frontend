@@ -1,0 +1,640 @@
+.customer-display {
+    --bg: #050505;
+    --panel: #111111;
+    --panel-soft: #191919;
+    --border: rgba(255, 255, 255, 0.11);
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.58);
+    --accent: #f6b100;
+    --accent-dark: #b98400;
+
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background:
+            radial-gradient(circle at top left, rgba(246, 177, 0, 0.1), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(246, 177, 0, 0.07), transparent 32%),
+            var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.customer-display,
+.customer-display * {
+    box-sizing: border-box;
+}
+
+.customer-display__shell {
+    width: 100%;
+    height: 100%;
+    padding: clamp(10px, 1.65vw, 24px);
+    display: grid;
+    grid-template-columns: minmax(0, 1.38fr) minmax(340px, 0.92fr);
+    gap: clamp(12px, 1.7vw, 24px);
+    overflow: hidden;
+}
+
+.cd-panel,
+.cd-summary-panel {
+    min-width: 0;
+    min-height: 0;
+    border-radius: clamp(20px, 2vw, 30px);
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.cd-order-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    background:
+            linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+            var(--panel);
+    border: 1px solid var(--border);
+}
+
+.cd-header {
+    padding: clamp(14px, 1.8vw, 28px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+}
+
+.cd-brand {
+    margin: 0;
+    color: var(--accent);
+    font-size: clamp(0.58rem, 0.8vw, 0.78rem);
+    font-weight: 900;
+    letter-spacing: 0.42em;
+}
+
+.cd-title {
+    margin: 0.45rem 0 0;
+    font-size: clamp(1.25rem, 2.65vw, 2.65rem);
+    line-height: 1;
+    font-weight: 950;
+    letter-spacing: -0.055em;
+}
+
+.cd-customer {
+    margin: 0.7rem 0 0;
+    color: var(--muted);
+    font-size: clamp(0.78rem, 1.05vw, 1rem);
+}
+
+.cd-customer strong {
+    color: var(--text);
+}
+
+.cd-order-meta {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.cd-order-meta span {
+    display: block;
+    color: var(--muted);
+    font-size: clamp(0.66rem, 0.9vw, 0.82rem);
+    font-weight: 700;
+}
+
+.cd-order-meta strong {
+    display: block;
+    margin-top: 0.22rem;
+    color: var(--accent);
+    font-size: clamp(0.95rem, 1.35vw, 1.25rem);
+    font-weight: 950;
+}
+
+.cd-status-pill {
+    display: inline-flex;
+    margin-top: 0.65rem;
+    padding: 0.38rem 0.62rem;
+    border-radius: 999px;
+    background: rgba(246, 177, 0, 0.12);
+    border: 1px solid rgba(246, 177, 0, 0.22);
+    color: var(--accent);
+    font-size: clamp(0.62rem, 0.8vw, 0.76rem);
+    font-style: normal;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.cd-status-paid {
+    background: rgba(46, 204, 113, 0.12);
+    border-color: rgba(46, 204, 113, 0.25);
+    color: #63e99a;
+}
+
+.cd-items-region {
+    min-height: 0;
+    overflow: hidden;
+    padding: clamp(10px, 1.35vw, 18px);
+}
+
+.cd-items-list {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 1vw, 14px);
+    overscroll-behavior: contain;
+}
+
+.cd-items-list::-webkit-scrollbar {
+    width: 7px;
+}
+
+.cd-items-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+}
+
+.cd-items-list::-webkit-scrollbar-thumb {
+    background: rgba(246, 177, 0, 0.45);
+    border-radius: 999px;
+}
+
+.cd-item-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: clamp(10px, 1.4vw, 20px);
+    min-height: clamp(62px, 9vh, 88px);
+    padding: clamp(12px, 1.35vw, 18px) clamp(14px, 1.55vw, 22px);
+    border-radius: clamp(14px, 1.4vw, 20px);
+    border: 1px solid var(--border);
+    background:
+            linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+            var(--panel-soft);
+    animation: cd-soft-in 180ms ease-out both;
+}
+
+.cd-item-card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 16%;
+    bottom: 16%;
+    width: 4px;
+    border-radius: 0 999px 999px 0;
+    background: var(--accent);
+    opacity: 0.85;
+}
+
+.cd-item-info {
+    min-width: 0;
+}
+
+.cd-item-name {
+    margin: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: clamp(1rem, 1.65vw, 1.65rem);
+    line-height: 1.08;
+    font-weight: 950;
+    letter-spacing: -0.035em;
+}
+
+.cd-item-qty {
+    margin: 0.42rem 0 0;
+    color: var(--muted);
+    font-size: clamp(0.74rem, 1vw, 0.95rem);
+    font-weight: 650;
+}
+
+.cd-item-qty strong {
+    color: var(--text);
+    font-weight: 950;
+}
+
+.cd-item-price {
+    color: var(--accent);
+    font-size: clamp(1.05rem, 2vw, 2rem);
+    line-height: 1;
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.cd-empty-state {
+    height: 100%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    text-align: center;
+    padding: 20px;
+}
+
+.cd-empty-badge {
+    width: clamp(68px, 9vw, 104px);
+    height: clamp(68px, 9vw, 104px);
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: rgba(246, 177, 0, 0.11);
+    border: 1px solid rgba(246, 177, 0, 0.28);
+    color: var(--accent);
+    font-size: clamp(2rem, 4vw, 3.8rem);
+    font-weight: 950;
+}
+
+.cd-empty-state h2 {
+    margin: 1rem 0 0;
+    font-size: clamp(1.35rem, 2.6vw, 2.5rem);
+    font-weight: 950;
+    letter-spacing: -0.045em;
+}
+
+.cd-empty-state p {
+    margin: 0.55rem 0 0;
+    max-width: 440px;
+    color: var(--muted);
+    font-size: clamp(0.82rem, 1.1vw, 1rem);
+}
+
+.cd-summary-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(18px, 2.25vw, 34px);
+    background:
+            radial-gradient(circle at top right, rgba(255, 255, 255, 0.28), transparent 24%),
+            linear-gradient(145deg, var(--accent), #dda000 52%, var(--accent-dark));
+    color: #050505;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cd-summary-panel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 38%),
+            radial-gradient(circle at bottom left, rgba(0, 0, 0, 0.13), transparent 40%);
+}
+
+.cd-total-block,
+.cd-summary-content {
+    position: relative;
+    z-index: 1;
+}
+
+.cd-total-label {
+    margin: 0;
+    color: rgba(0, 0, 0, 0.62);
+    font-size: clamp(0.65rem, 0.9vw, 0.9rem);
+    font-weight: 950;
+    letter-spacing: 0.42em;
+}
+
+.cd-total-value {
+    margin: clamp(0.6rem, 1.2vw, 1.1rem) 0 0;
+    color: #030303;
+    font-size: clamp(3rem, 6vw, 6.8rem);
+    line-height: 0.92;
+    font-weight: 1000;
+    letter-spacing: -0.075em;
+    animation: cd-total-pulse 260ms ease-out both;
+}
+
+.cd-paid-banner {
+    margin-top: clamp(12px, 1.4vw, 20px);
+    padding: clamp(10px, 1.1vw, 14px) clamp(12px, 1.3vw, 18px);
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.15);
+    display: grid;
+    gap: 2px;
+}
+
+.cd-paid-banner strong {
+    font-size: clamp(0.98rem, 1.25vw, 1.25rem);
+    font-weight: 950;
+}
+
+.cd-paid-banner span {
+    color: rgba(0, 0, 0, 0.68);
+    font-size: clamp(0.75rem, 0.9vw, 0.9rem);
+    font-weight: 700;
+}
+
+.cd-summary-content {
+    margin-top: clamp(14px, 2vw, 26px);
+}
+
+.cd-summary-breakdown {
+    display: grid;
+    gap: clamp(8px, 0.95vw, 12px);
+}
+
+.cd-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: clamp(0.9rem, 1.12vw, 1.15rem);
+    font-weight: 850;
+}
+
+.cd-summary-row span {
+    color: rgba(0, 0, 0, 0.75);
+}
+
+.cd-summary-row strong {
+    font-weight: 950;
+    white-space: nowrap;
+}
+
+.cd-summary-row.is-negative strong {
+    color: #5d1400;
+}
+
+.cd-payment-box {
+    margin-top: clamp(12px, 1.5vw, 22px);
+    padding: clamp(12px, 1.35vw, 18px);
+    border-radius: clamp(14px, 1.4vw, 18px);
+    background: rgba(0, 0, 0, 0.13);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.cd-payment-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: clamp(1rem, 1.35vw, 1.35rem);
+    font-weight: 950;
+}
+
+.cd-payment-row strong {
+    text-align: right;
+}
+
+.cd-cash-grid {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.cd-cash-grid div {
+    display: grid;
+    gap: 2px;
+}
+
+.cd-cash-grid span {
+    color: rgba(0, 0, 0, 0.62);
+    font-size: clamp(0.72rem, 0.85vw, 0.85rem);
+    font-weight: 850;
+}
+
+.cd-cash-grid strong {
+    font-size: clamp(0.9rem, 1.1vw, 1.05rem);
+    font-weight: 950;
+}
+
+.cd-cash-grid .is-missing strong {
+    color: #7a0000;
+}
+
+.cd-last-update {
+    margin: clamp(10px, 1.25vw, 18px) 0 0;
+    color: rgba(0, 0, 0, 0.52);
+    font-size: clamp(0.62rem, 0.8vw, 0.78rem);
+    font-weight: 750;
+}
+
+/* Compact mode: 7 pulgadas y pantallas bajas */
+.customer-display.is-compact .customer-display__shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: clamp(8px, 1.5vw, 12px);
+    padding: clamp(8px, 1.8vw, 14px);
+}
+
+.customer-display.is-compact .cd-header {
+    padding: clamp(10px, 1.7vw, 14px);
+}
+
+.customer-display.is-compact .cd-brand {
+    font-size: clamp(0.52rem, 1.1vw, 0.68rem);
+}
+
+.customer-display.is-compact .cd-title {
+    font-size: clamp(1.05rem, 3.4vw, 1.65rem);
+}
+
+.customer-display.is-compact .cd-status-pill {
+    display: none;
+}
+
+.customer-display.is-compact .cd-items-region {
+    padding: clamp(8px, 1.5vw, 12px);
+}
+
+.customer-display.is-compact .cd-items-list {
+    gap: 8px;
+}
+
+.customer-display.is-compact .cd-item-card {
+    min-height: clamp(52px, 11vh, 70px);
+    padding: clamp(9px, 1.4vw, 12px) clamp(12px, 1.7vw, 16px);
+    border-radius: 15px;
+}
+
+.customer-display.is-compact .cd-item-name {
+    font-size: clamp(0.9rem, 2.6vw, 1.2rem);
+}
+
+.customer-display.is-compact .cd-item-qty {
+    margin-top: 0.25rem;
+    font-size: clamp(0.68rem, 1.8vw, 0.82rem);
+}
+
+.customer-display.is-compact .cd-item-price {
+    font-size: clamp(1rem, 3.4vw, 1.55rem);
+}
+
+.customer-display.is-compact .cd-summary-panel {
+    min-height: clamp(142px, 34vh, 194px);
+    padding: clamp(12px, 2vw, 18px);
+    border-radius: 22px;
+}
+
+.customer-display.is-compact .cd-total-label {
+    font-size: clamp(0.55rem, 1.4vw, 0.7rem);
+}
+
+.customer-display.is-compact .cd-total-value {
+    font-size: clamp(2.35rem, 8vw, 4.35rem);
+}
+
+.customer-display.is-compact .cd-summary-content {
+    margin-top: 10px;
+}
+
+.customer-display.is-compact .cd-summary-breakdown {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.customer-display.is-compact .cd-summary-row {
+    display: grid;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.08);
+    font-size: clamp(0.68rem, 1.6vw, 0.82rem);
+}
+
+.customer-display.is-compact .cd-payment-box {
+    margin-top: 8px;
+    padding: 10px 12px;
+}
+
+.customer-display.is-compact .cd-payment-row {
+    font-size: clamp(0.9rem, 2.3vw, 1.12rem);
+}
+
+.customer-display.is-compact .cd-cash-grid {
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.customer-display.is-compact .cd-last-update {
+    margin-top: 8px;
+    font-size: clamp(0.58rem, 1.3vw, 0.68rem);
+}
+
+/* Si la ventana no viene con ?screen=7 pero el tamaño es pequeño, también se adapta */
+@media (max-width: 1049px), (max-height: 649px) {
+    .customer-display:not(.is-wide) .customer-display__shell,
+    .customer-display .customer-display__shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+}
+
+@media (max-width: 900px), (max-height: 620px) {
+    .customer-display__shell {
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .cd-header {
+        padding: 12px;
+    }
+
+    .cd-title {
+        font-size: clamp(1.05rem, 3.4vw, 1.55rem);
+    }
+
+    .cd-status-pill {
+        display: none;
+    }
+
+    .cd-item-card {
+        min-height: 56px;
+    }
+
+    .cd-summary-panel {
+        min-height: 150px;
+    }
+
+    .cd-summary-breakdown {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .cd-summary-row {
+        display: grid;
+        gap: 2px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.08);
+        font-size: clamp(0.68rem, 1.6vw, 0.82rem);
+    }
+}
+
+@media (max-height: 520px) {
+    .cd-header {
+        padding: 9px 12px;
+    }
+
+    .cd-brand {
+        font-size: 0.52rem;
+    }
+
+    .cd-title {
+        margin-top: 0.25rem;
+    }
+
+    .cd-items-region {
+        padding: 7px 10px;
+    }
+
+    .cd-item-card {
+        min-height: 48px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    .cd-item-qty {
+        margin-top: 0.15rem;
+    }
+
+    .cd-summary-panel {
+        min-height: 130px;
+        padding: 12px;
+    }
+
+    .cd-summary-breakdown {
+        display: none;
+    }
+
+    .cd-total-value {
+        font-size: clamp(2.25rem, 7.5vw, 3.65rem);
+    }
+
+    .cd-payment-box {
+        margin-top: 8px;
+        padding: 9px 12px;
+    }
+}
+
+@keyframes cd-soft-in {
+    from {
+        opacity: 0.65;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes cd-total-pulse {
+    0% {
+        transform: scale(0.985);
+        opacity: 0.78;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}

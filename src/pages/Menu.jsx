@@ -13,6 +13,12 @@ import { useDispatch, useSelector } from "react-redux";
 import { clearDraftContext } from "../redux/slices/customerSlice";
 import { AnimatePresence, motion } from "framer-motion";
 import { enqueueSnackbar } from "notistack";
+import {
+    buildDisplayItems,
+    clearCustomerDisplay,
+    openCustomerDisplayWindow,
+    publishCustomerDisplayPatch,
+} from "../lib/customerDisplaySync";
 
 const TABLES_ROUTE = "/tables";
 
@@ -168,6 +174,35 @@ const Menu = () => {
         order?._id ||
         null;
 
+    useEffect(() => {
+        publishCustomerDisplayPatch({
+            status: cartItems.length ? "active" : "idle",
+            orderId: currentOrderId,
+            customerName: displayCustomerName === "Customer Name" ? "" : displayCustomerName,
+            tableLabel: displayTableLabel || "",
+            orderSource: order?.orderSource || draft?.orderSource || "DINE_IN",
+            items: buildDisplayItems(cartItems),
+            subtotal: Number(totalAmount.toFixed(2)),
+            total: Number(totalAmount.toFixed(2)),
+            message: cartItems.length
+                ? "Revise su pedido en pantalla."
+                : "Su orden aparecerá aquí.",
+        });
+    }, [
+        cartItems,
+        currentOrderId,
+        displayCustomerName,
+        displayTableLabel,
+        order?.orderSource,
+        draft?.orderSource,
+        totalAmount,
+    ]);
+
+    useEffect(() => {
+        return () => {
+            clearCustomerDisplay();
+        };
+    }, []);
     useEffect(() => {
         document.title = "POS | Menu";
     }, []);
@@ -444,39 +479,52 @@ const Menu = () => {
     };
 
     return (
-        <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col pb-24">
+        <div className="bg-[#1f1f1f] min-h-[100dvh] flex flex-col pb-24 relative">
+            <div className="hidden md:block fixed right-5 top-[82px] z-40 group">
+                <button
+                    type="button"
+                    className="flex items-center gap-2 px-3 py-2 rounded-full bg-[#121212]/80 border border-white/10 text-[#b8b8b8] text-[11px] font-bold shadow-lg backdrop-blur-md hover:text-white hover:border-[#f6b100]/40 hover:bg-[#1b1b1b] transition-all"
+                    title="Abrir pantalla del cliente"
+                >
+                    <span className="w-2 h-2 rounded-full bg-[#f6b100]" />
+                    Pantalla cliente
+                </button>
+
+                <div className="absolute right-0 mt-2 w-44 rounded-2xl border border-white/10 bg-[#111111]/95 shadow-2xl backdrop-blur-md p-2 opacity-0 invisible translate-y-1 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 transition-all">
+                    <button
+                        type="button"
+                        onClick={() => openCustomerDisplayWindow("7")}
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-white/80 hover:bg-white/10 hover:text-white transition-all"
+                    >
+                        Abrir pantalla 7"
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => openCustomerDisplayWindow("11")}
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-[#f6b100] hover:bg-[#f6b100]/10 transition-all"
+                    >
+                        Abrir pantalla 11.6"
+                    </button>
+                </div>
+            </div>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row gap-3">
                 <div className="flex-1 lg:flex-[3] min-w-0 flex flex-col overflow-hidden">
-                    <div className="flex items-center justify-between px-10 py-4 shrink-0">
-                        <div className="flex items-center gap-4">
-                            <button
-                                type="button"
-                                onClick={handleBackFromMenu}
-                                className="h-11 w-11 rounded-xl bg-[#2da8ff] text-white text-2xl font-bold flex items-center justify-center hover:bg-[#4bb6ff] active:scale-95 transition-all shadow-lg shadow-black/20"
-                                aria-label="Volver"
-                            >
-                                ←
-                            </button>
+                    <div className="flex items-center justify-center gap-4 relative">
+                        <div className="flex items-center gap-3 cursor-pointer">
+                            <MdRestaurantMenu className="text-[#f5f5f5] text-4xl" />
 
-                            <h1 className="text-[#f5f5f5] text-2xl font-bold tracking-wider">
-                                Menu
-                            </h1>
-                        </div>
+                            <div className="flex flex-col items-start">
+                                <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide">
+                                    {displayCustomerName}
+                                </h1>
 
-                        <div className="flex items-center justify-around gap-4">
-                            <div className="flex items-center gap-3 cursor-pointer">
-                                <MdRestaurantMenu className="text-[#f5f5f5] text-4xl" />
-                                <div className="flex flex-col items-start">
-                                    <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide">
-                                        {displayCustomerName}
-                                    </h1>
-
-                                    <p className="text-xs text-[#ababab] font-medium">
-                                        Table : {displayTableLabel}
-                                    </p>
-                                </div>
+                                <p className="text-xs text-[#ababab] font-medium">
+                                    Table : {displayTableLabel}
+                                </p>
                             </div>
                         </div>
+
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-hidden">

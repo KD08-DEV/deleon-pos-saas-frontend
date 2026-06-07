@@ -14,6 +14,11 @@ import Ticket from "../ticket/Ticket";
 import useTenant from "../../hooks/useTenant";
 import api from "../../lib/api";
 
+import {
+    buildDisplayItems,
+    publishCustomerDisplayPatch,
+} from "../../lib/customerDisplaySync";
+
 
 const num = (v) => {
     if (v === null || v === undefined) return 0;
@@ -220,7 +225,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         // En tu flujo, Facturar puede generar factura y pago,
         // pero la mesa debe seguir ocupada hasta presionar "Desocupar mesa".
         const isReallyClosedOrder =
-            status === "Completado" ||
             status === "Cancelado";
 
         if (!isReallyClosedOrder) return;
@@ -307,6 +311,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     // Tenant Info
     const { tenantInfo } = useTenant();
     const tenantFeatures = tenantInfo?.features || {};
+    const { data: usageSummary } = useQuery({
+        queryKey: ["checkout-plan-usage"],
+        queryFn: async () => {
+            const res = await api.get("/api/admin/usage");
+            return res.data?.data || res.data;
+        },
+        staleTime: 60_000,
+    });
+
+    const rawPlan = String(
+        usageSummary?.plan ||
+        tenantInfo?.plan ||
+        tenantInfo?.subscriptionPlan ||
+        tenantInfo?.subscription?.plan ||
+        ""
+    )
+        .trim()
+        .toLowerCase();
+
+    const canUseCreditSales = rawPlan ? rawPlan !== "emprendedor" : false;
 
     const discountEnabledByTenant = tenantFeatures?.discount?.enabled === true;
     const taxEnabledByTenant = tenantFeatures?.tax?.enabled === true;
@@ -366,6 +390,11 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const printTargetRef = useRef("invoice");
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
+    useEffect(() => {
+        if (!canUseCreditSales && paymentMethod === "Credito") {
+            setPaymentMethod("Efectivo");
+        }
+    }, [canUseCreditSales, paymentMethod]);
     const [cashReceived, setCashReceived] = useState("");
     useEffect(() => {
         if (isAppDelivery) return; // PedidoYa/UberEats se fuerzan
@@ -400,6 +429,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     });
 
     const leaveAfterSaveRef = useRef(false);
+    const customerDisplayPaidUntilRef = useRef(0);
 
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
@@ -659,6 +689,47 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [cashReceivedAmount, totalToPay]);
 
     const showCashChangeBox = !isAppDelivery && paymentMethod === "Efectivo";
+    useEffect(() => {
+        if (Date.now() < customerDisplayPaidUntilRef.current) return;
+
+        publishCustomerDisplayPatch({
+            status: itemsArray.length ? "payment" : "idle",
+            items: buildDisplayItems(itemsArray),
+            subtotal: Number(num(subtotal).toFixed(2)),
+            discount: Number(num(discount).toFixed(2)),
+            deliveryFee: Number(num(deliveryFeeCalc).toFixed(2)),
+            tax: Number(num(tax).toFixed(2)),
+            tip: Number(num(tip).toFixed(2)),
+            commission: Number(num(commissionAmountEffective).toFixed(2)),
+            total: Number(num(totalToPay).toFixed(2)),
+            paymentMethod,
+            cashReceived: paymentMethod === "Efectivo"
+                ? Number(num(cashReceivedAmount).toFixed(2))
+                : 0,
+            cashChange: paymentMethod === "Efectivo"
+                ? Number(num(cashChange).toFixed(2))
+                : 0,
+            cashMissing: paymentMethod === "Efectivo"
+                ? Number(num(cashMissing).toFixed(2))
+                : 0,
+            message: itemsArray.length
+                ? "Revise su pedido antes de pagar."
+                : "Su orden aparecerá aquí.",
+        });
+    }, [
+        itemsArray,
+        subtotal,
+        discount,
+        deliveryFeeCalc,
+        tax,
+        tip,
+        commissionAmountEffective,
+        totalToPay,
+        paymentMethod,
+        cashReceivedAmount,
+        cashChange,
+        cashMissing,
+    ]);
 
 
     // Si el usuario activa wantsFiscal pero el tenant no puede, lo apagamos y avisamos
@@ -851,9 +922,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             order?.table?.id ||
             null;
         const basePayload = {
-            // Facturar debe cerrar la orden para que el backend libere la mesa.
-            // Ticket/Actualizar solo guardan la orden y mantienen la mesa ocupada.
-            orderStatus: isInvoiceSubmit ? "Completado" : "En Progreso",
+            // Facturar genera la factura, pero la orden debe seguir En Progreso.
+            // La mesa NO se libera automáticamente por facturar.
+            orderStatus: "En Progreso",
             items,
             customerId: selectedCustomerId || null,
 
@@ -1063,12 +1134,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 getTableIdFromAny(draftTable) ||
                 getTableIdFromAny(order?.table);
 
+            const serverStatus = String(server?.orderStatus || "").trim();
+
+// Facturar NO debe liberar la mesa.
+// La mesa solo se libera cuando se presiona "Desocupar mesa"
+// o cuando la orden se cancela.
             const shouldReleaseTable =
                 tableIdToSync &&
-                (
-                    currentPrintTarget === "invoice" ||
-                    ["Completado", "Cancelado"].includes(String(server?.orderStatus || "").trim())
-                );
+                serverStatus === "Cancelado";
 
             const shouldOccupyTable =
                 tableIdToSync &&
@@ -1411,6 +1484,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             setOrderInfo(invoice);
             setShowInvoice(true);
+            customerDisplayPaidUntilRef.current = Date.now() + 6000;
+
+            publishCustomerDisplayPatch({
+                status: "paid",
+                items: buildDisplayItems(normalizedTicketItems),
+                subtotal: Number(num(bills.subtotal).toFixed(2)),
+                discount: Number(num(bills.discount).toFixed(2)),
+                deliveryFee: Number(num(bills.deliveryFee).toFixed(2)),
+                tax: Number(num(bills.tax).toFixed(2)),
+                tip: Number(num(bills.tip).toFixed(2)),
+                total: Number(num(bills.totalWithTax).toFixed(2)),
+                paymentMethod: invoice.paymentMethod || paymentMethod,
+                cashReceived: Number(num(bills.cashReceived).toFixed(2)),
+                cashChange: Number(num(bills.cashChange).toFixed(2)),
+                cashMissing: 0,
+                message: "Factura generada. Gracias por su compra.",
+            });
 
 // La factura ya cerró la orden. Limpiamos el contexto local para que
 // al volver a mesas no se reutilicen los productos de esta mesa.
@@ -1452,6 +1542,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const handlePlaceOrder = (target = "invoice") => {
+        if (!canUseCreditSales && paymentMethod === "Credito") {
+            setPaymentMethod("Efectivo");
+
+            enqueueSnackbar("Tu plan actual no permite ventas a crédito.", {
+                variant: "warning",
+            });
+
+            return;
+        }
         if (paymentMethod === "Credito" && !selectedCustomerId) {
             enqueueSnackbar("Para vender fiado debes seleccionar o crear un cliente guardado.", {
                 variant: "warning",
@@ -1543,12 +1642,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         orderMutation.mutate(payload);
     };
 
+
     const handleInvoiceClose = () => {
         setShowInvoice(false);
         setIsOrderModalOpen(false);
 
-        // La factura ya cerró la orden y liberó la mesa.
-        // Aseguramos que el carrito/draft queden limpios al cerrar la factura.
+// La factura ya fue generada.
+// La mesa debe seguir ocupada hasta presionar "Desocupar mesa".
+// Limpiamos solo el carrito/draft local para evitar reutilizar productos.
         dispatch(removeAllItems());
         dispatch(clearDraftContext());
 
@@ -1931,7 +2032,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             {/* Método de pago */}
 
-            <div className="grid grid-cols-2 gap-3 px-5 mt-4">
+            <div
+                className={`grid gap-3 px-5 mt-4 ${
+                    isAppDelivery
+                        ? "grid-cols-1"
+                        : canUseCreditSales
+                            ? "grid-cols-2"
+                            : "grid-cols-1 sm:grid-cols-3"
+                }`}
+            >
                 {isAppDelivery  ? (
                     <button
                         type="button"
@@ -1997,7 +2106,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     paymentMethodMutation.mutate("Transferencia");
                                 }
                             }}
-                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center break-words transition-all ${
+                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
                                 paymentMethod === "Transferencia"
                                     ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
                                     : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
@@ -2005,23 +2114,25 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         >
                             Transferencia
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setPaymentMethod("Credito");
+                        {canUseCreditSales && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPaymentMethod("Credito");
 
-                                if (orderId) {
-                                    paymentMethodMutation.mutate("Credito");
-                                }
-                            }}
-                            className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
-                                paymentMethod === "Credito"
-                                    ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
-                                    : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
-                            }`}
-                        >
-                            Credito
-                        </button>
+                                    if (orderId) {
+                                        paymentMethodMutation.mutate("Credito");
+                                    }
+                                }}
+                                className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
+                                    paymentMethod === "Credito"
+                                        ? "bg-[#2b2b2b] text-white border border-[#3a3a3a]"
+                                        : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
+                                }`}
+                            >
+                                Crédito
+                            </button>
+                        )}
                     </>
                 )}
             </div>

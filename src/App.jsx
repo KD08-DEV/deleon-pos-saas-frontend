@@ -17,7 +17,7 @@ import BottomNav from "./components/shared/BottomNav";
 import AdminRegister from "@components/auth/AdminRegister.jsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-
+import CustomerDisplay from "./pages/CustomerDisplay";
 import Admin from "./pages/admin/Admin";
 
 import SuperAdminDashboard from "./pages/superAdmin/SuperAdminDashboard";
@@ -207,8 +207,15 @@ function Layout() {
 
 
     const isSuperAdminRoute = location.pathname.startsWith("/superadmin");
+
+    const isCustomerDisplayRoute =
+        location.pathname === "/customer-display" ||
+        location.pathname.startsWith("/customer-display/");
+
     const shouldShowPosChrome =
-        !hideHeaderRoutes.includes(location.pathname) && !isSuperAdminRoute;
+        !hideHeaderRoutes.includes(location.pathname) &&
+        !isSuperAdminRoute &&
+        !isCustomerDisplayRoute;
     // ====== CASH SESSION GATE (solo Cajera) ======
     const isCajera = userData?.role === "Cajera";
     const [cashGateLoading, setCashGateLoading] = useState(false);
@@ -479,11 +486,15 @@ function Layout() {
     };
 
     useEffect(() => {
+        if (isCustomerDisplayRoute) return;
         if (!isCajera) return;
+
         fetchCashSession();
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isCajera]);
+    }, [isCajera, isCustomerDisplayRoute]);
     useEffect(() => {
+        if (isCustomerDisplayRoute) return;
         if (!isCajera) return;
 
         const handleCashSessionClosed = async (event) => {
@@ -517,7 +528,7 @@ function Layout() {
         };
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isCajera]);
+    }, [isCajera, isCustomerDisplayRoute]);
 
     const handleOpenCash = async () => {
         setCashGateError("");
@@ -599,7 +610,8 @@ function Layout() {
         isAuth &&
         !isTenantReady &&
         !hideHeaderRoutes.includes(location.pathname) &&
-        !isSuperAdminRoute
+        !isSuperAdminRoute &&
+        !isCustomerDisplayRoute
     ) {
 
         return (
@@ -610,7 +622,10 @@ function Layout() {
     }
 
 
-    const mustBlock = isCajera && (openModal || cashGateLoading);
+    const mustBlock =
+        !isCustomerDisplayRoute &&
+        isCajera &&
+        (openModal || cashGateLoading);
 
     return (
         <>
@@ -618,7 +633,7 @@ function Layout() {
             <SessionHeartbeat />
 
             {/* Modal Apertura de Caja / Cierre pendiente (solo Cajera) */}
-            {isCajera && openModal && (
+            {!isCustomerDisplayRoute && isCajera && openModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
                     <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
                         {cashGateMode === "pending-close" ? (
@@ -771,6 +786,14 @@ function Layout() {
                     }
                 />
                 <Route
+                    path="/customer-display"
+                    element={
+                        <ProtectedRoutes>
+                            <CustomerDisplay />
+                        </ProtectedRoutes>
+                    }
+                />
+                <Route
                     path="/dashboard"
                     element={
                         <ProtectedRoutes>
@@ -786,6 +809,7 @@ function Layout() {
                         </ProtectedRoutes>
                     }
                 />
+
                 <Route
                     path="/admin"
                     element={

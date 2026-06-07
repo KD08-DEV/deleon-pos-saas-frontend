@@ -84,11 +84,27 @@ const Admin = () => {
         refetchOnReconnect: true,
     });
 
-    const plan = usageData?.plan?.toUpperCase() || "Emprendedor";
+    const normalizePlanKey = (value) => {
+        const normalized = String(value || "emprendedor")
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+
+        if (normalized === "standard") return "estandar";
+        if (normalized === "premium") return "premium";
+        if (normalized === "pro") return "pro";
+        if (normalized === "emprendedor") return "emprendedor";
+
+        return normalized;
+    };
+
+    const rawPlan = normalizePlanKey(usageData?.plan);
+    const plan = rawPlan.toUpperCase();
+
     const limits = usageData?.limits || {};
     const usage = usageData?.usage || {};
     const remaining = usageData?.remaining || {};
-    const rawPlan = (usageData?.plan || "emprendedor").toLowerCase();
 
     const currentUserFromUsage = usageData?.currentUser || {};
 
@@ -203,6 +219,7 @@ const Admin = () => {
             expenses: false,
             financeSummary: false,
             notifications: false,
+            accountsReceivable: false,
         },
         estandar: {
             basicReports: true,
@@ -221,6 +238,7 @@ const Admin = () => {
             expenses: false,
             financeSummary: false,
             notifications: false,
+            accountsReceivable: true,
         },
         premium: {
             basicReports: true,
@@ -238,8 +256,8 @@ const Admin = () => {
             inventoryCategories: true,
             expenses: true,
             financeSummary: true,
-
             notifications: false,
+            accountsReceivable: true,
         },
         pro: {
             basicReports: true,
@@ -258,16 +276,19 @@ const Admin = () => {
             expenses: true,
             financeSummary: true,
             notifications: true,
+            accountsReceivable: true,
         },
     };
 
     const fallbackFeatures =
         PLAN_FEATURES_FALLBACK[rawPlan] ||
         PLAN_FEATURES_FALLBACK.emprendedor;
-
     const planFeatures = {
         ...fallbackFeatures,
         ...(usageData?.features || {}),
+
+        // Cuentas por cobrar debe estar disponible para todos menos Emprendedor
+        accountsReceivable: rawPlan !== "emprendedor",
 
         // Seguridad visual: Premium debe tener Registro de gastos y Reporte de gastos
         ...(rawPlan === "premium"
@@ -280,6 +301,7 @@ const Admin = () => {
     const canUseFeature = (feature) => Boolean(planFeatures?.[feature]);
 
     const canInventory = canUseFeature("inventory");
+    const canAccountsReceivable = rawPlan !== "emprendedor";
 
     const totalUsersLimit =
         limits.maxUsers === null || limits.maxUsers === undefined
@@ -324,12 +346,16 @@ const Admin = () => {
                     icon: Wallet,
                     description: "Control de cierre de caja diario",
                 },
-                {
-                    id: "accounts-receivable",
-                    label: "Cuentas por cobrar",
-                    icon: CreditCard,
-                    description: "Control de fiado, abonos y saldos pendientes",
-                },
+                ...(canAccountsReceivable
+                    ? [
+                        {
+                            id: "accounts-receivable",
+                            label: "Cuentas por cobrar",
+                            icon: CreditCard,
+                            description: "Control de fiado, abonos y saldos pendientes",
+                        },
+                    ]
+                    : []),
                 {
                     id: "sales-reports",
                     label: "Reportes de Ventas",
@@ -561,7 +587,10 @@ const Admin = () => {
             sections.push({
                 ...reportes,
                 items: (reportes.items || []).filter((i) =>
-                    ["cash-register", "accounts-receivable"].includes(i.id)
+                    [
+                        "cash-register",
+                        ...(canAccountsReceivable ? ["accounts-receivable"] : []),
+                    ].includes(i.id)
                 ),
             });
         }
@@ -594,6 +623,7 @@ const Admin = () => {
         canInventory,
         canCreateProductsByPermission,
         canInventoryEntryByPermission,
+        canAccountsReceivable,
     ]);
 
 
@@ -609,6 +639,17 @@ const Admin = () => {
                 .map((i) => i.id)
         );
     }, [menuSections]);
+    useEffect(() => {
+        if (!allowedTabIds.size) return;
+
+        if (!allowedTabIds.has(tab)) {
+            const fallbackTab = allowedTabIds.has("cash-register")
+                ? "cash-register"
+                : [...allowedTabIds][0];
+
+            setTab(fallbackTab);
+        }
+    }, [allowedTabIds, tab]);
 
 
     const handleTabClick = (item) => {
@@ -858,7 +899,7 @@ const Admin = () => {
                                         currentUser={effectiveUser}
                                     />
                                 )}
-                                {tab === "accounts-receivable" && <AccountsReceivable />}
+                                {tab === "accounts-receivable" && canAccountsReceivable && <AccountsReceivable />}
                                 {tab === "reports" && <Reports />}
                                 {tab === "employees" && <Employees />}
                                 {tab === "fiscal" && <FiscalConfig />}

@@ -66,14 +66,35 @@ const orderMatchesDateFilter = (order, dateFilter) => {
 
     return true;
 };
+const ORDERS_UI_PREFS_KEY = "deleonsoft_orders_ui_prefs";
 
+const getOrdersUiPrefs = () => {
+    try {
+        return JSON.parse(localStorage.getItem(ORDERS_UI_PREFS_KEY) || "{}");
+    } catch {
+        return {};
+    }
+};
+
+const saveOrdersUiPref = (key, value) => {
+    try {
+        const current = getOrdersUiPrefs();
+        localStorage.setItem(
+            ORDERS_UI_PREFS_KEY,
+            JSON.stringify({ ...current, [key]: value })
+        );
+    } catch {}
+};
 const Orders = () => {
-    const [status, setStatus] = useState("all");
     const [orders, setOrders] = useState([]);
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_ORDERS);
-    const [productTypeFilter, setProductTypeFilter] = useState("all");
-    const [dateFilter, setDateFilter] = useState("24h");
+    const savedPrefs = getOrdersUiPrefs();
+    const [status, setStatus] = useState(savedPrefs.status || "all");
+    const [productTypeFilter, setProductTypeFilter] = useState(savedPrefs.productTypeFilter || "all");
+    const [dateFilter, setDateFilter] = useState(savedPrefs.dateFilter || "24h");
+    const [viewMode, setViewMode] = useState(savedPrefs.viewMode || "comfortable");
     const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
+    const [currentTime, setCurrentTime] = useState(Date.now());
 
     const audioRef = useRef(null);
     const prevOrderIdsRef = useRef(new Set());
@@ -83,6 +104,13 @@ const Orders = () => {
     useEffect(() => {
         document.title = "POS | Orders";
         audioRef.current = new Audio("/sounds/new-order.mp3");
+    }, []);
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 30000);
+
+        return () => clearInterval(interval);
     }, []);
 
     useEffect(() => {
@@ -139,6 +167,21 @@ const Orders = () => {
         }
     }, [isError]);
 
+    useEffect(() => {
+        saveOrdersUiPref("status", status);
+    }, [status]);
+
+    useEffect(() => {
+        saveOrdersUiPref("productTypeFilter", productTypeFilter);
+    }, [productTypeFilter]);
+
+    useEffect(() => {
+        saveOrdersUiPref("dateFilter", dateFilter);
+    }, [dateFilter]);
+
+    useEffect(() => {
+        saveOrdersUiPref("viewMode", viewMode);
+    }, [viewMode]);
     const handleStatusChanged = (updatedOrder) => {
         if (!updatedOrder?._id) return;
         setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
@@ -212,6 +255,18 @@ const Orders = () => {
         productTypeFilter === "all" ? "Todos" : productTypeFilter;
     const selectedDateFilterLabel =
         DATE_FILTERS.find((item) => item.key === dateFilter)?.label || "Todas";
+
+    const VIEW_MODES = [
+        { key: "comfortable", label: "Cómoda" },
+        { key: "compact", label: "Compacta" },
+        { key: "list", label: "Lista" },
+    ];
+
+    const VIEW_GRID_CLASSES = {
+        comfortable: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6",
+        compact: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4",
+        list: "grid grid-cols-1 gap-4",
+    };
 
     return (
         <section className="relative min-h-screen flex flex-col pb-24 bg-gradient-to-br from-[#0f0f0f] via-[#1a1a1a] to-[#0f0f0f]">
@@ -342,6 +397,27 @@ const Orders = () => {
                                     </div>
                                 )}
                             </div>
+                            <div className="flex items-center gap-1 rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1 shadow-lg overflow-x-auto">
+                                {VIEW_MODES.map((mode) => {
+                                    const isActive = viewMode === mode.key;
+
+                                    return (
+                                        <button
+                                            key={mode.key}
+                                            type="button"
+                                            onClick={() => setViewMode(mode.key)}
+                                            className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
+                                                isActive
+                                                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                                                    : "text-[#ababab] hover:bg-[#222] hover:text-white border border-transparent"
+                                            }`}
+                                        >
+                                            {mode.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
                         </div>
                     </div>
 
@@ -388,12 +464,14 @@ const Orders = () => {
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div className={VIEW_GRID_CLASSES[viewMode] || VIEW_GRID_CLASSES.comfortable}>
                                     {visibleOrders.map((order) => (
                                         <OrderCard
                                             key={order._id}
                                             order={order}
                                             onStatusChanged={handleStatusChanged}
+                                            currentTime={currentTime}
+                                            viewMode={viewMode}
                                         />
                                     ))}
                                 </div>

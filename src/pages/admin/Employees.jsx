@@ -299,7 +299,7 @@ const Employees = () => {
             return;
         }
 
-        if (!formData.phone || formData.phone.toString().length !== 10) {
+        if (formData.phone.toString().length !== 10) {
             enqueueSnackbar("El teléfono debe tener 10 dígitos", {
                 variant: "warning",
             });

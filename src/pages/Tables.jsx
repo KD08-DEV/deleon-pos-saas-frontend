@@ -176,12 +176,11 @@ export default function Tables() {
 
         const hasActiveOrder =
             Boolean(existingOrderId) &&
-            !["Cancelado", "Completado"].includes(existingOrderStatus);
+            existingOrderStatus !== "Cancelado";
 
         const hasClosedOrderLinked =
             Boolean(existingOrderId) &&
-            ["Cancelado", "Completado"].includes(existingOrderStatus);
-
+            existingOrderStatus === "Cancelado";
         const canEditBooked =
             normalizedRole === "admin" ||
             normalizedRole === "camarero" ||
