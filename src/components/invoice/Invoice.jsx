@@ -63,6 +63,12 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
     const businessRnc = tenantInfo?.business?.rnc || tenantInfo?.fiscal?.rnc || "";
     const businessPhone = tenantInfo?.business?.phone || "";
 
+    const businessLogoUrl =
+        tenantInfo?.business?.logoUrl ||
+        tenantInfo?.logoUrl ||
+        "";
+
+
     // ===== Fiscal =====
     const resolvedFiscalRequested = order?.fiscal?.requested === true;
     const ecf = order?.ecf || null;
@@ -404,6 +410,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
 
             const payload = {
                 businessName,
+                businessLogoUrl,
                 rnc: businessRnc,
                 address: businessAddress,
                 phone: businessPhone,
@@ -527,10 +534,24 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
             >
                 <div ref={receiptRef} className="px-6 pt-6 pb-4 overflow-y-auto">
                     {/* Negocio  <h2 className="text-lg font-bold text-gray-900">{headerTitle}</h2>*/}
-                    <div className="text-center text-xs text-gray-700 mb-2">
+                    <div className="text-center text-xs text-gray-700 mb-3">
+                        {businessLogoUrl && (
+                            <div className="flex justify-center mb-3">
+                                <div className="w-full flex items-center justify-center rounded-lg bg-white px-3 py-2">
+                                    <img
+                                        src={businessLogoUrl}
+                                        alt="Logo del negocio"
+                                        className="block max-h-[72px] max-w-[220px] w-auto h-auto object-contain"
+                                        style={{ imageRendering: "auto" }}
+                                    />
+                                </div>
+                            </div>
+                        )}
 
-                        <p className="font-semibold text-sm text-gray-900">{businessName}</p>
-                        {businessRnc && <p>RNC: {businessRnc}</p>}
+                        <p className="font-semibold text-[15px] text-gray-900 leading-tight">
+                            {businessName}
+                        </p>
+                        {businessRnc && <p className="mt-1">RNC: {businessRnc}</p>}
                         {businessAddress && <p>{businessAddress}</p>}
                         {businessPhone && <p>{businessPhone}</p>}
                     </div>

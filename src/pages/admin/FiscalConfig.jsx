@@ -1,7 +1,19 @@
 // src/pages/admin/FiscalConfig.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, Receipt, CreditCard, Percent, Calendar, AlertCircle, CheckCircle2, Info } from "lucide-react";
+import {
+    Save,
+    Receipt,
+    CreditCard,
+    Percent,
+    Calendar,
+    AlertCircle,
+    CheckCircle2,
+    Info,
+    ImageIcon,
+    UploadCloud,
+    Trash2,
+} from "lucide-react";
 import { enqueueSnackbar } from "notistack";
 import api from "../../lib/api";
 import useTenantPrinting from "../../hooks/usePrinters.js";
@@ -393,6 +405,8 @@ export default function FiscalConfig() {
     }, [data, canUseFiscal, ecfProfile]);
 
     const [form, setForm] = useState(null);
+    const [logoFile, setLogoFile] = useState(null);
+    const [logoUploading, setLogoUploading] = useState(false);
 
     useEffect(() => {
         if (!data) return;
@@ -406,7 +420,67 @@ export default function FiscalConfig() {
             return () => clearTimeout(timer);
         }
     }, [msg]);
+    const uploadBusinessLogo = async () => {
+        if (!logoFile) {
+            enqueueSnackbar("Selecciona un logo primero.", { variant: "warning" });
+            return;
+        }
 
+        setLogoUploading(true);
+
+        try {
+            const fd = new FormData();
+            fd.append("logo", logoFile);
+
+            const res = await api.post("/api/admin/tenant-logo", fd);
+
+            if (!res.data?.success) {
+                throw new Error(res.data?.message || "No se pudo subir el logo.");
+            }
+
+            setLogoFile(null);
+
+            await qc.invalidateQueries({ queryKey: ["admin-fiscal-config"] });
+
+            enqueueSnackbar("Logo actualizado correctamente.", { variant: "success" });
+        } catch (error) {
+            const msg =
+                error?.response?.data?.message ||
+                error?.message ||
+                "Error subiendo logo.";
+
+            enqueueSnackbar(msg, { variant: "error" });
+        } finally {
+            setLogoUploading(false);
+        }
+    };
+
+    const deleteBusinessLogo = async () => {
+        setLogoUploading(true);
+
+        try {
+            const res = await api.delete("/api/admin/tenant-logo");
+
+            if (!res.data?.success) {
+                throw new Error(res.data?.message || "No se pudo eliminar el logo.");
+            }
+
+            setLogoFile(null);
+
+            await qc.invalidateQueries({ queryKey: ["admin-fiscal-config"] });
+
+            enqueueSnackbar("Logo eliminado correctamente.", { variant: "success" });
+        } catch (error) {
+            const msg =
+                error?.response?.data?.message ||
+                error?.message ||
+                "Error eliminando logo.";
+
+            enqueueSnackbar(msg, { variant: "error" });
+        } finally {
+            setLogoUploading(false);
+        }
+    };
     if (isLoading || isLoadingEcfProfile || !form) {
         return (
             <div className="text-center py-8 text-gray-400">
@@ -585,6 +659,83 @@ export default function FiscalConfig() {
                 </div>
             )}
 
+            <Section
+                title="Logo del negocio"
+                icon={ImageIcon}
+                description="Este logo aparecerá en la factura visual y en el PDF generado."
+            >
+                <div className="space-y-4">
+                    <div className="rounded-xl border border-gray-800/50 bg-[#1a1a1a]/60 p-4">
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                            <div className="w-32 h-24 rounded-xl bg-[#111] border border-gray-800/60 flex items-center justify-center overflow-hidden">
+                                {data?.business?.logoUrl ? (
+                                    <img
+                                        src={data.business.logoUrl}
+                                        alt="Logo actual"
+                                        className="max-w-full max-h-full object-contain p-2"
+                                    />
+                                ) : (
+                                    <div className="text-center text-gray-500 text-xs px-3">
+                                        Sin logo
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex-1 space-y-3">
+                                <div>
+                                    <p className="text-sm font-semibold text-white">
+                                        Logo actual de la factura
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        Usa PNG o JPG. Recomendado: fondo transparente, máximo 2MB.
+                                    </p>
+                                </div>
+
+                                <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/jpg"
+                                    onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                                    className={inputCls}
+                                />
+
+                                {logoFile && (
+                                    <p className="text-xs text-gray-400">
+                                        Seleccionado: {logoFile.name}
+                                    </p>
+                                )}
+
+                                <div className="flex flex-wrap gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={uploadBusinessLogo}
+                                        disabled={logoUploading || !logoFile}
+                                        className={`inline-flex items-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm ${
+                                            logoUploading || !logoFile
+                                                ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                                                : "bg-[#f6b100] text-[#1f1f1f] hover:opacity-90"
+                                        }`}
+                                    >
+                                        <UploadCloud className="w-4 h-4" />
+                                        {logoUploading ? "Subiendo..." : "Subir logo"}
+                                    </button>
+
+                                    {data?.business?.logoUrl && (
+                                        <button
+                                            type="button"
+                                            onClick={deleteBusinessLogo}
+                                            disabled={logoUploading}
+                                            className="inline-flex items-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Eliminar logo
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Section>
             {/* Funciones principales */}
 
             <div className="mb-6">
