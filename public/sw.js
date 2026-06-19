@@ -1,7 +1,7 @@
 // ===============================
 // CONFIGURACIÓN DE CACHE
 // ===============================
-const STATIC_CACHE = "pos-static-v4";
+const STATIC_CACHE = "pos-static-v6";
 const API_CACHE = "pos-api-v1";
 
 const STATIC_ASSETS = [
@@ -76,6 +76,22 @@ self.addEventListener("fetch", (event) => {
     if (request.method !== "GET") return;
 
     const url = new URL(request.url);
+    // ===============================
+// NO INTERCEPTAR ARCHIVOS PWA / ASSETS
+// ===============================
+    if (
+        url.pathname === "/manifest.webmanifest" ||
+        url.pathname === "/sw.js" ||
+        url.pathname.startsWith("/icons/") ||
+        url.pathname.endsWith(".webmanifest") ||
+        url.pathname.endsWith(".png") ||
+        url.pathname.endsWith(".jpg") ||
+        url.pathname.endsWith(".jpeg") ||
+        url.pathname.endsWith(".svg") ||
+        url.pathname.endsWith(".ico")
+    ) {
+        return;
+    }
     if (url.pathname.endsWith(".pdf") || url.pathname.includes("invoice")) {
         return; // que vaya directo a la red
     }
