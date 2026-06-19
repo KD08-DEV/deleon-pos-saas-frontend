@@ -3,8 +3,9 @@
   "short_name": "DL POS",
   "description": "Sistema de Punto de Venta De Leon Soft",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "orientation": "landscape", //any
+  "orientation": "any",
   "background_color": "#111827",
   "theme_color": "#111827",
   "icons": [

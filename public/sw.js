@@ -1,13 +1,12 @@
 // ===============================
 // CONFIGURACIÓN DE CACHE
 // ===============================
-const STATIC_CACHE = "pos-static-v2";
+const STATIC_CACHE = "pos-static-v3";
 const API_CACHE = "pos-api-v1";
 
 const STATIC_ASSETS = [
     "/",
     "/index.html",
-    "/manifest.webmanifest",
     "/icons/icon-192.png",
     "/icons/icon-512.png"
 ];
