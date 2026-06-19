@@ -5,7 +5,7 @@ import {
     useLocation,
     Navigate,
     useNavigate,
-    Outlet,
+
 } from "react-router-dom";
 
 import { Home, Auth, Orders, Tables, Menu, Dashboard } from "./pages";
@@ -834,7 +834,9 @@ function Layout() {
                     <Route path="tenant-usage" element={<SuperAdminTenantUsage />} />
                 </Route>
 
-                <Route path="*" element={<div>Not Found</div>} />
+                <Route path="/index.html" element={<Navigate to="/" replace />} />
+                <Route path="/home" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
 
             {shouldShowPosChrome && <BottomNav />}
