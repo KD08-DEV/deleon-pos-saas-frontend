@@ -29,7 +29,7 @@
   ],
   "rewrites": [
     {
-      "source": "/:path((?!manifest\\.webmanifest|sw\\.js|icons/|sounds/|placeholder\\.jpg|vite\\.svg|assets/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
