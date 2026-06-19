@@ -2,6 +2,7 @@
   "name": "De Leon Soft POS",
   "short_name": "DL POS",
   "description": "Sistema de Punto de Venta De Leon Soft",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

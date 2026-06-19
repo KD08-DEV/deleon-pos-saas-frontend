@@ -1,7 +1,7 @@
 // ===============================
 // CONFIGURACIÓN DE CACHE
 // ===============================
-const STATIC_CACHE = "pos-static-v3";
+const STATIC_CACHE = "pos-static-v4";
 const API_CACHE = "pos-api-v1";
 
 const STATIC_ASSETS = [
