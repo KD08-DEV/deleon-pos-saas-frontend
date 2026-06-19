@@ -372,10 +372,73 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
         cashReceived > 0;
 
 
-    const headerGridClass = "grid grid-cols-[2fr_0.45fr_0.9fr_0.9fr]";
+    const headerGridClass = "grid grid-cols-[1.45fr_0.35fr_0.75fr_0.85fr]";
+    const receiptPrintPageStyle = `
+    @page {
+        size: 80mm auto;
+        margin: 0;
+    }
+
+    html,
+    body,
+    #root {
+        background: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+    }
+
+    #invoice-receipt-print {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-height: auto !important;
+        margin: 0 auto !important;
+        padding: 4mm 2.5mm !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        font-size: 10px !important;
+        line-height: 1.25 !important;
+    }
+
+    #invoice-receipt-print * {
+        color: #000000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        box-sizing: border-box !important;
+    }
+
+    #invoice-receipt-print .grid {
+        column-gap: 2px !important;
+    }
+
+    #invoice-receipt-print img {
+        max-width: 190px !important;
+        height: auto !important;
+    }
+
+    #invoice-receipt-print svg {
+        background: #ffffff !important;
+    }
+`;
 
     const browserPrint = useReactToPrint({
         contentRef: receiptRef,
+        pageStyle: receiptPrintPageStyle,
+        removeAfterPrint: true,
         documentTitle: isEcf
             ? "Factura e-CF"
             : isFiscal
@@ -527,12 +590,21 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
             variants={backdropVariants}
         >
             <motion.div
-                className="bg-white rounded-lg shadow-xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+                className="bg-white rounded-lg shadow-xl w-[calc(100vw-16px)] max-w-[100mm] sm:max-w-[100mm] max-h-[90vh] overflow-hidden flex flex-col"
                 initial="hidden"
                 animate="visible"
                 variants={modalVariants}
             >
-                <div ref={receiptRef} className="px-6 pt-6 pb-4 overflow-y-auto">
+                <div
+                    ref={receiptRef}
+                    id="invoice-receipt-print"
+                    className="bg-white text-black w-full max-w-[92mm] mx-auto px-3 pt-4 pb-3 overflow-y-auto"
+                    style={{
+                        backgroundColor: "#ffffff",
+                        color: "#000000",
+                        boxSizing: "border-box",
+                    }}
+                >
                     {/* Negocio  <h2 className="text-lg font-bold text-gray-900">{headerTitle}</h2>*/}
                     <div className="text-center text-xs text-gray-700 mb-3">
                         {businessLogoUrl && (
@@ -842,16 +914,26 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         <div className="text-xs font-semibold text-gray-700">Impresora</div>
 
                         <select
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
-                            value={selectedPrinterId}
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            style={{
+                                color: "#111827",
+                                backgroundColor: "#ffffff",
+                            }}
+                            value={selectedPrinterId || selectedPrinter?._id || ""}
                             onChange={(e) => setSelectedPrinterId(e.target.value)}
                             disabled={isLoadingPrinters || invoicePrinters.length === 0}
                         >
                             {invoicePrinters.length === 0 ? (
-                                <option value="">No hay impresoras registradas</option>
+                                <option value="" className="text-gray-900 bg-white">
+                                    No hay impresoras registradas
+                                </option>
                             ) : (
                                 invoicePrinters.map((p) => (
-                                    <option key={p._id} value={p._id}>
+                                    <option
+                                        key={p._id}
+                                        value={p._id}
+                                        className="text-gray-900 bg-white"
+                                    >
                                         {p.alias} {p.isDefault ? "• default" : ""}
                                     </option>
                                 ))
@@ -877,11 +959,11 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                 </div>
 
                 {/* Botones */}
-                <div className="flex flex-wrap justify-between items-center gap-2 border-t px-4 py-3 bg-gray-50 text-xs sm:text-sm">
-                    <div className="flex gap-2">
+                <div className="flex flex-nowrap justify-between items-center gap-2 border-t px-3 py-3 bg-gray-50 text-xs sm:text-sm">
+                    <div className="flex flex-nowrap gap-2">
                         <button
                             onClick={handleBrowserPrint}
-                            className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium"
+                            className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium whitespace-nowrap"
                         >
                             Otras impresoras
                         </button>
@@ -889,7 +971,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         <button
                             onClick={handleLogicPrint}
                             disabled={isPrintingLogic}
-                            className={`px-3 py-2 rounded-md text-white font-semibold ${
+                            className={`px-3 py-2 rounded-md text-white font-semibold whitespace-nowrap ${
                                 isPrintingLogic
                                     ? "bg-gray-400 cursor-not-allowed"
                                     : "bg-[#111111] hover:bg-[#2b2b2b]"
@@ -899,7 +981,10 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         </button>
                     </div>
 
-                    <button onClick={onClose} className="text-red-500 hover:text-red-600 font-medium">
+                    <button
+                        onClick={onClose}
+                        className="text-red-500 hover:text-red-600 font-medium whitespace-nowrap"
+                    >
                         Cerrar
                     </button>
                 </div>

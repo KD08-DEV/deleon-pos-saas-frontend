@@ -622,10 +622,7 @@ function Layout() {
     }
 
 
-    const mustBlock =
-        !isCustomerDisplayRoute &&
-        isCajera &&
-        (openModal || cashGateLoading);
+
 
     return (
         <>
@@ -746,8 +743,7 @@ function Layout() {
                 </div>
             )}
 
-            {/* Bloqueo de clicks detrás (opcional) */}
-            {mustBlock && <div className="fixed inset-0 z-[9998]" />}
+
 
             {shouldShowPosChrome && <Header />}
 

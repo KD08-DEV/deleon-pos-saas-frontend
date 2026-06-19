@@ -14,8 +14,8 @@ body,
     background: #111827;
     color: #ffffff;
     overflow-x: hidden;
+    overflow-y: auto;
 }
-
 html {
     min-height: 100%;
     background: #111827;
@@ -25,7 +25,9 @@ body {
     min-height: 100dvh;
     font-family: 'Inter', sans-serif;
     background: #111827;
-    overscroll-behavior: none;
+    overscroll-behavior-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
 }
 
 #root {
@@ -251,4 +253,72 @@ input[type="number"] {
 .modern-scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+/* FIX: impresión de facturas en fondo blanco y centrado */
+@media print {
+    @page {
+        size: 80mm auto;
+        margin: 0;
+    }
+
+    html,
+    body,
+    #root {
+        background: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+    }
+
+    #invoice-receipt-print {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-height: auto !important;
+        margin: 0 auto !important;
+        padding: 4mm 2.5mm !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        font-size: 10px !important;
+        line-height: 1.25 !important;
+    }
+
+    #invoice-receipt-print * {
+        color: #000000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        box-sizing: border-box !important;
+    }
+
+    #invoice-receipt-print .grid {
+        column-gap: 2px !important;
+    }
+
+    #invoice-receipt-print img {
+        max-width: 190px !important;
+        height: auto !important;
+    }
+
+    #invoice-receipt-print svg {
+        background: #ffffff !important;
+    }
+}
+/* FIX: select visible en modales claros */
+select,
+select option {
+    color: #111827;
+    background-color: #ffffff;
 }
