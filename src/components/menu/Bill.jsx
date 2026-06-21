@@ -576,6 +576,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const TAX_RATE = 18;
+    const LEGAL_TIP_RATE = 10;
     useEffect(() => {
         if (!order?._id) return;
 
@@ -637,7 +638,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         const taxableBase = baseCalc + ship;
         const taxCalc = (taxableBase * effectiveTaxRate) / 100;
 
-        const tipCalc = tipEnabled ? (baseCalc * num(tipPercent || 0)) / 100 : 0;
+        const tipCalc = tipEnabledByTenant ? (baseCalc * LEGAL_TIP_RATE) / 100 : 0;
 
         return {
             discount: discountCalc,
@@ -651,8 +652,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         subtotal,
         discountType,
         discountValue,
-        taxEnabled,
-        tipEnabled,
+        tipEnabledByTenant,
         tipPercent,
         isInternalDelivery,
         deliveryFee,
@@ -1933,27 +1933,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
 
-                {/* ✅ PROPINA (siempre visible) */}
+                {/* ✅ PROPINA LEGAL FIJA */}
                 {tipEnabledByTenant && (
                     <div className="flex items-center justify-between mt-3">
-                        <div className="flex items-center gap-3">
-                            <span className="text-xs text-[#ababab]">Propina</span>
+                        <span className="text-xs text-[#ababab]">Propina legal</span>
 
-                            <Switch
-                                checked={tipEnabled}
-                                onChange={setTipEnabled}
-                            />
-                        </div>
-
-                        <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={tipPercent}
-                            disabled={!tipEnabled}
-                            onChange={(e) => setTipPercent(Number(e.target.value) || 0)}
-                            className="w-20 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none disabled:opacity-40"
-                        />
+                        <span className="text-xs text-[#f5f5f5] font-semibold">
+            {LEGAL_TIP_RATE}%
+        </span>
                     </div>
                 )}
 
@@ -2012,7 +1999,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     )}
 
                     <div className="flex justify-between">
-                        <span>Propina</span>
+                        <span>Propina legal 10%</span>
                         <span>${num(tip).toFixed(2)}</span>
                     </div>
 

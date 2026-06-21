@@ -11,7 +11,7 @@ import SplitInvoicesModal from "./SplitInvoicesModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, X, Circle, ArrowLeft, ArrowRight, Receipt, CreditCard, Clock, User, Hash, MoreVertical, Table2, Users, Package, Calendar, MessageSquareText  } from "lucide-react";
 
-const STATUS_FLOW = ["En Progreso", "Listo", "Completado"];
+const STATUS_FLOW = ["En Progreso", "Completado"];
 
 
 const getStatusConfig = (status) => {
@@ -1058,22 +1058,6 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                         <span>Atras</span>
                     </motion.button>
 
-                    {/* Next */}
-                    <motion.button
-                        type="button"
-                        onClick={handleNext}
-                        disabled={!canGoForward}
-                        whileHover={canGoForward ? { scale: 1.05 } : {}}
-                        whileTap={canGoForward ? { scale: 0.95 } : {}}
-                        className={`flex items-center justify-center gap-1.5 flex-[1.3] min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold transition-all duration-200 ${
-                            canGoForward
-                                ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-green-500/30"
-                                : "bg-emerald-900/40 text-emerald-300 cursor-not-allowed opacity-50"
-                        }`}
-                    >
-                        <ArrowRight className="w-3.5 h-3.5" />
-                        <span>{primaryButtonLabel}</span>
-                    </motion.button>
 
                     {!["Completado", "Cancelado"].includes(currentStatus) && (
                         <motion.button
@@ -1081,7 +1065,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                             onClick={handleCompleteNow}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-200"
+                            className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-green-500/30 transition-all duration-200"
                         >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>Completar</span>
