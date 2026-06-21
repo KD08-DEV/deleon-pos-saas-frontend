@@ -224,18 +224,23 @@ const getActiveRegisterId = () => {
 const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "comfortable" }) => {
     const isCompactView = viewMode === "compact";
     const isListView = viewMode === "list";
+    const isDisplayView = viewMode === "display";
 
-    const cardSizeClass = isCompactView
-        ? "px-3 py-3 sm:px-4 sm:py-4 min-h-[220px]"
-        : isListView
-            ? "px-4 py-4 sm:px-5 sm:py-5 min-h-[180px]"
-            : "px-4 py-4 sm:px-5 sm:py-5 min-h-[280px]";
+    const cardSizeClass = isDisplayView
+        ? "px-4 py-4 sm:px-5 sm:py-5 min-h-[360px]"
+        : isCompactView
+            ? "px-3 py-3 sm:px-4 sm:py-4 min-h-[220px]"
+            : isListView
+                ? "px-4 py-4 sm:px-5 sm:py-5 min-h-[180px]"
+                : "px-4 py-4 sm:px-5 sm:py-5 min-h-[280px]";
 
-    const itemListHeightClass = isCompactView
-        ? "max-h-16"
-        : isListView
-            ? "max-h-20"
-            : "max-h-24";
+    const itemListHeightClass = isDisplayView
+        ? ""
+        : isCompactView
+            ? "max-h-16"
+            : isListView
+                ? "max-h-none"
+                : "max-h-none";
     const { enqueueSnackbar } = useSnackbar();
 
     const userState = useSelector((state) => state.user);
@@ -411,6 +416,51 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
         if (!localOrder?.items || localOrder.items.length === 0) return 0;
         return localOrder.items.reduce((sum, item) => sum + (item?.quantity ?? 1), 0);
     }, [localOrder?.items]);
+
+    // Modo pantalla / no-touch:
+    // No depende de scroll manual. Si una orden tiene muchos platos, los divide en páginas
+    // automáticas para que una pantalla fija pueda mostrar todo sin tocar ni deslizar.
+    const displayPageSize = useMemo(() => {
+        if (!isDisplayView) return Math.max(itemsSummary.length, 1);
+        if (itemsSummary.length <= 8) return 8;
+        if (itemsSummary.length <= 12) return 6;
+        return 8;
+    }, [isDisplayView, itemsSummary.length]);
+
+    const totalItemPages = useMemo(() => {
+        return Math.max(1, Math.ceil(itemsSummary.length / displayPageSize));
+    }, [itemsSummary.length, displayPageSize]);
+
+    const [itemPage, setItemPage] = useState(0);
+
+    useEffect(() => {
+        setItemPage(0);
+    }, [localOrder?._id, itemsSummary.length, viewMode]);
+
+    useEffect(() => {
+        if (!isDisplayView || totalItemPages <= 1) return undefined;
+
+        const interval = setInterval(() => {
+            setItemPage((prev) => (prev + 1) % totalItemPages);
+        }, 4500);
+
+        return () => clearInterval(interval);
+    }, [isDisplayView, totalItemPages]);
+
+    const visibleItemLines = useMemo(() => {
+        if (!isDisplayView) return itemsSummary;
+
+        const start = itemPage * displayPageSize;
+        return itemsSummary.slice(start, start + displayPageSize);
+    }, [isDisplayView, itemsSummary, itemPage, displayPageSize]);
+
+    const itemGridClass = isDisplayView && visibleItemLines.length > 4
+        ? "grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2"
+        : "space-y-1.5";
+
+    const itemTextClass = isDisplayView
+        ? "text-[15px] sm:text-base font-semibold leading-snug"
+        : "text-sm";
 
     const productTypes = useMemo(() => getOrderProductTypes(localOrder), [localOrder]);
     const waitTimeConfig = useMemo(
@@ -914,29 +964,50 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                 {/* BODY */}
                 <div className="flex flex-col gap-3 flex-1">
                     {/* Items Section */}
-                    <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-lg p-3 border border-[#2a2a2a]/50">
-                        <div className="flex items-center justify-between mb-2">
+                    <div className={`bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-lg p-3 border border-[#2a2a2a]/50 ${isDisplayView ? "flex-1" : ""}`}>
+                        <div className="flex items-center justify-between gap-3 mb-2">
                             <span className="uppercase tracking-wide text-xs text-[#ababab] font-semibold">
                                 Items
                             </span>
-                            <span className="text-xs text-[#f5f5f5] font-semibold bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
-                                {totalItems} {totalItems === 1 ? 'item' : 'items'}
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {isDisplayView && totalItemPages > 1 && (
+                                    <span className="text-[10px] sm:text-xs font-semibold bg-cyan-500/15 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/25">
+                                        Página {itemPage + 1}/{totalItemPages}
+                                    </span>
+                                )}
+                                <span className="text-xs text-[#f5f5f5] font-semibold bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
+                                    {totalItems} {totalItems === 1 ? 'item' : 'items'}
+                                </span>
+                            </div>
                         </div>
 
-                        <div className={`space-y-1.5 ${itemListHeightClass} overflow-y-auto`}>
-                            {itemsSummary.slice(0, 3).map((line, idx) => (
-                                <div key={idx} className="text-sm text-[#f5f5f5] truncate flex items-center gap-2">
-                                    <span className="text-blue-400 shrink-0">•</span>
-                                    <span className="truncate">{line}</span>
+                        <div className={`${itemGridClass} ${itemListHeightClass} ${isDisplayView ? "overflow-hidden" : "overflow-visible"}`}>
+                            {visibleItemLines.map((line, idx) => (
+                                <div
+                                    key={`${itemPage}-${idx}-${line}`}
+                                    className={`${itemTextClass} text-[#f5f5f5] flex items-start gap-2 rounded-md bg-black/10 px-2 py-1 border border-white/5`}
+                                >
+                                    <span className="text-blue-400 shrink-0 pt-[2px]">•</span>
+                                    <span className={isDisplayView ? "break-words" : "break-words"}>{line}</span>
                                 </div>
                             ))}
-                            {itemsSummary.length > 3 && (
-                                <div className="text-xs text-[#ababab] italic">
-                                    +{itemsSummary.length - 3} más...
-                                </div>
-                            )}
                         </div>
+
+                        {isDisplayView && totalItemPages > 1 && (
+                            <div className="mt-2 flex items-center justify-between gap-3 text-[10px] sm:text-xs text-[#ababab]">
+                                <span>
+                                    Mostrando {itemPage * displayPageSize + 1}-{Math.min((itemPage + 1) * displayPageSize, itemsSummary.length)} de {itemsSummary.length} líneas
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: totalItemPages }).map((_, idx) => (
+                                        <span
+                                            key={idx}
+                                            className={`h-1.5 w-5 rounded-full ${idx === itemPage ? "bg-cyan-400" : "bg-[#444]"}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Nota de la orden */}

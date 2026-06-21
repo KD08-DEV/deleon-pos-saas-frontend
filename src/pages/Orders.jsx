@@ -92,7 +92,7 @@ const Orders = () => {
     const [status, setStatus] = useState(savedPrefs.status || "all");
     const [productTypeFilter, setProductTypeFilter] = useState(savedPrefs.productTypeFilter || "all");
     const [dateFilter, setDateFilter] = useState(savedPrefs.dateFilter || "24h");
-    const [viewMode, setViewMode] = useState(savedPrefs.viewMode || "comfortable");
+    const [viewMode, setViewMode] = useState(savedPrefs.viewMode || "display");
     const [isTypeMenuOpen, setIsTypeMenuOpen] = useState(false);
     const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -257,12 +257,15 @@ const Orders = () => {
         DATE_FILTERS.find((item) => item.key === dateFilter)?.label || "Todas";
 
     const VIEW_MODES = [
+        { key: "display", label: "Pantalla" },
+        { key: "list", label: "Lista" },
         { key: "comfortable", label: "Cómoda" },
         { key: "compact", label: "Compacta" },
-        { key: "list", label: "Lista" },
     ];
 
     const VIEW_GRID_CLASSES = {
+        // Pantalla = modo no-touch / KDS. No obliga a deslizar dentro de la tarjeta.
+        display: "grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-5",
         comfortable: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6",
         compact: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4",
         list: "grid grid-cols-1 gap-4",
