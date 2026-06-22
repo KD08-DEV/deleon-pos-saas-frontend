@@ -5,7 +5,7 @@ import { useSelector } from "react-redux";
 import { motion } from "framer-motion";
 import { Trophy, ChefHat } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
-
+import { resolveImageUrl } from "../../lib/imageUrl";
 const PopularDishItem = memo(({ dish, index, getDishCategoryLabel }) => {
     const rankClass =
         index === 0
@@ -36,11 +36,11 @@ const PopularDishItem = memo(({ dish, index, getDishCategoryLabel }) => {
             </div>
 
             <img
-                src={dish.imageUrl || "/placeholder.jpg"}
+                src={resolveImageUrl(dish.imageUrl)}
                 alt={dish.name}
                 className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border-2 border-[#2a2a2a] group-hover:border-yellow-500/50 transition-all duration-200 group-hover:scale-105"
                 onError={(e) => {
-                    e.currentTarget.src = "/placeholder.jpg";
+                    e.currentTarget.src = resolveImageUrl("/placeholder.jpg");
                 }}
             />
 

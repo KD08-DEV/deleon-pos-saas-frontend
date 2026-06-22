@@ -15,10 +15,11 @@ import {
     Package,
     Scale
 } from "lucide-react";
+
 import { addDish, getDishes, deleteDish, updateDish } from "../../https";
 import { enqueueSnackbar } from "notistack";
 import api from "../../lib/api";
-
+import { resolveImageUrl } from "../../lib/imageUrl";
 
 const currency = (n) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
@@ -584,11 +585,11 @@ const MenuManagement = ({ currentUser }) => {
                         <div className="relative h-48 bg-[#1a1a1a] overflow-hidden">
                             {dish.imageUrl ? (
                                 <img
-                                    src={dish.imageUrl}
+                                    src={resolveImageUrl(dish.imageUrl)}
                                     alt={dish.name}
                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                     onError={(e) => {
-                                        e.target.src = "/placeholder.jpg";
+                                        e.currentTarget.src = "/placeholder.jpg";
                                     }}
                                 />
                             ) : (

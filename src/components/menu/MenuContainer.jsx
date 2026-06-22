@@ -8,7 +8,7 @@ import { setCart } from "../../redux/slices/cartSlice";
 
 import { addItems } from "../../redux/slices/cartSlice";
 import api from "../../lib/api"
-
+import { resolveImageUrl } from "../../lib/imageUrl";
 
 
 const LS_KEY = "menu:lastOpenCategory";
@@ -256,7 +256,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                 quantity,
                 unitPrice,
                 price: unitPrice * quantity,
-                imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
+                imageUrl: resolveImageUrl(dish.imageUrl),
                 productionArea: dish.productionArea || "kitchen",
             };
 
@@ -294,7 +294,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
             quantity: weight,
             unitPrice,
             price: lineTotal,
-            imageUrl: dish.imageUrl ? `http://localhost:8000${dish.imageUrl}` : "",
+            imageUrl: resolveImageUrl(dish.imageUrl),
             productionArea: dish.productionArea || "kitchen",
         };
 
@@ -393,8 +393,7 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                             quantity,
                                             unitPrice,
                                             price: unitPrice * quantity,
-                                            imageUrl: customPriceDish.imageUrl ? `http://localhost:8000${customPriceDish.imageUrl}` : "",
-                                            allowCustomPrice: true,
+                                            imageUrl: resolveImageUrl(customPriceDish.imageUrl),                                            allowCustomPrice: true,
                                             productionArea: customPriceDish.productionArea || "kitchen",
                                         };
 
@@ -508,12 +507,13 @@ const MenuContainer = ({ orderId, onAddToCart }) => {
                                                             >
                                                                 <div className="flex flex-col items-center text-center">
                                                                     <img
-                                                                        src={dish.imageUrl || " /placeholder.jpg"}
+                                                                        src={resolveImageUrl(dish.imageUrl)}
                                                                         alt={dish.name}
                                                                         className="w-[96px] h-[96px] object-cover rounded-full mb-3 ring-1 ring-[#2b2b2b]"
                                                                         loading="lazy"
                                                                         onError={(e) => {
-                                                                            e.currentTarget.src = " /placeholder.jpg";
+                                                                            e.currentTarget.onerror = null;
+                                                                            e.currentTarget.src = "/placeholder.jpg";
                                                                         }}
                                                                     />
                                                                     <h4 className="text-[#f5f5f5] font-semibold line-clamp-2">
