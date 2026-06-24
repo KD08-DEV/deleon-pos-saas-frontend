@@ -50,8 +50,18 @@ const formatDMYTime = (dateLike) => {
     }).format(d);
 };
 
-const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) => {
+    const Invoice = ({
+                         order,
+                         onClose,
+                         itemsOverride = null,
+                         invoiceTitle = null,
+                         canReleaseTable = false,
+                         onCloseAndRelease = null,
+                         isReleaseLoading = false,
+                     }) => {
     const [isPrintingLogic, setIsPrintingLogic] = useState(false);
+    const showCloseAndReleaseButton =
+    canReleaseTable && typeof onCloseAndRelease === "function";
 
     const { tenantInfo } = useTenant();
 
@@ -590,7 +600,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
             variants={backdropVariants}
         >
             <motion.div
-                className="bg-white rounded-lg shadow-xl w-[calc(100vw-16px)] max-w-[100mm] sm:max-w-[100mm] max-h-[90vh] overflow-hidden flex flex-col"
+                className="bg-white rounded-lg shadow-xl w-[min(96vw,460px)] max-h-[90vh] overflow-hidden flex flex-col"
                 initial="hidden"
                 animate="visible"
                 variants={modalVariants}
@@ -598,7 +608,7 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                 <div
                     ref={receiptRef}
                     id="invoice-receipt-print"
-                    className="bg-white text-black w-full max-w-[92mm] mx-auto px-3 pt-4 pb-3 overflow-y-auto"
+                    className="bg-white text-black w-full max-w-[100mm] mx-auto px-3 pt-4 pb-3 overflow-y-auto"
                     style={{
                         backgroundColor: "#ffffff",
                         color: "#000000",
@@ -959,19 +969,21 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                 </div>
 
                 {/* Botones */}
-                <div className="flex flex-nowrap justify-between items-center gap-2 border-t px-3 py-3 bg-gray-50 text-xs sm:text-sm">
-                    <div className="flex flex-nowrap gap-2">
+                <div className="border-t px-2 py-2 bg-gray-50">
+                    <div className="flex flex-nowrap items-center justify-center gap-1.5 w-full">
                         <button
+                            type="button"
                             onClick={handleBrowserPrint}
-                            className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium whitespace-nowrap"
+                            className="h-9 px-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold whitespace-nowrap text-[11px] leading-none"
                         >
                             Otras impresoras
                         </button>
 
                         <button
+                            type="button"
                             onClick={handleLogicPrint}
                             disabled={isPrintingLogic}
-                            className={`px-3 py-2 rounded-md text-white font-semibold whitespace-nowrap ${
+                            className={`h-9 px-2 rounded-md text-white font-bold whitespace-nowrap text-[11px] leading-none ${
                                 isPrintingLogic
                                     ? "bg-gray-400 cursor-not-allowed"
                                     : "bg-[#111111] hover:bg-[#2b2b2b]"
@@ -979,14 +991,31 @@ const Invoice = ({ order, onClose, itemsOverride = null, invoiceTitle = null }) 
                         >
                             {isPrintingLogic ? "Imprimiendo..." : "Impresora de red"}
                         </button>
-                    </div>
 
-                    <button
-                        onClick={onClose}
-                        className="text-red-500 hover:text-red-600 font-medium whitespace-nowrap"
-                    >
-                        Cerrar
-                    </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isReleaseLoading}
+                            className="h-9 px-2 rounded-md border border-red-500 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 font-bold whitespace-nowrap text-[11px] leading-none disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                            Cerrar
+                        </button>
+
+                        {showCloseAndReleaseButton && (
+                            <button
+                                type="button"
+                                onClick={onCloseAndRelease}
+                                disabled={isReleaseLoading}
+                                className={`h-9 px-2 rounded-md text-white font-bold whitespace-nowrap text-[11px] leading-none shadow-sm ${
+                                    isReleaseLoading
+                                        ? "bg-gray-400 cursor-not-allowed"
+                                        : "bg-red-600 hover:bg-red-700 active:bg-red-800"
+                                }`}
+                            >
+                                {isReleaseLoading ? "Desocupando..." : "Cerrar y desocupar"}
+                            </button>
+                        )}
+                    </div>
                 </div>
             </motion.div>
         </motion.div>

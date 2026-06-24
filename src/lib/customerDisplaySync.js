@@ -28,6 +28,10 @@ const num = (value) => {
     return Number.isFinite(n) ? n : 0;
 };
 
+const round2 = (value) => {
+    return Math.round((num(value) + Number.EPSILON) * 100) / 100;
+};
+
 const safeJsonParse = (value) => {
     try {
         return value ? JSON.parse(value) : null;
@@ -36,15 +40,61 @@ const safeJsonParse = (value) => {
     }
 };
 
+const normalizeDisplayState = (state = {}) => {
+    const merged = {
+        ...defaultState,
+        ...(state || {}),
+    };
+
+    const itemsSubtotal = Array.isArray(merged.items)
+        ? merged.items.reduce((sum, item) => sum + num(item?.price), 0)
+        : 0;
+
+    const subtotal = round2(num(merged.subtotal) || itemsSubtotal);
+    const discount = round2(merged.discount);
+    const deliveryFee = round2(merged.deliveryFee);
+    const tax = round2(merged.tax);
+    const tip = round2(merged.tip);
+    const commission = round2(merged.commission);
+
+    const calculatedTotal = round2(
+        Math.max(subtotal - discount, 0) +
+        deliveryFee +
+        tax +
+        tip +
+        commission
+    );
+
+    const rawTotal = round2(merged.total);
+
+    const totalLooksLikeSubtotal =
+        rawTotal > 0 &&
+        Math.abs(rawTotal - subtotal) < 0.01 &&
+        (tax > 0 || tip > 0 || deliveryFee > 0 || commission > 0 || discount > 0);
+
+    const safeTotal =
+        rawTotal > 0 && !totalLooksLikeSubtotal
+            ? rawTotal
+            : calculatedTotal;
+
+    return {
+        ...merged,
+        subtotal,
+        discount,
+        deliveryFee,
+        tax,
+        tip,
+        commission,
+        total: safeTotal,
+    };
+};
+
 export const readCustomerDisplayState = () => {
     if (typeof window === "undefined") return defaultState;
 
     const saved = safeJsonParse(localStorage.getItem(CUSTOMER_DISPLAY_KEY));
 
-    return {
-        ...defaultState,
-        ...(saved || {}),
-    };
+    return normalizeDisplayState(saved || defaultState);
 };
 
 export const buildDisplayItems = (items = []) => {
@@ -84,11 +134,11 @@ export const publishCustomerDisplayPatch = (patch = {}) => {
 
     const previous = readCustomerDisplayState();
 
-    const next = {
+    const next = normalizeDisplayState({
         ...previous,
         ...patch,
         updatedAt: Date.now(),
-    };
+    });
 
     localStorage.setItem(CUSTOMER_DISPLAY_KEY, JSON.stringify(next));
 
@@ -119,20 +169,14 @@ export const subscribeCustomerDisplayState = (callback) => {
         channel = new BroadcastChannel(CUSTOMER_DISPLAY_CHANNEL);
 
         channel.onmessage = (event) => {
-            callback({
-                ...defaultState,
-                ...(event.data || {}),
-            });
+            callback(normalizeDisplayState(event.data || defaultState));
         };
     }
 
     const onStorage = (event) => {
         if (event.key !== CUSTOMER_DISPLAY_KEY) return;
 
-        callback({
-            ...defaultState,
-            ...(safeJsonParse(event.newValue) || {}),
-        });
+        callback(normalizeDisplayState(safeJsonParse(event.newValue) || defaultState));
     };
 
     window.addEventListener("storage", onStorage);

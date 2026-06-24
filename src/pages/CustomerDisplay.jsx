@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     formatCurrency,
     readCustomerDisplayState,
@@ -18,6 +18,7 @@ const getScreenParam = () => {
 
 const formatQuantity = (item) => {
     const quantity = toNumber(item?.quantity ?? 1);
+
     const cleanQuantity = Number.isInteger(quantity)
         ? quantity
         : quantity.toLocaleString("es-DO", {
@@ -31,18 +32,10 @@ const formatQuantity = (item) => {
     return cleanQuantity;
 };
 
-const getLastUpdateLabel = (updatedAt) => {
-    if (!updatedAt) return "--";
-
-    return new Date(updatedAt).toLocaleTimeString("es-DO", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-    });
-};
-
 const CustomerDisplay = () => {
     const [state, setState] = useState(() => readCustomerDisplayState());
+    const [hasOverflow, setHasOverflow] = useState(false);
+    const itemsListRef = useRef(null);
 
     const [viewport, setViewport] = useState(() => ({
         width: typeof window !== "undefined" ? window.innerWidth : 1366,
@@ -80,14 +73,54 @@ const CustomerDisplay = () => {
 
     const hasItems = items.length > 0;
 
-    const subtotal = toNumber(state.subtotal);
-    const discount = toNumber(state.discount);
-    const deliveryFee = toNumber(state.deliveryFee);
-    const tax = toNumber(state.tax);
-    const tip = toNumber(state.tip);
-    const total = toNumber(state.total || state.subtotal);
+    const itemScrollKey = useMemo(() => {
+        return items
+            .map((item, index) => {
+                return [
+                    item?.id || index,
+                    item?.name || "",
+                    item?.quantity || "",
+                    item?.price || "",
+                ].join(":");
+            })
+            .join("|");
+    }, [items]);
 
-    const paymentMethod = state.paymentMethod || "Pendiente";
+    const round2 = (value) => {
+        return Math.round((toNumber(value) + Number.EPSILON) * 100) / 100;
+    };
+
+    const itemsSubtotal = useMemo(() => {
+        return items.reduce((sum, item) => {
+            return sum + toNumber(item?.price);
+        }, 0);
+    }, [items]);
+
+    const subtotal = round2(toNumber(state.subtotal) || itemsSubtotal);
+    const discount = round2(state.discount);
+    const deliveryFee = round2(state.deliveryFee);
+    const tax = round2(state.tax);
+    const tip = round2(state.tip);
+    const commission = round2(state.commission);
+
+    const calculatedTotal = round2(
+        Math.max(subtotal - discount, 0) +
+        deliveryFee +
+        tax +
+        tip +
+        commission
+    );
+
+    const rawTotal = round2(state.total);
+
+    const totalLooksLikeSubtotal =
+        rawTotal > 0 &&
+        Math.abs(rawTotal - subtotal) < 0.01 &&
+        (tax > 0 || tip > 0 || deliveryFee > 0 || commission > 0 || discount > 0);
+
+    const total = rawTotal > 0 && !totalLooksLikeSubtotal
+        ? rawTotal
+        : calculatedTotal;
 
     const orderLabel =
         state.tableLabel ||
@@ -102,36 +135,79 @@ const CustomerDisplay = () => {
         paid: "Pago registrado",
     }[status] || "Venta activa";
 
-    const summaryRows = [
-        {
-            label: "Subtotal",
-            value: subtotal,
-            show: true,
-        },
-        {
-            label: "Descuento",
-            value: discount,
-            show: discount > 0,
-            negative: true,
-        },
-        {
-            label: "Envío",
-            value: deliveryFee,
-            show: deliveryFee > 0,
-        },
-        {
-            label: "Propina",
-            value: tip,
-            show: tip > 0,
-        },
-        {
-            label: "ITBIS",
-            value: tax,
-            show: tax > 0,
-        },
-    ].filter((row) => row.show);
+    useEffect(() => {
+        const list = itemsListRef.current;
 
-    const showCashInfo = paymentMethod === "Efectivo" && toNumber(state.cashReceived) > 0;
+        if (!list || !hasItems) {
+            setHasOverflow(false);
+            return undefined;
+        }
+
+        let rafId = 0;
+        let intervalId = 0;
+
+        const checkOverflow = () => {
+            const maxScroll = list.scrollHeight - list.clientHeight;
+            const overflow = maxScroll > 10;
+
+            setHasOverflow(overflow);
+
+            if (!overflow) {
+                list.scrollTo({
+                    top: 0,
+                    behavior: "auto",
+                });
+            }
+
+            return overflow;
+        };
+
+        rafId = window.requestAnimationFrame(() => {
+            list.scrollTo({
+                top: 0,
+                behavior: "auto",
+            });
+
+            checkOverflow();
+        });
+
+        intervalId = window.setInterval(() => {
+            const maxScroll = list.scrollHeight - list.clientHeight;
+
+            if (maxScroll <= 10) {
+                setHasOverflow(false);
+                return;
+            }
+
+            setHasOverflow(true);
+
+            const nearBottom = list.scrollTop >= maxScroll - 14;
+
+            const nextTop = nearBottom
+                ? 0
+                : Math.min(
+                    maxScroll,
+                    list.scrollTop + Math.max(list.clientHeight * 0.82, 160)
+                );
+
+            list.scrollTo({
+                top: nextTop,
+                behavior: "smooth",
+            });
+        }, 4200);
+
+        const handleResize = () => {
+            checkOverflow();
+        };
+
+        window.addEventListener("resize", handleResize);
+
+        return () => {
+            window.cancelAnimationFrame(rafId);
+            window.clearInterval(intervalId);
+            window.removeEventListener("resize", handleResize);
+        };
+    }, [hasItems, itemScrollKey, isCompact]);
 
     return (
         <main
@@ -172,33 +248,48 @@ const CustomerDisplay = () => {
                                 </p>
                             </div>
                         ) : (
-                            <div className="cd-items-list" aria-label="Productos de la venta">
-                                {items.map((item, index) => (
-                                    <article
-                                        className="cd-item-card"
-                                        key={`${item.id || item.name || "item"}-${index}`}
-                                    >
-                                        <div className="cd-item-info">
-                                            <h2 className="cd-item-name" title={item.name}>
-                                                {item.name || "Producto"}
-                                            </h2>
+                            <div className="cd-items-shell">
+                                <div
+                                    ref={itemsListRef}
+                                    className={`cd-items-list ${
+                                        hasOverflow ? "has-auto-scroll" : ""
+                                    }`}
+                                    aria-label="Productos de la venta"
+                                >
+                                    {items.map((item, index) => (
+                                        <article
+                                            className="cd-item-card"
+                                            key={`${item.id || item.name || "item"}-${index}`}
+                                        >
+                                            <div className="cd-item-info">
+                                                <h2 className="cd-item-name" title={item.name}>
+                                                    {item.name || "Producto"}
+                                                </h2>
 
-                                            <p className="cd-item-qty">
-                                                Cantidad: <strong>{formatQuantity(item)}</strong>
-                                            </p>
-                                        </div>
+                                                <p className="cd-item-qty">
+                                                    Cantidad:{" "}
+                                                    <strong>{formatQuantity(item)}</strong>
+                                                </p>
+                                            </div>
 
-                                        <strong className="cd-item-price">
-                                            {formatCurrency(item.price)}
-                                        </strong>
-                                    </article>
-                                ))}
+                                            <strong className="cd-item-price">
+                                                {formatCurrency(item.price)}
+                                            </strong>
+                                        </article>
+                                    ))}
+                                </div>
+
+                                {hasOverflow && (
+                                    <div className="cd-scroll-hint">
+                                        Mostrando todos los productos automáticamente
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 </section>
 
-                <aside className="cd-summary-panel">
+                <aside className="cd-summary-panel" aria-label="Resumen de pago">
                     <div className="cd-total-block">
                         <p className="cd-total-label">TOTAL A PAGAR</p>
 
@@ -209,64 +300,18 @@ const CustomerDisplay = () => {
                         >
                             {formatCurrency(total)}
                         </h2>
-
-                        {status === "paid" && (
-                            <div className="cd-paid-banner">
-                                <strong>Pago registrado</strong>
-                                <span>Gracias por su compra.</span>
-                            </div>
-                        )}
                     </div>
 
-                    <div className="cd-summary-content">
-                        <div className="cd-summary-breakdown">
-                            {summaryRows.map((row) => (
-                                <div
-                                    className={`cd-summary-row ${
-                                        row.negative ? "is-negative" : ""
-                                    }`}
-                                    key={row.label}
-                                >
-                                    <span>{row.label}</span>
-                                    <strong>
-                                        {row.negative ? "-" : ""}
-                                        {formatCurrency(row.value)}
-                                    </strong>
-                                </div>
-                            ))}
+                    <div className="cd-mini-summary">
+                        <div className="cd-mini-card">
+                            <span>Propina legal</span>
+                            <strong>{formatCurrency(tip)}</strong>
                         </div>
 
-                        <div className="cd-payment-box">
-                            <div className="cd-payment-row">
-                                <span>Método</span>
-                                <strong>{paymentMethod}</strong>
-                            </div>
-
-                            {showCashInfo && (
-                                <div className="cd-cash-grid">
-                                    <div>
-                                        <span>Recibido</span>
-                                        <strong>{formatCurrency(state.cashReceived)}</strong>
-                                    </div>
-
-                                    {toNumber(state.cashMissing) > 0 ? (
-                                        <div className="is-missing">
-                                            <span>Falta</span>
-                                            <strong>{formatCurrency(state.cashMissing)}</strong>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <span>Cambio</span>
-                                            <strong>{formatCurrency(state.cashChange)}</strong>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                        <div className="cd-mini-card">
+                            <span>ITBIS</span>
+                            <strong>{formatCurrency(tax)}</strong>
                         </div>
-
-                        <p className="cd-last-update">
-                            Última actualización: {getLastUpdateLabel(state.updatedAt)}
-                        </p>
                     </div>
                 </aside>
             </div>

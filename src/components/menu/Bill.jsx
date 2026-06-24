@@ -433,6 +433,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
+    const [releaseFromInvoiceLoading, setReleaseFromInvoiceLoading] = useState(false);
 
     const [itemsToPrint, setItemsToPrint] = useState([]);
     const [lastPayloadItems, setLastPayloadItems] = useState([]);
@@ -652,6 +653,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         subtotal,
         discountType,
         discountValue,
+        taxEnabled,
         tipEnabledByTenant,
         tipPercent,
         isInternalDelivery,
@@ -1659,10 +1661,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         navigate("/mesas", { replace: true });
     };
+
     const handleFinishAndReleaseTable = async () => {
+        if (releaseFromInvoiceLoading) return;
+
         const invoiceOrderId =
             orderInfo?._id ||
             orderId ||
+            order?._id ||
             null;
 
         const tableIdToRelease =
@@ -1670,20 +1676,32 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             getTableIdFromAny(draftTable) ||
             getTableIdFromAny(order?.table);
 
+        if (!tableIdToRelease) {
+            handleInvoiceClose();
+            return;
+        }
+
         try {
+            setReleaseFromInvoiceLoading(true);
+
+            // Marcamos la orden como completada, pero NO volvemos a facturar.
+            // Esto evita duplicar factura, NCF, e-CF o inventario.
             if (invoiceOrderId) {
                 await updateOrder(invoiceOrderId, {
                     orderStatus: "Completado",
-                    submitAction: "invoice",
+                    submitAction: "release_table",
                 });
             }
 
-            if (tableIdToRelease) {
-                await updateTable(tableIdToRelease, {
-                    status: "Disponible",
-                    orderId: null,
-                });
-            }
+            // Liberar mesa
+            await updateTable(tableIdToRelease, {
+                status: "Disponible",
+                orderId: null,
+                currentOrder: null,
+            });
+
+            setShowInvoice(false);
+            setIsOrderModalOpen(false);
 
             dispatch(removeAllItems());
             dispatch(clearDraftContext());
@@ -1692,10 +1710,19 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             queryClient.invalidateQueries({ queryKey: ["tables"] });
             queryClient.invalidateQueries({ queryKey: ["cash-session"] });
 
-            navigate("/orders", { replace: true });
+            enqueueSnackbar("Factura cerrada y mesa desocupada correctamente.", {
+                variant: "success",
+            });
+
+            navigate("/mesas", { replace: true });
         } catch (e) {
-            console.error("[BILL] No pude cerrar/liberar mesa:", e?.response?.data || e);
-            enqueueSnackbar("No se pudo cerrar y liberar la mesa.", { variant: "error" });
+            console.error("[BILL] No pude cerrar y desocupar mesa:", e?.response?.data || e);
+
+            enqueueSnackbar("No se pudo cerrar y desocupar la mesa.", {
+                variant: "error",
+            });
+        } finally {
+            setReleaseFromInvoiceLoading(false);
         }
     };
 
@@ -2472,6 +2499,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     order={orderInfo}
                     setShowInvoice={setShowInvoice}
                     onClose={handleInvoiceClose}
+                    canReleaseTable={Boolean(
+                        getTableIdFromAny(orderInfo?.table) ||
+                        getTableIdFromAny(draftTable) ||
+                        getTableIdFromAny(order?.table)
+                    )}
+                    onCloseAndRelease={handleFinishAndReleaseTable}
+                    isReleaseLoading={releaseFromInvoiceLoading}
                 />
             )}
         </>
