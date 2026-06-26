@@ -75,7 +75,16 @@ const SalesReports = () => {
         return unitCost > 0 && costTotal > 0;
     };
 
-    const safeNumber = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    const safeNumber = (v) => {
+        if (typeof v === "string") {
+            const cleaned = v.replace(/[^\d.-]/g, "");
+            const n = Number(cleaned);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+    };
 
     const fmtPct = (v) => (v == null ? "N/A" : `${Number(v).toFixed(2)}%`);
     const addDaysISOStart = (ymd, days) => {
@@ -193,6 +202,7 @@ const SalesReports = () => {
                 unitCost: safeNumber(r?.unitCost ?? r?.costUnit ?? 0),
                 costTotal: safeNumber(r?.costTotal ?? r?.totalCost ?? 0),
                 taxTotal: safeNumber(r?.taxTotal ?? r?.tax ?? r?.itbis ?? 0),
+                orderCount: safeNumber(r?.orderCount ?? r?.count ?? 0),
             };
         });
     }, [productReportQuery.data]);
@@ -591,26 +601,40 @@ const SalesReports = () => {
     const salesByDish = useMemo(() => {
         const map = new Map();
 
-        for (const o of orders || []) {
-            const items = Array.isArray(o?.items) ? o.items : [];
-            for (const it of items) {
-                const name = (it?.name || "").trim() || "—";
-                const qty = Number(it?.quantity || 0);
-                const revenue = Number(it?.price || 0);
+        for (const r of detailRows || []) {
+            const name = String(
+                r?.product ||
+                r?.productName ||
+                r?.dishName ||
+                r?.itemName ||
+                r?.name ||
+                "Producto"
+            ).trim();
 
-                const prev = map.get(name) || { name, qty: 0, total: 0, orders: new Set() };
-                prev.qty += qty;
-                prev.total += revenue;
-                prev.orders.add(String(o?._id || ""));
-                map.set(name, prev);
-            }
+            const qty = safeNumber(r?.qty ?? r?.quantity ?? 0);
+            const revenue = safeNumber(r?.revenue ?? r?.sales ?? r?.total ?? 0);
+            const orderCount = safeNumber(r?.orderCount ?? r?.count ?? 0);
+
+            if (!name || (qty <= 0 && revenue <= 0)) continue;
+
+            const prev = map.get(name) || {
+                name,
+                qty: 0,
+                total: 0,
+                count: 0,
+            };
+
+            prev.qty += qty;
+            prev.total += revenue;
+            prev.count += orderCount;
+
+            map.set(name, prev);
         }
 
-        // a array y ordenado por ingresos desc
         return Array.from(map.values())
-            .map((x) => ({ ...x, count: x.orders.size }))
-            .sort((a, b) => b.total - a.total);
-    }, [orders]);
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 10);
+    }, [detailRows]);
     const totalRows = reportRows.length;
     const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
     const getOrderDishesLabel = (order, max = 2) => {
@@ -776,62 +800,7 @@ const SalesReports = () => {
                 </div>
             </div>
 
-        {hasClosureReportData && (
-            <div className="mb-6 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 className="text-lg font-semibold text-white">
-                            Resumen declarado en cierre
-                        </h3>
-                        <p className="text-sm text-white/70">
-                            Tickets, transferencias y otros montos registrados al cerrar caja.
-                        </p>
-                    </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
-                        <p className="text-sm text-white/75 mb-1">Tickets contados</p>
-                        <p className="text-2xl font-bold text-white">
-                            {currency(closureReportTotals.ticketTotal)}
-                        </p>
-                        <p className="text-xs text-white/50 mt-1">
-                            Crédito físico contado como efectivo
-                        </p>
-                    </div>
-
-                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
-                        <p className="text-sm text-white/75 mb-1">Transferencias declaradas</p>
-                        <p className="text-2xl font-bold text-white">
-                            {currency(closureReportTotals.transferCountedTotal)}
-                        </p>
-                        <p className="text-xs text-white/50 mt-1">
-                            Registradas en cierre
-                        </p>
-                    </div>
-
-                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
-                        <p className="text-sm text-white/75 mb-1">Otros declarados</p>
-                        <p className="text-2xl font-bold text-white">
-                            {currency(closureReportTotals.otherCountedTotal)}
-                        </p>
-                        <p className="text-xs text-white/50 mt-1">
-                            Otros montos del cierre
-                        </p>
-                    </div>
-
-                    <div className="bg-[#1a1a1a] border border-gray-700/50 rounded-lg p-4">
-                        <p className="text-sm text-white/75 mb-1">Total declarado</p>
-                        <p className="text-2xl font-bold text-[#f6b100]">
-                            {currency(closureReportTotals.totalDeclaredAtClose)}
-                        </p>
-                        <p className="text-xs text-white/50 mt-1">
-                            Según cierres de caja
-                        </p>
-                    </div>
-                </div>
-            </div>
-        )}
             {/* ✅ Reporte por Producto/Categoría/Método (nuevo) */}
             <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2 text-sm text-gray-300">
@@ -1008,18 +977,28 @@ const SalesReports = () => {
                     <h3 className="text-lg font-semibold text-white">Ventas por Plato</h3>
                     <span className="text-xs text-gray-400">Top 10</span>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {salesByDish.slice(0, 10).map((x) => (
-                        <div key={x.name} className="bg-[#1a1a1a] border border-gray-800/30 rounded-lg p-3">
-                            <p className="text-sm text-gray-200 mb-1 line-clamp-2">{x.name}</p>
-                            <p className="text-lg font-bold text-white">{currency(x.total)}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                                {x.count} órdenes · {Number(x.qty || 0).toFixed(2)} cant.
-                            </p>
-                        </div>
-                    ))}
-                </div>
+                {productReportQuery.isLoading ? (
+                    <div className="text-center py-6 text-gray-400">
+                        Cargando ventas por plato...
+                    </div>
+                ) : salesByDish.length === 0 ? (
+                    <div className="text-center py-6 text-gray-400">
+                        No hay productos vendidos para mostrar en este rango.
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        {salesByDish.map((x) => (
+                            <div key={x.name} className="bg-[#1a1a1a] border border-gray-800/30 rounded-lg p-3">
+                                <p className="text-sm text-gray-200 mb-1 line-clamp-2">{x.name}</p>
+                                <p className="text-lg font-bold text-white">{currency(x.total)}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {x.count > 0 ? `${x.count} órdenes · ` : ""}
+                                    {Number(x.qty || 0).toFixed(2)} cant.
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Ventas por día de la semana */}
