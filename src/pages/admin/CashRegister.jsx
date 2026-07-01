@@ -99,10 +99,17 @@ const saveRegisterId = (value) => {
 
         if (!cleanValue) return;
 
+        // Llave nueva por tenant/client/user
         localStorage.setItem(getRegisterStorageKey(), cleanValue);
 
-        // Evita que la llave vieja global siga contaminando otros tenants.
-        localStorage.removeItem(LEGACY_REGISTER_STORAGE_KEY);
+        // Compatibilidad con Bill.jsx / OrderCard.jsx / otros componentes viejos
+        localStorage.setItem(LEGACY_REGISTER_STORAGE_KEY, cleanValue);
+
+        window.dispatchEvent(
+            new CustomEvent("deleonsoft:register-changed", {
+                detail: { registerId: cleanValue },
+            })
+        );
     } catch {
         // ignore
     }
@@ -256,6 +263,7 @@ const buildCountsFromSavedBreakdown = (breakdown = []) => {
 };
 const getInvoiceNumber = (r) => {
     const raw =
+        // Factura real
         r?.facturaNo ??
         r?.invoiceNumber ??
         r?.invoiceNo ??
@@ -265,6 +273,10 @@ const getInvoiceNumber = (r) => {
         r?.fiscal?.internalNumber ??
         r?.fiscal?.internalSeq ??
         r?.fiscal?.internal ??
+
+        // Orden / ticket / actualizar
+        r?.operationNumber ??
+        r?.operationSeq ??
         null;
 
     if (raw === null || raw === undefined || raw === "") return "—";
@@ -3039,19 +3051,28 @@ const CashRegister = () => {
     ]);
     const systemExpectedInRegisterShown = useMemo(() => {
         /*
-         * Para esta comparación NO usamos cashInRegister,
-         * porque cashInRegister incluye fondo inicial + agregado.
+         * Para cierre de caja, el sistema esperado debe incluir:
+         * fondo inicial + dinero agregado + ventas efectivo + abonos efectivo - gastos efectivo.
          *
-         * Fórmula correcta:
-         * Sistema esperado = efectivo + ticket - ventas a crédito
+         * Si la caja ya está cerrada, usamos el valor guardado por backend.
+         * Si está abierta o no hay cierre guardado, usamos el cálculo local.
          */
-        const cashAndTicketSales = safeNumber(initialCashClosure?.cashSales);
-        const creditSales = safeNumber(initialCashClosure?.creditSales);
+        const savedExpected = safeNumber(expectedInRegisterShown);
 
-        return Number((cashAndTicketSales - creditSales).toFixed(2));
+        if (
+            sessionClosed ||
+            closingAlreadySet ||
+            savedExpected > 0
+        ) {
+            return Number(savedExpected.toFixed(2));
+        }
+
+        return Number(safeNumber(initialCashClosure?.cashInRegister).toFixed(2));
     }, [
-        initialCashClosure?.cashSales,
-        initialCashClosure?.creditSales,
+        expectedInRegisterShown,
+        sessionClosed,
+        closingAlreadySet,
+        initialCashClosure?.cashInRegister,
     ]);
 
 // Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
@@ -4075,7 +4096,7 @@ const CashRegister = () => {
                         return (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                    <div className="text-xs text-gray-400 mb-1">Sistema (ventas efectivo)</div>
+                                    <div className="text-xs text-gray-400 mb-1">Sistema (efectivo esperado)</div>
                                     <div className="text-sm font-semibold text-white">{currency(expected)}</div>
                                 </div>
 

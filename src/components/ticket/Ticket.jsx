@@ -258,17 +258,57 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                 <div className="px-4 pt-4 pb-3 overflow-y-auto">
                     <style>
                         {`
-              @media print {
-                @page { size: 80mm auto; margin: 0mm; }
-                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                .no-print { display: none !important; }
-                .ticket-root { width: 80mm; margin: 0 auto; padding: 8mm 5mm; }
-                .ticket-divider { border-top: 1px dashed #111; margin: 8px 0; }
-              }
-            `}
-                    </style>
+                      .ticket-root {
+                        width: 80mm;
+                        max-width: 100%;
+                        margin: 0 auto;
+                        padding: 8mm 5mm;
+                        background: #ffffff !important;
+                        color: #111827 !important;
+                      }
+                
+                      .ticket-root *:not(.ticket-qty-badge) {
+                        color: #111827 !important;
+                      }
+                
+                      .ticket-root .ticket-muted {
+                        color: #4b5563 !important;
+                      }
+                
+                      .ticket-root .ticket-qty-badge {
+                        background: #111827 !important;
+                        color: #ffffff !important;
+                      }
+                
+                      .ticket-divider {
+                        border-top: 1px dashed #111827;
+                        margin: 8px 0;
+                      }
+                
+                      @media print {
+                        @page { size: 80mm auto; margin: 0mm; }
+                
+                        body {
+                          -webkit-print-color-adjust: exact;
+                          print-color-adjust: exact;
+                          background: #ffffff !important;
+                          color: #111827 !important;
+                        }
+                
+                        .no-print {
+                          display: none !important;
+                        }
+                
+                        .ticket-root {
+                          width: 80mm;
+                          margin: 0 auto;
+                          padding: 8mm 5mm;
+                        }
+                      }
+                    `}
+                </style>
 
-                    <div ref={receiptRef} className="ticket-root">
+                    <div ref={receiptRef} className="ticket-root text-black bg-white">
                         <div className="text-center">
                             <div className="text-lg font-extrabold">{businessName}</div>
                             {businessRnc ? <div className="text-xs">RNC: {businessRnc}</div> : null}
@@ -320,7 +360,8 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                                                 className="px-1 py-1"
                                             >
                                                 <div className="flex items-start gap-2">
-                                                    <div className="min-w-[30px] rounded bg-black px-2 py-1 text-center text-[13px] font-extrabold text-white leading-none">
+
+                                                    <div className="ticket-qty-badge min-w-[30px] rounded px-2 py-1 text-center text-[13px] font-extrabold leading-none">
                                                         x{qty}
                                                     </div>
 
@@ -373,7 +414,7 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
 
                         <div className="ticket-divider" />
                         <div className="text-center text-xs font-bold">FIN PEDIDO</div>
-                        <div className="text-center text-[11px] text-gray-700">Gracias por su compra</div>
+                        <div className="ticket-muted text-center text-[11px]">Gracias por su compra</div>
                     </div>
                 </div>
                 <div className="no-print border-t pt-3 px-4 pb-2 bg-white">

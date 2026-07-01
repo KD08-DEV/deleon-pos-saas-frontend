@@ -63,10 +63,9 @@ const isMongoObjectId = (value) => /^[a-f\d]{24}$/i.test(String(value || "").tri
 const normalizeDisplayOrderNumber = (value) => {
     const raw = String(value ?? "").trim();
     if (!raw) return null;
-    if (isMongoObjectId(raw)) return null;
 
-    // evita mostrar sufijos tipo ObjectId como #84C47C
-    if (/^[A-F\d]{6,8}$/i.test(raw) && /[A-F]/i.test(raw)) return null;
+    // No mostrar ObjectId completo
+    if (isMongoObjectId(raw)) return null;
 
     return raw.replace(/^#/, "");
 };
@@ -75,6 +74,11 @@ const getShortOrderId = (order) => {
     if (!order) return "#Sin número";
 
     const candidates = [
+        // ✅ Número de orden / operación para Ticket y Actualizar
+        order?.operationNumber,
+        order?.operationSeq,
+
+        // Otros posibles números internos de orden
         order?.displayOrderNumber,
         order?.displayNumber,
         order?.queueNumber,
@@ -84,20 +88,26 @@ const getShortOrderId = (order) => {
         order?.orderCode,
         order?.sequenceNumber,
         order?.serialNumber,
+
+        // ✅ Factura real, solo cuando ya fue facturada
         order?.facturaNo,
         order?.invoiceNumber,
         order?.invoiceNo,
-        order?.orderShortId,
-        order?.orderId,
         order?.fiscal?.internalNumber,
+        order?.fiscal?.internalSeq,
         order?.fiscal?.sequenceNumber,
         order?.fiscal?.invoiceNumber,
         order?.fiscal?.invoiceNo,
+
+        // Último fallback visual si la orden vieja no tiene número
+        order?._id ? String(order._id).slice(-6).toUpperCase() : null,
     ];
 
     for (const candidate of candidates) {
         const normalized = normalizeDisplayOrderNumber(candidate);
-        if (normalized) return `#${normalized}`;
+        if (normalized) {
+            return `#${normalized}`;
+        }
     }
 
     return "#Sin número";
@@ -209,11 +219,72 @@ const isLikelyRnc = (val) => {
 };
 const unwrapOrder = (res) => res?.data?.data ?? res?.data?.order ?? res?.data;
 
-const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
+const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+const getRegisterStorageUser = () => {
+    try {
+        const keys = ["user", "userData", "authUser", "currentUser"];
+
+        for (const key of keys) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+
+            const parsed = JSON.parse(raw);
+
+            if (parsed?.user && typeof parsed.user === "object") return parsed.user;
+            if (parsed?.userData && typeof parsed.userData === "object") return parsed.userData;
+            if (parsed && typeof parsed === "object") return parsed;
+        }
+    } catch {
+        // ignore
+    }
+
+    return {};
+};
+
+const getRegisterStorageKey = () => {
+    const u = getRegisterStorageUser();
+
+    const tenantId =
+        u?.tenantId ||
+        u?.tenant?.tenantId ||
+        u?.tenant?._id ||
+        u?.tenant?.id ||
+        localStorage.getItem("tenantId") ||
+        "noTenant";
+
+    const clientId =
+        u?.clientId ||
+        u?.client?.clientId ||
+        u?.client?._id ||
+        localStorage.getItem("clientId") ||
+        "default";
+
+    const userId =
+        u?._id ||
+        u?.id ||
+        u?.user?._id ||
+        u?.user?.id ||
+        "noUser";
+
+    const host = typeof window !== "undefined" ? window.location.host : "app";
+
+    return [
+        REGISTER_STORAGE_PREFIX,
+        host,
+        String(tenantId || "noTenant"),
+        String(clientId || "default"),
+        String(userId || "noUser"),
+    ].join(":");
+};
 
 const getActiveRegisterId = () => {
     try {
-        return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+        const scopedValue = localStorage.getItem(getRegisterStorageKey());
+        const legacyValue = localStorage.getItem(LEGACY_REGISTER_STORAGE_KEY);
+
+        return String(scopedValue || legacyValue || "MAIN")
             .trim()
             .toUpperCase();
     } catch {

@@ -185,11 +185,72 @@ const inferNcfTypeFromNumber = (value) => {
     if (ncf.startsWith("B02")) return "B02";
     return null;
 };
-const REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
+const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
+
+const getRegisterStorageUser = () => {
+    try {
+        const keys = ["user", "userData", "authUser", "currentUser"];
+
+        for (const key of keys) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+
+            const parsed = JSON.parse(raw);
+
+            if (parsed?.user && typeof parsed.user === "object") return parsed.user;
+            if (parsed?.userData && typeof parsed.userData === "object") return parsed.userData;
+            if (parsed && typeof parsed === "object") return parsed;
+        }
+    } catch {
+        // ignore
+    }
+
+    return {};
+};
+
+const getRegisterStorageKey = () => {
+    const u = getRegisterStorageUser();
+
+    const tenantId =
+        u?.tenantId ||
+        u?.tenant?.tenantId ||
+        u?.tenant?._id ||
+        u?.tenant?.id ||
+        localStorage.getItem("tenantId") ||
+        "noTenant";
+
+    const clientId =
+        u?.clientId ||
+        u?.client?.clientId ||
+        u?.client?._id ||
+        localStorage.getItem("clientId") ||
+        "default";
+
+    const userId =
+        u?._id ||
+        u?.id ||
+        u?.user?._id ||
+        u?.user?.id ||
+        "noUser";
+
+    const host = typeof window !== "undefined" ? window.location.host : "app";
+
+    return [
+        REGISTER_STORAGE_PREFIX,
+        host,
+        String(tenantId || "noTenant"),
+        String(clientId || "default"),
+        String(userId || "noUser"),
+    ].join(":");
+};
 
 const getActiveRegisterId = () => {
     try {
-        return String(localStorage.getItem(REGISTER_STORAGE_KEY) || "MAIN")
+        const scopedValue = localStorage.getItem(getRegisterStorageKey());
+        const legacyValue = localStorage.getItem(LEGACY_REGISTER_STORAGE_KEY);
+
+        return String(scopedValue || legacyValue || "MAIN")
             .trim()
             .toUpperCase();
     } catch {
@@ -347,7 +408,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     }, [tenantInfo]);
     // Fiscal capability (nuevo modelo)
     useEffect(() => {
-
         if (!tipEnabledByTenant) {
             setTipEnabled(false);
             setTipPercent(0);
@@ -639,7 +699,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         const taxableBase = baseCalc + ship;
         const taxCalc = (taxableBase * effectiveTaxRate) / 100;
 
-        const tipCalc = tipEnabledByTenant ? (baseCalc * LEGAL_TIP_RATE) / 100 : 0;
+        const tipCalc =
+            tipEnabledByTenant && tipEnabled
+                ? (baseCalc * LEGAL_TIP_RATE) / 100
+                : 0;
 
         return {
             discount: discountCalc,
@@ -654,8 +717,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         discountType,
         discountValue,
         taxEnabled,
+        tipEnabled,
         tipEnabledByTenant,
-        tipPercent,
         isInternalDelivery,
         deliveryFee,
     ]);
@@ -912,8 +975,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         const action = String(target || "").trim().toLowerCase();
         const isInvoiceSubmit = action === "invoice";
-        const shouldGenerateInternalInvoiceNumber =
-            action === "ticket" || action === "invoice";
+        const shouldGenerateInternalInvoiceNumber = action === "invoice";
 
         const resolvedTableId =
             (typeof draftTable === "string" ? draftTable : null) ||
@@ -951,8 +1013,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     : "Pendiente",
 
 // IMPORTANTE:
-// Ticket también debe generar número interno de factura,
-// pero NO debe cerrar la orden ni marcarla como pagada.
+// Solo Facturar genera número de factura real.
+// Ticket y Actualizar usan operationNumber desde el backend.
             markAsPaid: shouldGenerateInternalInvoiceNumber,
         };
 
@@ -1297,6 +1359,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             const invoice = {
                 _id: server._id ?? effectiveId,
+
+                operationSeq:
+                    server.operationSeq ??
+                    order?.operationSeq ??
+                    null,
+
+                operationNumber:
+                    server.operationNumber ??
+                    order?.operationNumber ??
+                    null,
+
                 createdAt: server.createdAt ?? order?.createdAt ?? null,
                 table: server.table ?? order?.table ?? draftTable ?? null,
                 orderNote: server.orderNote ?? fallback.orderNote ?? "",
@@ -1960,12 +2033,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
 
-                {/* ✅ PROPINA LEGAL FIJA */}
+                {/* ✅ PROPINA LEGAL 10% */}
                 {tipEnabledByTenant && (
                     <div className="flex items-center justify-between mt-3">
-                        <span className="text-xs text-[#ababab]">Propina legal</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs text-[#ababab]">Propina legal</span>
 
-                        <span className="text-xs text-[#f5f5f5] font-semibold">
+                            <Switch
+                                checked={tipEnabled}
+                                onChange={setTipEnabled}
+                            />
+                        </div>
+
+                        <span
+                            className={`text-xs font-semibold ${
+                                tipEnabled ? "text-[#f5f5f5]" : "text-[#777]"
+                            }`}
+                        >
             {LEGAL_TIP_RATE}%
         </span>
                     </div>
@@ -2025,10 +2109,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         </div>
                     )}
 
-                    <div className="flex justify-between">
-                        <span>Propina legal 10%</span>
-                        <span>${num(tip).toFixed(2)}</span>
-                    </div>
+                    {tipEnabledByTenant && (
+                        <div className="flex justify-between">
+                            <span>
+                                Propina legal 10%
+                                {!tipEnabled ? " (desactivada)" : ""}
+                            </span>
+                            <span>${num(tip).toFixed(2)}</span>
+                        </div>
+                    )}
 
                     {taxEnabledByTenant && (
                         <div className="flex justify-between">
