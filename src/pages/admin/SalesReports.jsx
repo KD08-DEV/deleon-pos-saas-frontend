@@ -85,6 +85,37 @@ const SalesReports = () => {
         const n = Number(v);
         return Number.isFinite(n) ? n : 0;
     };
+    const getBillTax = (bill = {}) =>
+        safeNumber(
+            bill?.tax ??
+            bill?.itbis ??
+            bill?.itbisTotal ??
+            bill?.totalTax ??
+            0
+        );
+
+    const getBillTip = (bill = {}) =>
+        safeNumber(
+            bill?.tip ??
+            bill?.legalTip ??
+            bill?.propina ??
+            bill?.propinaLegal ??
+            bill?.serviceCharge ??
+            bill?.tipAmount ??
+            0
+        );
+
+    const getRowTipTotal = (row = {}) =>
+        safeNumber(
+            row?.tipTotal ??
+            row?.tip ??
+            row?.legalTip ??
+            row?.propina ??
+            row?.propinaLegal ??
+            row?.serviceCharge ??
+            row?.tipAmount ??
+            0
+        );
 
     const fmtPct = (v) => (v == null ? "N/A" : `${Number(v).toFixed(2)}%`);
     const addDaysISOStart = (ymd, days) => {
@@ -202,6 +233,7 @@ const SalesReports = () => {
                 unitCost: safeNumber(r?.unitCost ?? r?.costUnit ?? 0),
                 costTotal: safeNumber(r?.costTotal ?? r?.totalCost ?? 0),
                 taxTotal: safeNumber(r?.taxTotal ?? r?.tax ?? r?.itbis ?? 0),
+                tipTotal: getRowTipTotal(r),
                 orderCount: safeNumber(r?.orderCount ?? r?.count ?? 0),
             };
         });
@@ -219,7 +251,9 @@ const SalesReports = () => {
 
     // Análisis de ventas
     const salesAnalysis = useMemo(() => {
-        const totalSales = orders.reduce((sum, o) => sum + (Number(o.bills?.totalWithTax) || 0), 0);
+        const totalSales = orders.reduce((sum, o) => sum + safeNumber(o.bills?.totalWithTax), 0);
+        const totalTax = orders.reduce((sum, o) => sum + getBillTax(o.bills), 0);
+        const totalTip = orders.reduce((sum, o) => sum + getBillTip(o.bills), 0);
         const totalOrders = orders.length;
         const avgTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
 
@@ -265,6 +299,8 @@ const SalesReports = () => {
 
         return {
             totalSales,
+            totalTax,
+            totalTip,
             totalOrders,
             avgTicket: Number(avgTicket.toFixed(2)),
             byMethod,
@@ -360,6 +396,7 @@ const SalesReports = () => {
             const revenue = safeNumber(r?.revenue);
             const qty = safeNumber(r?.qty);
             const taxTotal = safeNumber(r?.taxTotal);
+            const tipTotal = safeNumber(r?.tipTotal);
 
             const hasCost = hasCostForRow(r);
             const costTotal = safeNumber(r?.costTotal);
@@ -369,7 +406,7 @@ const SalesReports = () => {
                 qty: 0,
                 revenue: 0,
                 taxTotal: 0,
-
+                tipTotal: 0,
                 // solo si costo existe para TODOS
                 costTotal: 0,
                 profit: 0,
@@ -384,6 +421,7 @@ const SalesReports = () => {
             prev.qty += qty;
             prev.revenue += revenue;
             prev.taxTotal += taxTotal;
+            prev.tipTotal += tipTotal;
 
             if (hasCost) {
                 prev.anyCost = true;
@@ -429,6 +467,7 @@ const SalesReports = () => {
             const revenue = safeNumber(r?.revenue);
             const qty = safeNumber(r?.qty);
             const taxTotal = safeNumber(r?.taxTotal);
+            const tipTotal = safeNumber(r?.tipTotal);
 
             const hasCost = hasCostForRow(r);
             const costTotal = safeNumber(r?.costTotal);
@@ -443,7 +482,7 @@ const SalesReports = () => {
                 profit: 0,
                 costPct: null,
                 profitPct: null,
-
+                tipTotal: 0,
                 anyCost: false,
                 allCost: true,
             };
@@ -451,6 +490,7 @@ const SalesReports = () => {
             prev.qty += qty;
             prev.revenue += revenue;
             prev.taxTotal += taxTotal;
+            prev.tipTotal += tipTotal;
 
             if (hasCost) {
                 prev.anyCost = true;
@@ -546,6 +586,7 @@ const SalesReports = () => {
                         "Costo %": costPct == null ? "N/A" : `${costPct.toFixed(2)}%`,
                         "Utilidad %": profitPct == null ? "N/A" : `${profitPct.toFixed(2)}%`,
                         ITBIS: safeNumber(r.taxTotal),
+                        "10% Legal": safeNumber(r.tipTotal),
                     };
                 }
 
@@ -560,6 +601,7 @@ const SalesReports = () => {
                         "Costo %": r.costPct == null ? "N/A" : `${Number(r.costPct).toFixed(2)}%`,
                         "Utilidad %": r.profitPct == null ? "N/A" : `${Number(r.profitPct).toFixed(2)}%`,
                         ITBIS: safeNumber(r.taxTotal),
+                        "10% Legal": safeNumber(r.tipTotal),
                     };
                 }
 
@@ -662,6 +704,22 @@ const SalesReports = () => {
         return reportRows.slice(start, start + pageSize);
     }, [reportRows, page, pageSize]);
 
+    const summaryTax = safeNumber(
+        salesAnalysis.totalTax ||
+        dailySummary.totalTax ||
+        dailySummary.tax ||
+        dailySummary.itbis ||
+        0
+    );
+
+    const summaryTip = safeNumber(
+        salesAnalysis.totalTip ||
+        dailySummary.totalTip ||
+        dailySummary.tip ||
+        dailySummary.legalTip ||
+        dailySummary.propinaLegal ||
+        0
+    );
     if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
@@ -762,7 +820,7 @@ const SalesReports = () => {
             </div>
 
             {/* Métricas principales */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                         <p className="text-xs text-gray-400 uppercase tracking-wide">Total Ventas</p>
@@ -792,11 +850,20 @@ const SalesReports = () => {
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">Impuestos</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">ITBIS</p>
                         <CreditCard className="w-4 h-4 text-purple-400" />
                     </div>
-                    <p className="text-2xl font-bold text-white">{currency(dailySummary.totalTax || 0)}</p>
+                    <p className="text-2xl font-bold text-white">{currency(summaryTax)}</p>
                     <p className="text-xs text-gray-500 mt-1">ITBIS recaudado</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">10% Legal</p>
+                        <DollarSign className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <p className="text-2xl font-bold text-white">{currency(summaryTip)}</p>
+                    <p className="text-xs text-gray-500 mt-1">Propina legal recaudada</p>
                 </div>
             </div>
 
@@ -889,7 +956,8 @@ const SalesReports = () => {
                                 <th className="text-right py-2 px-3">Utilidad</th>
                                 <th className="text-right py-2 px-3">Costo %</th>
                                 <th className="text-right py-2 px-3">Utilidad %</th>
-                                <th className="text-right py-2 pl-3">ITBIS</th>
+                                <th className="text-right py-2 px-3">ITBIS</th>
+                                <th className="text-right py-2 pl-3">10% Legal</th>
                             </tr>
                             </thead>
 
@@ -901,6 +969,7 @@ const SalesReports = () => {
                                 const unitCost = Number(r.unitCost || 0);
                                 const costTotalRaw = Number(r.costTotal || 0);
                                 const taxTotal = Number(r.taxTotal || 0);
+                                const tipTotal = Number(r.tipTotal || 0);
 
                                 // ✅ costo “válido” solo si realmente existe
                                 const hasCost = unitCost > 0 && costTotalRaw > 0;
@@ -948,7 +1017,8 @@ const SalesReports = () => {
                                             {profitPct == null ? "N/A" : `${profitPct.toFixed(2)}%`}
                                         </td>
 
-                                        <td className="py-2 pl-3 text-right">{currency(taxTotal)}</td>
+                                        <td className="py-2 px-3 text-right">{currency(taxTotal)}</td>
+                                        <td className="py-2 pl-3 text-right">{currency(tipTotal)}</td>
                                     </tr>
                                 );
                             })}
