@@ -3049,30 +3049,20 @@ const CashRegister = () => {
         initialCashClosure?.cashExpenses,
         closingCountedSaved,
     ]);
+
     const systemExpectedInRegisterShown = useMemo(() => {
         /*
-         * Para cierre de caja, el sistema esperado debe incluir:
-         * fondo inicial + dinero agregado + ventas efectivo + abonos efectivo - gastos efectivo.
+         * Sistema esperado para comparación:
+         * debe coincidir con el resumen de ventas en efectivo.
          *
-         * Si la caja ya está cerrada, usamos el valor guardado por backend.
-         * Si está abierta o no hay cierre guardado, usamos el cálculo local.
+         * NO incluye fondo inicial ni dinero agregado.
+         * El fondo inicial es solo referencia de apertura, no venta.
          */
-        const savedExpected = safeNumber(expectedInRegisterShown);
+        const cashSales = safeNumber(initialCashClosure?.cashSales);
 
-        if (
-            sessionClosed ||
-            closingAlreadySet ||
-            savedExpected > 0
-        ) {
-            return Number(savedExpected.toFixed(2));
-        }
-
-        return Number(safeNumber(initialCashClosure?.cashInRegister).toFixed(2));
+        return Number(cashSales.toFixed(2));
     }, [
-        expectedInRegisterShown,
-        sessionClosed,
-        closingAlreadySet,
-        initialCashClosure?.cashInRegister,
+        initialCashClosure?.cashSales,
     ]);
 
 // Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
@@ -4090,9 +4080,15 @@ const CashRegister = () => {
 
                     {(() => {
                         const counted = safeNumber(closingCountedForComparison);
-                        const expected = safeNumber(systemExpectedInRegisterShown);
-                        const diff = Number((counted - expected).toFixed(2));
 
+                        const cashSalesOnly = safeNumber(initialCashClosure?.cashSales);
+                        const openingAndAdded = safeNumber(openingInitial) + safeNumber(addedTotal);
+                        const receivableCash = safeNumber(initialCashClosure?.receivablePaymentsCash);
+
+// Si receivablePaymentsCash ya está incluido dentro de cashSales, no lo sumamos otra vez.
+                        const expected = safeNumber(systemExpectedInRegisterShown);
+
+                        const diff = Number((counted - expected).toFixed(2));
                         return (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">

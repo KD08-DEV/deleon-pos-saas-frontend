@@ -155,6 +155,8 @@ const ProductReports = () => {
             );
 
             const revenue = toNumber(
+                row?.grossRevenue ??
+                row?.totalWithTax ??
                 row?.totalRevenue ??
                 row?.revenue ??
                 row?.ingresos ??

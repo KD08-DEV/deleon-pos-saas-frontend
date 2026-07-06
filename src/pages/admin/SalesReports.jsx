@@ -25,6 +25,23 @@ const normalizePaymentMethodLabel = (value) => {
 
     return raw || "Desconocido";
 };
+const getEffectivePaymentMethodLabel = (order = {}) => {
+    const primary = normalizePaymentMethodLabel(order?.paymentMethod);
+
+    if (["Efectivo", "Tarjeta", "Transferencia", "Credito", "Otros"].includes(primary)) {
+        return primary;
+    }
+
+    return normalizePaymentMethodLabel(
+        order?.paymentMethodType ||
+        order?.paymentMethodReal ||
+        order?.deliveryPaymentMethod ||
+        order?.payment?.method ||
+        order?.paidWith ||
+        order?.paymentMethod ||
+        "Otros"
+    );
+};
 const getLocalYMD = () => {
     const d = new Date();
     const yyyy = d.getFullYear();
@@ -118,15 +135,7 @@ const SalesReports = () => {
         );
 
     const fmtPct = (v) => (v == null ? "N/A" : `${Number(v).toFixed(2)}%`);
-    const addDaysISOStart = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
 
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}T00:00:00.000`;
-    };
 
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
@@ -146,8 +155,8 @@ const SalesReports = () => {
             toYMD = tmp;
         }
 
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDaysISOStart(toYMD, 1); // fin exclusivo (día siguiente 00:00)
+        if (fromYMD) obj.from = fromYMD;
+        if (toYMD) obj.to = toYMD; // fin exclusivo (día siguiente 00:00)
 
         Object.keys(obj).forEach((k) => {
             if (obj[k] === "" || obj[k] == null) delete obj[k];
@@ -173,7 +182,7 @@ const SalesReports = () => {
             // En tu UI, filters.from / filters.to están en formato YYYY-MM-DD
             // El backend los parsea bien con new Date(...)
             return fetchProductDetail({
-                from: `${filters.from}T00:00:00.000`,
+                from: filters.from,
                 to: filters.to,
                 paymentMethod: filters.method || undefined,
             });
@@ -229,7 +238,15 @@ const SalesReports = () => {
                 product: String(resolvedProduct || "").trim() || "Producto",
                 paymentMethod: resolvedPaymentMethod,
                 qty: safeNumber(r?.qty ?? r?.quantity ?? 0),
-                revenue: safeNumber(r?.revenue ?? r?.sales ?? r?.total ?? 0),
+                revenue: safeNumber(
+                    r?.grossRevenue ??
+                    r?.totalWithTax ??
+                    r?.revenue ??
+                    r?.sales ??
+                    r?.total ??
+                    0
+                ),
+                subtotalRevenue: safeNumber(r?.revenue ?? 0),
                 unitCost: safeNumber(r?.unitCost ?? r?.costUnit ?? 0),
                 costTotal: safeNumber(r?.costTotal ?? r?.totalCost ?? 0),
                 taxTotal: safeNumber(r?.taxTotal ?? r?.tax ?? r?.itbis ?? 0),
@@ -259,13 +276,8 @@ const SalesReports = () => {
 
         const byMethod = {};
         orders.forEach((o) => {
-            const method = normalizePaymentMethodLabel(
-                o.paymentMethod ||
-                o.paymentMethodType ||
-                o.paymentMethodReal ||
-                o.paidWith ||
-                "Efectivo"
-            );
+            const method = getEffectivePaymentMethodLabel(o);
+
 
             if (!byMethod[method]) {
                 byMethod[method] = { total: 0, count: 0 };

@@ -144,6 +144,17 @@ const FinancialAnalysis = () => {
         if (item?.price != null) return toNumber(item.price);
         return getItemPrice(item) * qty;
     };
+    const getReportDateYMD = (value) => {
+        if (!value) return null;
+
+        const d = new Date(value);
+
+        if (Number.isNaN(d.getTime())) return null;
+
+        return d.toLocaleDateString("en-CA", {
+            timeZone: "America/Santo_Domingo",
+        });
+    };
 
     const getReportDate = (order) =>
         order?.paidAt ||
@@ -151,15 +162,7 @@ const FinancialAnalysis = () => {
         order?.completedAt ||
         order?.createdAt;
 
-    const addDaysISOStart = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
-        // devolvemos ISO sin timezone raro: YYYY-MM-DDTHH:mm:ss.000
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}T00:00:00.000`;
-    };
+
 
     const cleanedParams = useMemo(() => {
         const obj = {};
@@ -173,8 +176,8 @@ const FinancialAnalysis = () => {
             toYMD = tmp;
         }
 
-        if (fromYMD) obj.from = `${fromYMD}T00:00:00.000`;
-        if (toYMD) obj.to = addDaysISOStart(toYMD, 1);
+        if (fromYMD) obj.from = fromYMD;
+        if (toYMD) obj.to = toYMD;
 
         if (filters.method) {
             obj.method = filters.method;
@@ -374,7 +377,8 @@ const FinancialAnalysis = () => {
             const reportDate = getReportDate(order);
             if (!reportDate) return;
 
-            const date = new Date(reportDate).toISOString().split("T")[0];
+            const date = getReportDateYMD(reportDate);
+            if (!date) return;
             const m = getOrderMetrics(order);
 
             if (!byDate[date]) {
@@ -415,7 +419,13 @@ const FinancialAnalysis = () => {
             const reportDate = getReportDate(order);
             if (!reportDate) return;
 
-            const hour = new Date(reportDate).getHours();
+            const hour = Number(
+                new Intl.DateTimeFormat("en-US", {
+                    timeZone: "America/Santo_Domingo",
+                    hour: "2-digit",
+                    hour12: false,
+                }).format(new Date(reportDate))
+            );
             const m = getOrderMetrics(order);
 
             if (!byHour[hour]) {
