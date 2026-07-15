@@ -155,6 +155,32 @@ const FinancialAnalysis = () => {
             timeZone: "America/Santo_Domingo",
         });
     };
+    // Convierte YYYY-MM-DD a formato visible sin cambiar el día por UTC.
+    const formatYMDForDisplay = (value, includeWeekday = false) => {
+        if (!value) return "—";
+
+        const [year, month, day] = value.split("-").map(Number);
+
+        if (!year || !month || !day) {
+            return "—";
+        }
+
+        // Se utiliza el mediodía para evitar desplazamientos de fecha.
+        const safeDate = new Date(year, month - 1, day, 12, 0, 0);
+
+        if (!includeWeekday) {
+            return `${String(day).padStart(2, "0")}/${String(month).padStart(
+                2,
+                "0"
+            )}/${year}`;
+        }
+
+        return safeDate.toLocaleDateString("es-DO", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+        });
+    };
 
     const getReportDate = (order) =>
         order?.paidAt ||
@@ -270,21 +296,64 @@ const FinancialAnalysis = () => {
         const selectedCategory = normalizeText(filters.category);
         const selectedMethod = normalizeText(filters.method);
 
+        let fromYMD = filters.from || filters.to || "";
+        let toYMD = filters.to || filters.from || "";
+
+        // Si las fechas fueron seleccionadas al revés, se corrigen.
+        if (fromYMD && toYMD && toYMD < fromYMD) {
+            [fromYMD, toYMD] = [toYMD, fromYMD];
+        }
+
         return rawOrders.filter((order) => {
-            if (selectedMethod && normalizeText(order?.paymentMethod) !== selectedMethod) {
+            /*
+             * Protección adicional:
+             * aunque el backend devuelva órdenes fuera del rango,
+             * aquí no se mostrarán ni se sumarán.
+             */
+            const reportDate = getReportDate(order);
+            const orderYMD = getReportDateYMD(reportDate);
+
+            if (!orderYMD) {
                 return false;
             }
 
-            if (!selectedCategory) return true;
+            if (fromYMD && orderYMD < fromYMD) {
+                return false;
+            }
+
+            if (toYMD && orderYMD > toYMD) {
+                return false;
+            }
+
+            if (
+                selectedMethod &&
+                normalizeText(order?.paymentMethod) !== selectedMethod
+            ) {
+                return false;
+            }
+
+            if (!selectedCategory) {
+                return true;
+            }
 
             const items = Array.isArray(order?.items) ? order.items : [];
 
             return items.some((item) => {
-                const itemCategory = normalizeText(getItemCategory(item, productCategoryMap));
+                const itemCategory = normalizeText(
+                    getItemCategory(item, productCategoryMap)
+                );
+
                 return itemCategory === selectedCategory;
             });
         });
-    }, [rawOrders, filters.category, filters.method, productCategoryMap]);
+    }, [
+        rawOrders,
+        filters.from,
+        filters.to,
+        filters.category,
+        filters.method,
+        productCategoryMap,
+    ]);
 
     // Análisis financiero completo
     const financialAnalysis = useMemo(() => {
@@ -465,7 +534,14 @@ const FinancialAnalysis = () => {
             const reportDate = getReportDate(order);
             if (!reportDate) return;
 
-            const hour = new Date(reportDate).getHours();
+            const hour = Number(
+                new Intl.DateTimeFormat("en-US", {
+                    timeZone: "America/Santo_Domingo",
+                    hour: "2-digit",
+                    hour12: false,
+                }).format(new Date(reportDate))
+            );
+
             if (hour !== selectedHour) return;
 
             let orderHasMatchingItem = false;
@@ -656,6 +732,10 @@ const FinancialAnalysis = () => {
                         </select>
                     </div>
                 </div>
+                <p className="mt-3 text-xs text-gray-500">
+                    Rango aplicado: {formatYMDForDisplay(filters.from)} al{" "}
+                    {formatYMDForDisplay(filters.to)}
+                </p>
             </div>
 
             {/* Métricas principales */}
@@ -764,7 +844,7 @@ const FinancialAnalysis = () => {
                                 <div className="flex items-center justify-between mb-2">
                                     <div>
                                         <p className="text-sm font-medium text-white">
-                                            {new Date(date).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })}
+                                            {formatYMDForDisplay(date, true)}
                                         </p>
                                         <p className="text-xs text-gray-400">{dayData.orders} órdenes</p>
                                     </div>
