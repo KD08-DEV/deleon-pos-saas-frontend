@@ -2478,105 +2478,254 @@ const CashRegister = () => {
         modalRegisterId,
     ]);
 
+    /*
+     * Devuelve B01/B02 solamente cuando existe un NCF tradicional REAL.
+     * No usa ncfType, "Consumidor Final" ni etiquetas descriptivas.
+     */
+    const getRealTraditionalNcfType = (r) => {
+        const candidates = [
+            r?.fiscal?.ncfNumber,
+            r?.fiscal?.ncf,
+            r?.fiscal?.number,
+            r?.fiscal?.documentNumber,
+            r?.fiscal?.ncfCode,
+            r?.fiscal?.comprobante,
 
+            r?.ncfNumber,
+            r?.ncf,
+
+            r?.bills?.ncfNumber,
+            r?.bills?.ncf,
+
+            r?.invoice?.fiscal?.ncfNumber,
+            r?.invoice?.fiscal?.ncf,
+            r?.invoice?.fiscal?.number,
+            r?.invoice?.fiscal?.documentNumber,
+            r?.invoice?.fiscal?.ncfCode,
+            r?.invoice?.fiscal?.comprobante,
+
+            r?.invoice?.ncfNumber,
+            r?.invoice?.ncf,
+        ];
+
+        for (const candidate of candidates) {
+            const value = String(candidate ?? "")
+                .trim()
+                .toUpperCase()
+                .replace(/[\s-]+/g, "");
+
+            // Exige un NCF completo, no solamente el texto "B01" o "B02".
+            if (/^B01\d{8}$/.test(value)) return "b01";
+            if (/^B02\d{8}$/.test(value)) return "b02";
+        }
+
+        return "";
+    };
     const getFiscalType = (r) => {
-        const clean = (v) =>
-            String(v || "")
+        const clean = (value) =>
+            String(value ?? "")
                 .trim()
                 .toLowerCase()
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "")
                 .replace(/[\s_-]+/g, "");
 
-        // 1. Primero revisamos e-CF porque E31/E32/E33/E34 deben ganar sobre B01/B02
-        const ecfType = clean(
-            r?.ecf?.documentType ||
-            r?.ecf?.tipoeCF ||
-            r?.ecf?.tipoEcf ||
-            r?.ecfDocumentType ||
-            r?.fiscal?.ecfDocumentType ||
-            r?.invoice?.ecf?.documentType ||
-            r?.invoice?.fiscal?.ecfDocumentType ||
-            ""
+        const collect = (...values) =>
+            values
+                .flat(Infinity)
+                .map(clean)
+                .filter(Boolean);
+
+        /*
+         * 1. COMPROBANTES ELECTRÓNICOS
+         * E31, E32, E33 y E34 tienen prioridad.
+         */
+        const ecfTypes = collect(
+            r?.ecf?.documentType,
+            r?.ecf?.tipoeCF,
+            r?.ecf?.tipoEcf,
+            r?.ecfDocumentType,
+
+            r?.fiscal?.ecfDocumentType,
+            r?.fiscal?.tipoeCF,
+            r?.fiscal?.tipoEcf,
+
+            r?.invoice?.ecf?.documentType,
+            r?.invoice?.fiscal?.ecfDocumentType
         );
 
-        const ecfNumber = clean(
-            r?.ecf?.eNCF ||
-            r?.ecf?.encf ||
-            r?.eNCF ||
-            r?.encf ||
-            r?.fiscal?.eNCF ||
-            r?.fiscal?.encf ||
-            r?.invoice?.ecf?.eNCF ||
-            r?.invoice?.fiscal?.eNCF ||
-            ""
+        const ecfNumbers = collect(
+            r?.ecf?.eNCF,
+            r?.ecf?.encf,
+            r?.ecf?.documentNumber,
+
+            r?.eNCF,
+            r?.encf,
+
+            r?.fiscal?.eNCF,
+            r?.fiscal?.encf,
+
+            r?.invoice?.ecf?.eNCF,
+            r?.invoice?.fiscal?.eNCF
         );
 
-        const ecfValue = `${ecfType} ${ecfNumber}`;
+        const hasEcf = (code) =>
+            ecfTypes.some(
+                (value) =>
+                    value === code ||
+                    value === `e${code}` ||
+                    value.startsWith(`e${code}`)
+            ) ||
+            ecfNumbers.some(
+                (value) =>
+                    value.startsWith(`e${code}`) ||
+                    value.startsWith(code)
+            );
 
-        if (["31", "e31"].includes(ecfType) || ecfValue.includes("e31")) return "e31";
-        if (["32", "e32"].includes(ecfType) || ecfValue.includes("e32")) return "e32";
-        if (["33", "e33"].includes(ecfType) || ecfValue.includes("e33")) return "e33";
-        if (["34", "e34"].includes(ecfType) || ecfValue.includes("e34")) return "e34";
+        if (hasEcf("31")) return "e31";
+        if (hasEcf("32")) return "e32";
+        if (hasEcf("33")) return "e33";
+        if (hasEcf("34")) return "e34";
 
-        // 2. Luego revisamos comprobantes fiscales normales B01/B02
-        const ncfType = clean(
-            r?.fiscal?.ncfType ||
-            r?.fiscal?.type ||
-            r?.fiscal?.documentType ||
-            r?.documentType ||
-            r?.ncfType ||
-            r?.bills?.ncfType ||
-            r?.bills?.documentType ||
-            r?.invoice?.fiscal?.ncfType ||
-            r?.invoice?.fiscal?.documentType ||
-            r?.invoice?.ncfType ||
-            ""
+        /*
+         * 2. NÚMERO REAL DEL NCF
+         */
+        const ncfNumbers = collect(
+            r?.fiscal?.ncfNumber,
+            r?.fiscal?.ncf,
+            r?.fiscal?.number,
+            r?.fiscal?.documentNumber,
+            r?.fiscal?.ncfCode,
+            r?.fiscal?.comprobante,
+
+            r?.ncfNumber,
+            r?.ncf,
+
+            r?.bills?.ncfNumber,
+            r?.bills?.ncf,
+
+            r?.invoice?.fiscal?.ncfNumber,
+            r?.invoice?.fiscal?.ncf,
+            r?.invoice?.fiscal?.number,
+            r?.invoice?.fiscal?.documentNumber,
+            r?.invoice?.fiscal?.ncfCode,
+            r?.invoice?.fiscal?.comprobante,
+
+            r?.invoice?.ncfNumber,
+            r?.invoice?.ncf
         );
 
-        const ncfNumber = clean(
-            r?.fiscal?.ncfNumber ||
-            r?.fiscal?.ncf ||
-            r?.ncfNumber ||
-            r?.ncf ||
-            r?.invoice?.fiscal?.ncfNumber ||
-            r?.invoice?.fiscal?.ncf ||
-            r?.invoice?.ncfNumber ||
-            ""
-        );
-
-        const ncfValue = `${ncfType} ${ncfNumber}`;
-
-        if (ncfType === "b01" || ncfValue.includes("b01")) return "b01";
-        if (ncfType === "b02" || ncfValue.includes("b02")) return "b02";
-
-        // 3. Fallback por nombres descriptivos
-        const textValue = clean(
-            [
-                r?.fiscal?.name,
-                r?.fiscal?.label,
-                r?.fiscal?.description,
-                r?.documentName,
-                r?.documentLabel,
-                r?.invoice?.fiscal?.name,
-                r?.invoice?.fiscal?.label,
-            ].filter(Boolean).join(" ")
-        );
-
-        if (textValue.includes("creditofiscal") || textValue.includes("facturacreditofiscal")) {
-            return "credito_fiscal";
+        if (
+            ncfNumbers.some(
+                (value) =>
+                    value.startsWith("b01") ||
+                    value.includes("b01")
+            )
+        ) {
+            return "b01";
         }
 
-        if (textValue.includes("consumidorfinal") || textValue.includes("facturaconsumidorfinal")) {
-            return "consumidor_final";
+        if (
+            ncfNumbers.some(
+                (value) =>
+                    value.startsWith("b02") ||
+                    value.includes("b02")
+            )
+        ) {
+            return "b02";
         }
 
-        if (textValue.includes("debitofiscal") || textValue.includes("notadebito")) {
-            return "debito_fiscal";
+        /*
+         * 3. TIPO EXPLÍCITO DEL COMPROBANTE
+         *
+         * Esta validación debe estar ANTES de hasFiscalEvidence.
+         * Los B02 antiguos pueden tener ncfType, pero no requested/issued.
+         */
+        const ncfTypes = collect(
+            r?.fiscal?.ncfType,
+            r?.fiscal?.type,
+            r?.fiscal?.documentType,
+            r?.fiscal?.comprobanteType,
+            r?.fiscal?.tipoComprobante,
+            r?.fiscal?.fiscalType,
+
+            r?.ncfType,
+            r?.fiscalType,
+            r?.comprobanteType,
+            r?.tipoComprobante,
+
+            r?.bills?.ncfType,
+            r?.bills?.documentType,
+            r?.bills?.comprobanteType,
+            r?.bills?.tipoComprobante,
+
+            r?.invoice?.fiscal?.ncfType,
+            r?.invoice?.fiscal?.type,
+            r?.invoice?.fiscal?.documentType,
+            r?.invoice?.fiscal?.comprobanteType,
+            r?.invoice?.fiscal?.tipoComprobante,
+
+            r?.invoice?.ncfType,
+            r?.invoice?.fiscalType
+        );
+
+        const isB01 = ncfTypes.some(
+            (value) =>
+                value === "01" ||
+                value === "b01" ||
+                value.startsWith("b01") ||
+                value.includes("creditofiscal") ||
+                value.includes("facturacreditofiscal")
+        );
+
+        if (isB01) {
+            return "b01";
         }
 
-        if (textValue.includes("notacredito")) {
-            return "nota_credito";
+        const isB02 = ncfTypes.some(
+            (value) =>
+                value === "02" ||
+                value === "b02" ||
+                value.startsWith("b02") ||
+                value.includes("consumidorfinal") ||
+                value.includes("facturaconsumidorfinal")
+        );
+
+        if (isB02) {
+            return "b02";
+        }
+
+        /*
+         * 4. FALLBACK PARA REGISTROS ANTIGUOS
+         *
+         * No se utiliza fiscal.name porque normalmente contiene el
+         * nombre del cliente o "Consumidor Final" como valor general.
+         */
+        const descriptiveText = collect(
+            r?.fiscal?.label,
+            r?.fiscal?.description,
+            r?.fiscal?.documentName,
+
+            r?.documentName,
+            r?.documentLabel,
+
+            r?.invoice?.fiscal?.label,
+            r?.invoice?.fiscal?.description,
+            r?.invoice?.fiscal?.documentName
+        ).join(" ");
+
+        if (
+            descriptiveText.includes("creditofiscal") ||
+            descriptiveText.includes("facturacreditofiscal")
+        ) {
+            return "b01";
+        }
+
+        if (
+            descriptiveText.includes("consumidorfinal") ||
+            descriptiveText.includes("facturaconsumidorfinal")
+        ) {
+            return "b02";
         }
 
         return "";
@@ -2750,52 +2899,33 @@ const CashRegister = () => {
             }
             if (fiscal) {
                 const fiscalType = getFiscalType(r);
+                const realTraditionalNcfType = getRealTraditionalNcfType(r);
 
-                const fiscalTypes = [
-                    "b01",
-                    "b02",
-                    "e31",
-                    "e32",
-                    "e33",
-                    "e34",
-                    "credito_fiscal",
-                    "consumidor_final",
-                    "debito_fiscal",
-                    "nota_credito",
-                ];
+                const fiscalMatchMap = {
+                    fiscal: ["b01", "b02", "e31", "e32", "e33", "e34"].includes(
+                        fiscalType
+                    ),
 
-                const hasFiscal = fiscalTypes.includes(fiscalType);
+                    credito_fiscal: ["b01", "e31"].includes(fiscalType),
 
-                const isCreditoFiscal = ["b01", "e31", "credito_fiscal"].includes(fiscalType);
-                const isConsumidorFinal = ["b02", "e32", "consumidor_final"].includes(fiscalType);
-                const isDebitoFiscal = ["e33", "debito_fiscal"].includes(fiscalType);
-                const isNotaCredito = ["e34", "nota_credito"].includes(fiscalType);
+                    consumidor_final: ["b02", "e32"].includes(fiscalType),
 
-                if (fiscal === "fiscal" && !hasFiscal) {
-                    return false;
-                }
+                    debito_fiscal: fiscalType === "e33",
 
-                if (fiscal === "credito_fiscal" && !isCreditoFiscal) {
-                    return false;
-                }
+                    nota_credito: fiscalType === "e34",
 
-                if (fiscal === "consumidor_final" && !isConsumidorFinal) {
-                    return false;
-                }
+// Estos dos filtros exigen un número NCF real.
+                    b01: realTraditionalNcfType === "b01",
+                    b02: realTraditionalNcfType === "b02",
+                    e31: fiscalType === "e31",
+                    e32: fiscalType === "e32",
+                    e33: fiscalType === "e33",
+                    e34: fiscalType === "e34",
 
-                if (fiscal === "debito_fiscal" && !isDebitoFiscal) {
-                    return false;
-                }
+                    nofiscal: fiscalType === "",
+                };
 
-                if (fiscal === "nota_credito" && !isNotaCredito) {
-                    return false;
-                }
-
-                if (["b01", "b02", "e31", "e32", "e33", "e34"].includes(fiscal) && fiscalType !== fiscal) {
-                    return false;
-                }
-
-                if (fiscal === "nofiscal" && hasFiscal) {
+                if (fiscalMatchMap[fiscal] !== true) {
                     return false;
                 }
             }
@@ -3052,17 +3182,21 @@ const CashRegister = () => {
 
     const systemExpectedInRegisterShown = useMemo(() => {
         /*
-         * Sistema esperado para comparación:
-         * debe coincidir con el resumen de ventas en efectivo.
+         * Efectivo que físicamente debe existir en la caja:
          *
-         * NO incluye fondo inicial ni dinero agregado.
-         * El fondo inicial es solo referencia de apertura, no venta.
+         * fondo inicial
+         * + dinero agregado
+         * + ventas cobradas en efectivo
+         * + abonos CxC cobrados en efectivo
+         * - gastos pagados en efectivo
+         *
+         * initialCashClosure.cashInRegister ya contiene esta fórmula.
          */
-        const cashSales = safeNumber(initialCashClosure?.cashSales);
-
-        return Number(cashSales.toFixed(2));
+        return Number(
+            safeNumber(initialCashClosure?.cashInRegister).toFixed(2)
+        );
     }, [
-        initialCashClosure?.cashSales,
+        initialCashClosure?.cashInRegister,
     ]);
 
 // Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
@@ -4079,11 +4213,13 @@ const CashRegister = () => {
                     <h3 className="text-white font-semibold text-lg">Comparación (Reporte de Cierre de Caja)</h3>
 
                     {(() => {
-                        const counted = safeNumber(closingCountedForComparison);
-
                         const cashSalesOnly = safeNumber(initialCashClosure?.cashSales);
                         const openingAndAdded = safeNumber(openingInitial) + safeNumber(addedTotal);
                         const receivableCash = safeNumber(initialCashClosure?.receivablePaymentsCash);
+
+                        const counted = safeNumber(closingCountedForComparison);
+
+
 
 // Si receivablePaymentsCash ya está incluido dentro de cashSales, no lo sumamos otra vez.
                         const expected = safeNumber(systemExpectedInRegisterShown);
