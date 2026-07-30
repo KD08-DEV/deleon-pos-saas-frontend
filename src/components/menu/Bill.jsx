@@ -646,23 +646,36 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             order?.ncfNumber ||
             "";
 
-        const inferredType = inferNcfTypeFromNumber(existingNcfNumber);
-
-        const existingType =
-            order?.fiscal?.ncfType ||
-            order?.ncfType ||
-            inferredType ||
-            null;
+        const inferredType =
+            inferNcfTypeFromNumber(existingNcfNumber);
 
         const existingRequested = Boolean(
-            order?.fiscal?.requested ||
+            order?.fiscal?.requested === true ||
             existingNcfNumber
         );
 
         setWantsFiscal(existingRequested);
 
-        if (existingType) {
-            setNcfType(existingType);
+        // Si ya tiene un número NCF, el prefijo del número manda.
+        if (inferredType) {
+            setNcfType(inferredType);
+            return;
+        }
+
+        // Solo restaurar el tipo guardado si realmente se había solicitado fiscal.
+        // Esto evita cargar el B02 predeterminado de una orden normal.
+        if (existingRequested) {
+            const savedType = String(
+                order?.fiscal?.ncfType ||
+                order?.ncfType ||
+                ""
+            )
+                .trim()
+                .toUpperCase();
+
+            if (allowedNcfTypes.includes(savedType)) {
+                setNcfType(savedType);
+            }
         }
     }, [
         order?._id,
@@ -671,6 +684,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         order?.fiscal?.ncfNumber,
         order?.ncfType,
         order?.ncfNumber,
+        allowedNcfTypes,
     ]);
     useEffect(() => {
         if (!discountEnabledByTenant) setDiscountValue(0);
@@ -1076,11 +1090,19 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                 const inferredExistingType = inferNcfTypeFromNumber(existingNcfNumber);
 
+                const selectedNcfType = String(ncfType || "")
+                    .trim()
+                    .toUpperCase();
+
                 const safeNcfType =
+                    // Si ya existe un NCF real, no permitimos cambiar su tipo.
                     inferredExistingType ||
-                    order?.fiscal?.ncfType ||
-                    order?.ncfType ||
-                    (allowedNcfTypes.includes(ncfType) ? ncfType : null) ||
+
+                    // Si todavía no existe NCF, respetamos lo seleccionado en pantalla.
+                    (allowedNcfTypes.includes(selectedNcfType)
+                        ? selectedNcfType
+                        : null) ||
+
                     allowedNcfTypes[0] ||
                     "B02";
 
