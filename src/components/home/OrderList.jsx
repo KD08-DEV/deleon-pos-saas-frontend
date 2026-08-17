@@ -44,9 +44,17 @@ const normalizeStatusUI = (s) => {
     return STATUS_MAP[v] || v || "En Progreso";
 };
 
-const OrderList = memo(({ order }) => {
-    const customerName = order.customerDetails.name;
-    const status = normalizeStatusUI(order.orderStatus);
+const OrderList = ({ order }) => {
+    const customerName =
+        order?.customerDetails?.name ||
+        order?.customerName ||
+        "Cliente";
+
+    const items = Array.isArray(order?.items)
+        ? order.items
+        : [];
+
+    const status = normalizeStatusUI(order?.orderStatus);
     
     const statusConfig = useMemo(() => {
         return STATUS_CONFIGS[status] || DEFAULT_STATUS_CONFIG;
@@ -79,8 +87,8 @@ const OrderList = memo(({ order }) => {
                         {customerName}
                     </h3>
                     <span className="text-xs text-[#9a9a9a] flex items-center gap-1 mt-1">
-                        <span>{order.items.length}</span>
-                        <span>{order.items.length === 1 ? "item" : "items"}</span>
+                       <span>{items.length}</span>
+                        <span>{items.length === 1 ? "item" : "items"}</span>
                     </span>
                 </div>
 
@@ -103,8 +111,19 @@ const OrderList = memo(({ order }) => {
             </div>
         </motion.div>
     );
-});
+};
 
 OrderList.displayName = 'OrderList';
+const areOrderListPropsEqual = (previousProps, nextProps) => {
+    const previousOrder = previousProps?.order || {};
+    const nextOrder = nextProps?.order || {};
 
-export default OrderList;
+    return (
+        previousOrder?._id === nextOrder?._id &&
+        previousOrder?.updatedAt === nextOrder?.updatedAt &&
+        previousOrder?.orderStatus === nextOrder?.orderStatus &&
+        previousOrder?.items?.length === nextOrder?.items?.length
+    );
+};
+
+export default memo(OrderList, areOrderListPropsEqual);

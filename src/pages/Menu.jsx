@@ -92,6 +92,7 @@ const normalizeItemsForOrder = (items = []) => {
 
 const Menu = () => {
     const [isOrderOpen, setIsOrderModalOpen] = useState(true);
+    const [editCartItemRequest, setEditCartItemRequest] = useState(null);
     const [leaveTableModal, setLeaveTableModal] = useState({
         open: false,
         loading: false,
@@ -528,7 +529,11 @@ const Menu = () => {
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-hidden">
-                        <MenuContainer orderId={orderId} />
+                        <MenuContainer
+                            orderId={orderId}
+                            editCartItemRequest={editCartItemRequest}
+                            onEditCartItemHandled={() => setEditCartItemRequest(null)}
+                        />
                     </div>
                 </div>
 
@@ -539,7 +544,16 @@ const Menu = () => {
                             <hr className="border-[#2a2a2a] border-t-2" />
 
                             <div className="flex-1 min-h-0 overflow-y-auto pb-24">
-                                <CartInfo orderId={orderId} />
+                                <CartInfo
+                                    orderId={orderId}
+                                    onEditItem={(item, index) => {
+                                        setEditCartItemRequest({
+                                            item,
+                                            index,
+                                            requestId: `${Date.now()}-${index}`,
+                                        });
+                                    }}
+                                />
                                 <hr className="border-[#2a2a2a] border-t-2" />
                                 <Bill
                                     orderId={orderId}

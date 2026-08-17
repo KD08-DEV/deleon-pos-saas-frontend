@@ -20,6 +20,7 @@ import { addDish, getDishes, deleteDish, updateDish } from "../../https";
 import { enqueueSnackbar } from "notistack";
 import api from "../../lib/api";
 import { resolveImageUrl } from "../../lib/imageUrl";
+import useTenant from "../../hooks/useTenant";
 
 const currency = (n) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
@@ -60,8 +61,65 @@ const normalizeInventoryType = (value) => {
     return ["none", "direct", "ingredient", "recipe"].includes(v) ? v : "none";
 };
 
+const createLocalOptionId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+
+    return `option-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const normalizeEditableIngredients = (items) => {
+    if (!Array.isArray(items)) return [];
+
+    return items.map((item) => ({
+        _id: item?._id || null,
+        localId: item?._id || item?.localId || createLocalOptionId(),
+        ingredientDishId:
+            item?.ingredientDishId?._id ||
+            item?.ingredientDishId ||
+            item?.dishId ||
+            null,
+        name: String(item?.name || item?.label || "").trim(),
+        active: item?.active !== false,
+    }));
+};
+
+const normalizeEditableExtras = (items) => {
+    if (!Array.isArray(items)) return [];
+
+    return items.map((item) => ({
+        _id: item?._id || null,
+        localId: item?._id || item?.localId || createLocalOptionId(),
+        extraDishId:
+            item?.extraDishId?._id ||
+            item?.extraDishId ||
+            item?.dishId ||
+            null,
+        name: String(item?.name || item?.label || "").trim(),
+        price: item?.price != null ? String(item.price) : "",
+        maxQuantity:
+            item?.maxQuantity != null
+                ? String(item.maxQuantity)
+                : "5",
+        active: item?.active !== false,
+    }));
+};
+
+const hasDuplicateNames = (items) => {
+    const names = items
+        .map((item) => String(item?.name || "").trim().toLowerCase())
+        .filter(Boolean);
+
+    return new Set(names).size !== names.length;
+};
+
 const MenuManagement = ({ currentUser }) => {
     const reduxUserData = useSelector((state) => state.user.userData);
+    const { tenantInfo } = useTenant();
+
+    const productCustomizationEnabled =
+        tenantInfo?.features?.productCustomization?.enabled === true;
 
     const effectiveUser = {
         ...(reduxUserData || {}),
@@ -154,6 +212,10 @@ const MenuManagement = ({ currentUser }) => {
         imageFile: null,
         inventoryType: "none",
         allowNegativeStock: true,
+
+        customizationEnabled: false,
+        removableIngredients: [],
+        extras: [],
     });
     const [showInvCatModal, setShowInvCatModal] = useState(false);
     const [invCatForm, setInvCatForm] = useState({
@@ -253,6 +315,10 @@ const MenuManagement = ({ currentUser }) => {
             avgCost: "",
             lastCost: "",
             imageFile: null,
+
+            customizationEnabled: false,
+            removableIngredients: [],
+            extras: [],
         });
 
         setEditingDish(null);
@@ -304,6 +370,15 @@ const MenuManagement = ({ currentUser }) => {
             avgCost: dish.avgCost != null ? String(dish.avgCost) : "",
             lastCost: dish.lastCost != null ? String(dish.lastCost) : "",
             imageFile: null,
+
+            customizationEnabled:
+                dish?.customization?.enabled === true,
+            removableIngredients: normalizeEditableIngredients(
+                dish?.customization?.removableIngredients
+            ),
+            extras: normalizeEditableExtras(
+                dish?.customization?.extras
+            ),
         });
 
         setShowDishModal(true);
@@ -402,6 +477,95 @@ const MenuManagement = ({ currentUser }) => {
 
 
 
+    const addRemovableIngredient = () => {
+        setDishForm((current) => ({
+            ...current,
+            removableIngredients: [
+                ...(current.removableIngredients || []),
+                {
+                    localId: createLocalOptionId(),
+                    ingredientDishId: null,
+                    name: "",
+                    active: true,
+                },
+            ],
+        }));
+    };
+
+    const updateRemovableIngredient = (localId, patch) => {
+        setDishForm((current) => ({
+            ...current,
+            removableIngredients: (current.removableIngredients || []).map((item) =>
+                item.localId === localId
+                    ? { ...item, ...patch }
+                    : item
+            ),
+        }));
+    };
+
+    const removeRemovableIngredient = (localId) => {
+        setDishForm((current) => ({
+            ...current,
+            removableIngredients: (current.removableIngredients || []).filter(
+                (item) => item.localId !== localId
+            ),
+        }));
+    };
+
+    const addExtra = () => {
+        setDishForm((current) => ({
+            ...current,
+            extras: [
+                ...(current.extras || []),
+                {
+                    localId: createLocalOptionId(),
+                    extraDishId: null,
+                    name: "",
+                    price: "",
+                    maxQuantity: "5",
+                    active: true,
+                },
+            ],
+        }));
+    };
+
+    const updateExtra = (localId, patch) => {
+        setDishForm((current) => ({
+            ...current,
+            extras: (current.extras || []).map((item) =>
+                item.localId === localId
+                    ? { ...item, ...patch }
+                    : item
+            ),
+        }));
+    };
+
+    const selectExistingExtraDish = (localId, dishId) => {
+        const selectedDish = allDishes.find(
+            (dish) => String(dish?._id) === String(dishId)
+        );
+
+        if (!selectedDish) {
+            updateExtra(localId, { extraDishId: null });
+            return;
+        }
+
+        updateExtra(localId, {
+            extraDishId: selectedDish._id,
+            name: String(selectedDish.name || "").trim(),
+            price: String(Number(selectedDish.price || 0)),
+        });
+    };
+
+    const removeExtra = (localId) => {
+        setDishForm((current) => ({
+            ...current,
+            extras: (current.extras || []).filter(
+                (item) => item.localId !== localId
+            ),
+        }));
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
@@ -434,6 +598,75 @@ const MenuManagement = ({ currentUser }) => {
             enqueueSnackbar("Debes seleccionar una categoría.", {
                 variant: "warning",
             });
+            return;
+        }
+
+        const cleanedIngredients = (dishForm.removableIngredients || [])
+            .map((item) => ({
+                ingredientDishId: item?.ingredientDishId || null,
+                name: String(item?.name || "").trim(),
+                active: item?.active !== false,
+            }))
+            .filter((item) => item.name);
+
+        const cleanedExtras = (dishForm.extras || [])
+            .map((item) => ({
+                extraDishId: item?.extraDishId || null,
+                name: String(item?.name || "").trim(),
+                price: Number(item?.price || 0),
+                maxQuantity: Math.max(
+                    1,
+                    Math.floor(Number(item?.maxQuantity || 1))
+                ),
+                active: item?.active !== false,
+            }))
+            .filter((item) => item.name);
+
+        if (
+            productCustomizationEnabled &&
+            dishForm.customizationEnabled &&
+            cleanedIngredients.length === 0 &&
+            cleanedExtras.length === 0
+        ) {
+            enqueueSnackbar(
+                "Agrega al menos un ingrediente removible o un extra.",
+                { variant: "warning" }
+            );
+            return;
+        }
+
+        if (
+            productCustomizationEnabled &&
+            dishForm.customizationEnabled &&
+            (
+                hasDuplicateNames(cleanedIngredients) ||
+                hasDuplicateNames(cleanedExtras)
+            )
+        ) {
+            enqueueSnackbar(
+                "No puedes repetir el mismo nombre dentro de ingredientes o extras.",
+                { variant: "warning" }
+            );
+            return;
+        }
+
+        const hasInvalidExtra = cleanedExtras.some(
+            (extra) =>
+                !Number.isFinite(extra.price) ||
+                extra.price < 0 ||
+                !Number.isFinite(extra.maxQuantity) ||
+                extra.maxQuantity < 1
+        );
+
+        if (
+            productCustomizationEnabled &&
+            dishForm.customizationEnabled &&
+            hasInvalidExtra
+        ) {
+            enqueueSnackbar(
+                "Revisa el precio y la cantidad máxima de los extras.",
+                { variant: "warning" }
+            );
             return;
         }
 
@@ -496,6 +729,29 @@ const MenuManagement = ({ currentUser }) => {
             formData.append("avgCost", "");
             formData.append("lastCost", "");
         }
+        // Solo enviamos estos campos cuando el tenant tiene la función habilitada.
+        // Así, un cliente sin personalización no borra configuraciones por accidente.
+        if (productCustomizationEnabled) {
+            const customizationEnabled =
+                dishForm.sellMode !== "weight" &&
+                dishForm.customizationEnabled === true;
+
+            formData.append(
+                "customizationEnabled",
+                customizationEnabled ? "true" : "false"
+            );
+
+            formData.append(
+                "removableIngredients",
+                JSON.stringify(cleanedIngredients)
+            );
+
+            formData.append(
+                "extras",
+                JSON.stringify(cleanedExtras)
+            );
+        }
+
         if (dishForm.imageFile) {
             formData.append("image", dishForm.imageFile);
         }
@@ -630,7 +886,7 @@ const MenuManagement = ({ currentUser }) => {
                                      {getDishCategoryLabel(dish)}
                                 </span>
                             </div>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2 text-gray-400 text-sm">
                                     {dish.sellMode === "weight" ? (
                                         <>
@@ -644,6 +900,12 @@ const MenuManagement = ({ currentUser }) => {
                                         </>
                                     )}
                                 </div>
+
+                                {dish?.customization?.enabled === true && (
+                                    <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold text-blue-300">
+                                        Personalizable
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -917,17 +1179,17 @@ const MenuManagement = ({ currentUser }) => {
 
                             {/* Modo de venta */}
                             {!dishForm.allowCustomPrice && (
-                            <div>
-                                <label className="text-sm text-gray-400 mb-1 block">Modo de Venta *</label>
-                                <select
-                                    value={dishForm.sellMode}
-                                    onChange={(e) => setDishForm((f) => ({ ...f, sellMode: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                >
-                                    <option value="unit">Por Unidad</option>
-                                    <option value="weight">Por Peso</option>
-                                </select>
-                            </div>
+                                <div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Modo de Venta *</label>
+                                    <select
+                                        value={dishForm.sellMode}
+                                        onChange={(e) => setDishForm((f) => ({ ...f, sellMode: e.target.value }))}
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    >
+                                        <option value="unit">Por Unidad</option>
+                                        <option value="weight">Por Peso</option>
+                                    </select>
+                                </div>
                             )}
                             {/* Precio según modo */}
                             {!dishForm.allowCustomPrice && (
@@ -983,33 +1245,329 @@ const MenuManagement = ({ currentUser }) => {
 
                             {/* Costos (opcionales) */}
                             {!dishForm.allowCustomPrice && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm text-gray-400 mb-1 block">Costo promedio (opcional)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={dishForm.avgCost}
-                                        onChange={(e) => setDishForm((f) => ({ ...f, avgCost: e.target.value }))}
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                        placeholder="Ej: 150"
-                                    />
-                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-sm text-gray-400 mb-1 block">Costo promedio (opcional)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={dishForm.avgCost}
+                                            onChange={(e) => setDishForm((f) => ({ ...f, avgCost: e.target.value }))}
+                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            placeholder="Ej: 150"
+                                        />
+                                    </div>
 
-                                <div>
-                                    <label className="text-sm text-gray-400 mb-1 block">Último costo (opcional)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={dishForm.lastCost}
-                                        onChange={(e) => setDishForm((f) => ({ ...f, lastCost: e.target.value }))}
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                        placeholder="Ej: 160"
-                                    />
+                                    <div>
+                                        <label className="text-sm text-gray-400 mb-1 block">Último costo (opcional)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={dishForm.lastCost}
+                                            onChange={(e) => setDishForm((f) => ({ ...f, lastCost: e.target.value }))}
+                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            placeholder="Ej: 160"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {productCustomizationEnabled && !dishForm.isInventoryItem && (
+                                <div className="rounded-2xl border border-[#f6b100]/20 bg-[#111111] p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-white">
+                                                Personalización del producto
+                                            </h4>
+                                            <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                                                Permite seleccionar extras y marcar ingredientes que deben retirarse.
+                                                Todo aparecerá debajo del producto en el carrito, cocina y ticket.
+                                            </p>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={dishForm.customizationEnabled}
+                                            disabled={dishForm.sellMode === "weight"}
+                                            onClick={() =>
+                                                setDishForm((current) => ({
+                                                    ...current,
+                                                    customizationEnabled:
+                                                        current.sellMode === "weight"
+                                                            ? false
+                                                            : !current.customizationEnabled,
+                                                }))
+                                            }
+                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
+                                                dishForm.customizationEnabled
+                                                    ? "bg-[#f6b100]"
+                                                    : "bg-[#333333]"
+                                            } ${
+                                                dishForm.sellMode === "weight"
+                                                    ? "cursor-not-allowed opacity-50"
+                                                    : ""
+                                            }`}
+                                        >
+                                            <span
+                                                className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${
+                                                    dishForm.customizationEnabled
+                                                        ? "translate-x-6"
+                                                        : "translate-x-1"
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {dishForm.sellMode === "weight" && (
+                                        <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                                            La personalización estará disponible inicialmente solo para productos por unidad.
+                                        </p>
+                                    )}
+
+                                    {dishForm.customizationEnabled && dishForm.sellMode !== "weight" && (
+                                        <div className="mt-5 space-y-6">
+                                            <div>
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <h5 className="text-sm font-semibold text-white">
+                                                            Ingredientes que se pueden retirar
+                                                        </h5>
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Ejemplos: tomate, cebolla, salsa o lechuga.
+                                                        </p>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={addRemovableIngredient}
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-2 text-xs font-semibold text-[#f6b100] hover:bg-[#f6b100]/20"
+                                                    >
+                                                        <Plus className="h-4 w-4" />
+                                                        Agregar
+                                                    </button>
+                                                </div>
+
+                                                <div className="mt-3 space-y-2">
+                                                    {(dishForm.removableIngredients || []).length === 0 ? (
+                                                        <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-gray-500">
+                                                            Todavía no hay ingredientes removibles.
+                                                        </div>
+                                                    ) : (
+                                                        dishForm.removableIngredients.map((ingredient) => (
+                                                            <div
+                                                                key={ingredient.localId}
+                                                                className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2"
+                                                            >
+                                                                <input
+                                                                    type="text"
+                                                                    value={ingredient.name}
+                                                                    onChange={(event) =>
+                                                                        updateRemovableIngredient(
+                                                                            ingredient.localId,
+                                                                            { name: event.target.value }
+                                                                        )
+                                                                    }
+                                                                    placeholder="Ej: Tomate"
+                                                                    className="min-w-0 flex-1 rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                />
+
+                                                                <label className="flex items-center gap-2 whitespace-nowrap text-xs text-gray-400">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={ingredient.active !== false}
+                                                                        onChange={(event) =>
+                                                                            updateRemovableIngredient(
+                                                                                ingredient.localId,
+                                                                                { active: event.target.checked }
+                                                                            )
+                                                                        }
+                                                                        className="accent-[#f6b100]"
+                                                                    />
+                                                                    Activo
+                                                                </label>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        removeRemovableIngredient(
+                                                                            ingredient.localId
+                                                                        )
+                                                                    }
+                                                                    className="rounded-lg p-2 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                                                                    title="Eliminar ingrediente"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t border-white/10 pt-5">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <h5 className="text-sm font-semibold text-white">
+                                                            Extras disponibles
+                                                        </h5>
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            El precio del extra se suma al precio unitario del producto.
+                                                        </p>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={addExtra}
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-2 text-xs font-semibold text-[#f6b100] hover:bg-[#f6b100]/20"
+                                                    >
+                                                        <Plus className="h-4 w-4" />
+                                                        Agregar
+                                                    </button>
+                                                </div>
+
+                                                <div className="mt-3 space-y-2">
+                                                    {(dishForm.extras || []).length === 0 ? (
+                                                        <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-gray-500">
+                                                            Todavía no hay extras configurados.
+                                                        </div>
+                                                    ) : (
+                                                        dishForm.extras.map((extra) => (
+                                                            <div
+                                                                key={extra.localId}
+                                                                className="rounded-xl border border-white/10 bg-black/20 p-3"
+                                                            >
+                                                                <div className="mb-3 flex items-center justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="text-sm font-semibold text-white">
+                                                                            Configuración del extra
+                                                                        </p>
+                                                                        <p className="mt-1 text-xs text-gray-500">
+                                                                            Puedes escribirlo manualmente o vincular un producto existente.
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => removeExtra(extra.localId)}
+                                                                        className="rounded-lg p-2 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                                                                        title="Eliminar extra"
+                                                                    >
+                                                                        <Trash2 className="h-4 w-4" />
+                                                                    </button>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                                                    <div className="md:col-span-2">
+                                                                        <label className="mb-1 block text-xs font-medium text-gray-400">
+                                                                            Vincular producto existente (opcional)
+                                                                        </label>
+                                                                        <select
+                                                                            value={extra.extraDishId || ""}
+                                                                            onChange={(event) =>
+                                                                                selectExistingExtraDish(
+                                                                                    extra.localId,
+                                                                                    event.target.value
+                                                                                )
+                                                                            }
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                        >
+                                                                            <option value="">Extra manual</option>
+                                                                            {allDishes
+                                                                                .filter(
+                                                                                    (dish) =>
+                                                                                        String(dish?._id) !==
+                                                                                        String(editingDish?._id || "")
+                                                                                )
+                                                                                .map((dish) => (
+                                                                                    <option key={dish._id} value={dish._id}>
+                                                                                        {dish.name} · RD${Number(dish.price || 0).toFixed(2)}
+                                                                                    </option>
+                                                                                ))}
+                                                                        </select>
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <label className="mb-1 block text-xs font-medium text-gray-400">
+                                                                            Nombre del extra
+                                                                        </label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={extra.name}
+                                                                            onChange={(event) =>
+                                                                                updateExtra(extra.localId, {
+                                                                                    name: event.target.value,
+                                                                                    extraDishId: null,
+                                                                                })
+                                                                            }
+                                                                            placeholder="Ej: Queso extra"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                        />
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <label className="mb-1 block text-xs font-medium text-gray-400">
+                                                                            Precio adicional (RD$)
+                                                                        </label>
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            step="0.01"
+                                                                            value={extra.price}
+                                                                            onWheel={(event) => event.currentTarget.blur()}
+                                                                            onChange={(event) =>
+                                                                                updateExtra(extra.localId, {
+                                                                                    price: event.target.value,
+                                                                                })
+                                                                            }
+                                                                            placeholder="Ej: 50"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                        />
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <label className="mb-1 block text-xs font-medium text-gray-400">
+                                                                            Cantidad máxima
+                                                                        </label>
+                                                                        <input
+                                                                            type="number"
+                                                                            min="1"
+                                                                            step="1"
+                                                                            value={extra.maxQuantity}
+                                                                            onWheel={(event) => event.currentTarget.blur()}
+                                                                            onChange={(event) =>
+                                                                                updateExtra(extra.localId, {
+                                                                                    maxQuantity: event.target.value,
+                                                                                })
+                                                                            }
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                        />
+                                                                    </div>
+
+                                                                    <label className="flex items-center gap-2 self-end rounded-lg border border-white/10 px-3 py-2.5 text-xs text-gray-400">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={extra.active !== false}
+                                                                            onChange={(event) =>
+                                                                                updateExtra(extra.localId, {
+                                                                                    active: event.target.checked,
+                                                                                })
+                                                                            }
+                                                                            className="accent-[#f6b100]"
+                                                                        />
+                                                                        Extra activo
+                                                                    </label>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             )}
 
                             {/* Imagen */}

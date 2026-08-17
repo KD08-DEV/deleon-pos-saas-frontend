@@ -1,9 +1,15 @@
-import React, { useEffect, useMemo, useState, memo } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    memo,
+} from "react";
 import { useSnackbar } from "notistack";
 import { useSelector } from "react-redux";
 import { formatDateAndTime } from "../../utils";
 import { updateOrder } from "../../https";
-import useTenant from "../../hooks/useTenant";
 import api from "../../lib/api";
 import Invoice from "../invoice/Invoice";
 import SplitBillModal from "./SplitBillModal";
@@ -147,7 +153,132 @@ const getOrderProductTypes = (order) => {
 
     return Array.from(unique);
 };
+const getCustomizationName = (option, fallback = "") => {
+    if (typeof option === "string") {
+        return option.trim();
+    }
 
+    return String(
+        option?.name ||
+        option?.label ||
+        option?.title ||
+        option?.description ||
+        fallback
+    ).trim();
+};
+
+const getAddonQuantity = (addon) => {
+    const quantity = Number(
+        addon?.quantity ??
+        addon?.qty ??
+        1
+    );
+
+    return Number.isFinite(quantity) && quantity > 0
+        ? quantity
+        : 1;
+};
+
+const normalizeRemovedIngredientName = (value) => {
+    const name = String(value || "").trim();
+
+    if (!name) return "";
+
+    return /^sin\s+/i.test(name)
+        ? name
+        : `Sin ${name}`;
+};
+
+const buildOrderItemSummary = (item, index) => {
+    const name =
+        item?.dishName ||
+        item?.dish?.name ||
+        item?.name ||
+        "Item";
+
+    const quantity =
+        Number(
+            item?.quantity ??
+            item?.qty ??
+            1
+        ) || 1;
+
+    const quantityLabel =
+        item?.qtyType === "weight"
+            ? `${quantity} ${item?.weightUnit || "lb"}`
+            : `x${quantity}`;
+
+    const addonsSource =
+        item?.addons ||
+        item?.addOns ||
+        item?.extras ||
+        item?.selectedExtras ||
+        [];
+
+    const modifiersSource =
+        item?.modifiers ||
+        item?.selectedOptions ||
+        item?.options ||
+        [];
+
+    const addons = Array.isArray(addonsSource)
+        ? addonsSource
+            .map((addon) => {
+                const addonName = getCustomizationName(
+                    addon,
+                    "Extra"
+                );
+
+                if (!addonName) return null;
+
+                return {
+                    name: addonName,
+                    quantity: getAddonQuantity(addon),
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    const modifiers = Array.isArray(modifiersSource)
+        ? modifiersSource
+            .map((modifier) => {
+                const modifierName =
+                    getCustomizationName(
+                        modifier,
+                        "Ingrediente"
+                    );
+
+                if (!modifierName) return null;
+
+                return {
+                    name: normalizeRemovedIngredientName(
+                        modifierName
+                    ),
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    return {
+        key:
+            item?._id ||
+            item?.lineId ||
+            item?.cartKey ||
+            `${item?.dishId || item?.dish || name}-${index}`,
+
+        name,
+        quantityLabel,
+        addons,
+        modifiers,
+
+        note: String(
+            item?.note ||
+            item?.comment ||
+            item?.specialInstructions ||
+            ""
+        ).trim(),
+    };
+};
 const getWaitTimeConfig = (order, currentTime = Date.now()) => {
     const status = String(order?.orderStatus || "");
     if (["Completado", "Cancelado"].includes(status)) return null;
@@ -292,7 +423,14 @@ const getActiveRegisterId = () => {
     }
 };
 
-const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "comfortable" }) => {
+const OrderCard = ({
+                       order,
+                       onStatusChanged,
+                       onPrint,
+                       currentTime,
+                       viewMode = "comfortable",
+                       tenantInfo,
+                   }) => {
     const isCompactView = viewMode === "compact";
     const isListView = viewMode === "list";
     const isDisplayView = viewMode === "display";
@@ -336,7 +474,27 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
         null;
     // mantenemos copia local para poder refrescar la tarjeta cuando emitimos NCF
     const [localOrder, setLocalOrder] = useState(order);
-    useEffect(() => setLocalOrder(order), [order]);
+
+    useEffect(() => {
+        setLocalOrder((previousOrder) => {
+            const hasSameVersion =
+                previousOrder?._id === order?._id &&
+                previousOrder?.updatedAt === order?.updatedAt &&
+                previousOrder?.orderStatus === order?.orderStatus &&
+                previousOrder?.paymentStatus === order?.paymentStatus;
+
+            if (hasSameVersion) {
+                return previousOrder;
+            }
+
+            return order;
+        });
+    }, [
+        order?._id,
+        order?.updatedAt,
+        order?.orderStatus,
+        order?.paymentStatus,
+    ]);
     const [showSplitInvoices, setShowSplitInvoices] = useState(false);
     const [invoiceTitle, setInvoiceTitle] = useState(null);
     const [showSplitModal, setShowSplitModal] = useState(false);
@@ -449,7 +607,6 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
         };
 
 
-    const { tenantInfo } = useTenant();
     const chargeMode = tenantInfo?.features?.checkout?.chargeMode || "AT_COMPLETE";
     const isPaid = String(localOrder?.paymentStatus || "Pendiente") === "Pagado";
     // Solo mostramos botón fiscal si el tenant está habilitado y tiene B01/B02 activos
@@ -474,13 +631,17 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
     );
 
     const itemsSummary = useMemo(() => {
-        if (!localOrder?.items || localOrder.items.length === 0) return ["No items"];
+        if (
+            !Array.isArray(localOrder?.items) ||
+            localOrder.items.length === 0
+        ) {
+            return [];
+        }
 
-        return localOrder.items.map((item) => {
-            const name = item?.dishName || item?.dish?.name || item?.name || "Item";
-            const qty = item?.quantity ?? 1;
-            return `${name} x${qty}`;
-        });
+        return localOrder.items.map(
+            (item, index) =>
+                buildOrderItemSummary(item, index)
+        );
     }, [localOrder?.items]);
 
     const totalItems = useMemo(() => {
@@ -945,7 +1106,7 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ scale: 1.02, y: -2 }}
-                className={`flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50${cardSizeClass} h-full hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group ${waitTimeConfig?.cardBorder || ""}`}
+                className={`flex flex-col justify-between rounded-xl bg-gradient-to-br from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] dark:from-[#1a1a1a] dark:via-[#1f1f1f] dark:to-[#1a1a1a] from-white via-gray-50 to-white shadow-lg border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-200/50 ${cardSizeClass} h-full hover:border-[#3a3a3a] dark:hover:border-[#3a3a3a] hover:border-gray-300 transition-all duration-300 group ${waitTimeConfig?.cardBorder || ""}`}
             >
                 {/* HEADER */}
                 <div className="flex items-start gap-3 justify-between mb-4">
@@ -1053,13 +1214,63 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                         </div>
 
                         <div className={`${itemGridClass} ${itemListHeightClass} ${isDisplayView ? "overflow-hidden" : "overflow-visible"}`}>
-                            {visibleItemLines.map((line, idx) => (
+                            {visibleItemLines.map((itemSummary, idx) => (
                                 <div
-                                    key={`${itemPage}-${idx}-${line}`}
-                                    className={`${itemTextClass} text-[#f5f5f5] flex items-start gap-2 rounded-md bg-black/10 px-2 py-1 border border-white/5`}
+                                    key={`${itemPage}-${itemSummary.key || idx}`}
+                                    className={`${itemTextClass} text-[#f5f5f5] flex items-start gap-2 rounded-md bg-black/10 px-2 py-2 border border-white/5`}
                                 >
-                                    <span className="text-blue-400 shrink-0 pt-[2px]">•</span>
-                                    <span className={isDisplayView ? "break-words" : "break-words"}>{line}</span>
+        <span className="text-blue-400 shrink-0 pt-[2px]">
+            •
+        </span>
+
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-start justify-between gap-3">
+                <span className="break-words font-semibold">
+                    {itemSummary.name}
+                </span>
+
+                                            <span className="shrink-0 text-[#ababab] font-semibold">
+                    {itemSummary.quantityLabel}
+                </span>
+                                        </div>
+
+                                        {itemSummary.addons.length > 0 && (
+                                            <div className="mt-1 space-y-0.5">
+                                                {itemSummary.addons.map((addon, addonIndex) => (
+                                                    <p
+                                                        key={`${itemSummary.key}-addon-${addonIndex}`}
+                                                        className="text-xs text-emerald-300 font-medium"
+                                                    >
+                                                        + {addon.name}
+                                                        {addon.quantity > 1
+                                                            ? ` x${addon.quantity}`
+                                                            : ""}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {itemSummary.modifiers.length > 0 && (
+                                            <div className="mt-1 space-y-0.5">
+                                                {itemSummary.modifiers.map(
+                                                    (modifier, modifierIndex) => (
+                                                        <p
+                                                            key={`${itemSummary.key}-modifier-${modifierIndex}`}
+                                                            className="text-xs text-red-300 font-medium"
+                                                        >
+                                                            − {modifier.name}
+                                                        </p>
+                                                    )
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {itemSummary.note && (
+                                            <p className="mt-1 text-xs text-amber-300">
+                                                Nota: {itemSummary.note}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1319,12 +1530,75 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
                                             </span>
                                         </div>
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                                            {itemsSummary.map((line, idx) => (
-                                                <div key={idx} className="text-sm text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900 flex items-center gap-2">
-                                                    <span className="text-blue-400 dark:text-blue-400 text-blue-600 shrink-0">•</span>
-                                                    <span>{line}</span>
-                                                </div>
-                                            ))}
+                                            {itemsSummary.length === 0 ? (
+                                                <p className="text-sm text-[#ababab]">
+                                                    No hay productos.
+                                                </p>
+                                            ) : (
+                                                itemsSummary.map((itemSummary, idx) => (
+                                                    <div
+                                                        key={itemSummary.key || idx}
+                                                        className="rounded-lg border border-white/5 bg-black/10 px-3 py-2"
+                                                    >
+                                                        <div className="flex items-start gap-2">
+                <span className="text-blue-400 dark:text-blue-400 text-blue-600 shrink-0">
+                    •
+                </span>
+
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-semibold text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
+                            {itemSummary.name}
+                        </span>
+
+                                                                    <span className="text-xs font-semibold text-[#ababab] shrink-0">
+                            {itemSummary.quantityLabel}
+                        </span>
+                                                                </div>
+
+                                                                {itemSummary.addons.length > 0 && (
+                                                                    <div className="mt-2 space-y-1">
+                                                                        {itemSummary.addons.map(
+                                                                            (addon, addonIndex) => (
+                                                                                <p
+                                                                                    key={`${itemSummary.key}-modal-addon-${addonIndex}`}
+                                                                                    className="text-xs font-medium text-emerald-300"
+                                                                                >
+                                                                                    + {addon.name}
+                                                                                    {addon.quantity > 1
+                                                                                        ? ` x${addon.quantity}`
+                                                                                        : ""}
+                                                                                </p>
+                                                                            )
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {itemSummary.modifiers.length > 0 && (
+                                                                    <div className="mt-2 space-y-1">
+                                                                        {itemSummary.modifiers.map(
+                                                                            (modifier, modifierIndex) => (
+                                                                                <p
+                                                                                    key={`${itemSummary.key}-modal-modifier-${modifierIndex}`}
+                                                                                    className="text-xs font-medium text-red-300"
+                                                                                >
+                                                                                    − {modifier.name}
+                                                                                </p>
+                                                                            )
+                                                                        )}
+                                                                    </div>
+                                                                )}
+
+                                                                {itemSummary.note && (
+                                                                    <p className="mt-2 text-xs text-amber-300">
+                                                                        Nota: {itemSummary.note}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
                                         </div>
                                     </div>
 
@@ -1720,4 +1994,20 @@ const OrderCard = ({ order, onStatusChanged, onPrint, currentTime, viewMode = "c
     );
 };
 
-export default memo(OrderCard);
+const areOrderCardPropsEqual = (previousProps, nextProps) => {
+    const previousOrder = previousProps?.order || {};
+    const nextOrder = nextProps?.order || {};
+
+    return (
+        previousOrder?._id === nextOrder?._id &&
+        previousOrder?.updatedAt === nextOrder?.updatedAt &&
+        previousOrder?.orderStatus === nextOrder?.orderStatus &&
+        previousOrder?.paymentStatus === nextOrder?.paymentStatus &&
+        previousProps?.viewMode === nextProps?.viewMode &&
+        previousProps?.currentTime === nextProps?.currentTime &&
+        previousProps?.tenantInfo === nextProps?.tenantInfo &&
+        previousProps?.onStatusChanged === nextProps?.onStatusChanged
+    );
+};
+
+export default memo(OrderCard, areOrderCardPropsEqual);

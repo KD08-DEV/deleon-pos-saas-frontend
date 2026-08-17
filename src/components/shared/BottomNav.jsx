@@ -3,7 +3,14 @@ import { Home, ListOrdered, Table2, Settings, Plus, Wallet   } from "lucide-reac
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
 import { useDispatch, useSelector } from "react-redux";
-import { setCustomer, setDraftContext } from "../../redux/slices/customerSlice";
+import {
+    setCustomer,
+    setDraftContext,
+    clearDraftContext,
+    removeCustomer,
+} from "../../redux/slices/customerSlice";
+
+import { removeAllItems } from "../../redux/slices/cartSlice";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
 import { addOrder, getCustomers, createCustomer } from "../../https";
@@ -29,7 +36,23 @@ const BottomNav = memo(() => {
     const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
 
 
-    const openModal = useCallback(() => setIsModalOpen(true), []);
+    const openModal = useCallback(() => {
+        // Una nueva venta siempre debe comenzar limpia.
+        dispatch(removeAllItems());
+        dispatch(clearDraftContext());
+        dispatch(removeCustomer());
+
+        setName("");
+        setPhone("");
+        setGuestCount(0);
+        setAddress("");
+        setSearch("");
+        setSelectedCustomerId(null);
+        setShowResults(false);
+        setIsCustomerPickerOpen(false);
+
+        setIsModalOpen(true);
+    }, [dispatch]);
     const closeModal = useCallback(() => setIsModalOpen(false), []);
 
     if (userData?.role === "SuperAdmin") {
@@ -313,8 +336,20 @@ const BottomNav = memo(() => {
         }
     };
 
+    const handleNavigation = (path) => {
+        const isLeavingMenu =
+            location.pathname.startsWith("/menu") &&
+            !path.startsWith("/menu");
 
+        if (isLeavingMenu) {
+            // Limpiar completamente la venta temporal.
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+            dispatch(removeCustomer());
+        }
 
+        navigate(path);
+    };
     const isActive = (path) => location.pathname.startsWith(path);
 
     const navItems = [
@@ -362,7 +397,7 @@ const BottomNav = memo(() => {
                     return (
                         <React.Fragment key={item.id}>
                             <button
-                                onClick={() => navigate(item.path)}
+                                onClick={() => handleNavigation(item.path)}
                                 className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
                                     active ? "text-white" : "text-[#ababab] hover:text-white"
                                 }`}

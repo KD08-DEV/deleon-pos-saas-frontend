@@ -6,7 +6,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import { getTotalPrice, removeAllItems } from "../../redux/slices/cartSlice";
-import { clearDraftContext } from "../../redux/slices/customerSlice";
+import {
+    clearDraftContext,
+    removeCustomer,
+} from "../../redux/slices/customerSlice";
 import { updateOrder, addOrder, updateTable } from "../../https";
 import Invoice from "../invoice/Invoice";
 import Ticket from "../ticket/Ticket";
@@ -292,7 +295,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         dispatch(removeAllItems());
         dispatch(clearDraftContext());
-
+        dispatch(removeCustomer());
         enqueueSnackbar("La orden ya estaba cerrada. Se limpió el carrito para iniciar una nueva venta.", {
             variant: "info",
         });
@@ -503,6 +506,24 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [guests, setGuests] = useState(0);
     const [customerPhone, setCustomerPhone] = useState("");
     const [customerAddress, setCustomerAddress] = useState("");
+    const clearLocalCheckoutState = () => {
+        setCustomerName("");
+        setCustomerPhone("");
+        setCustomerAddress("");
+        setCustomerRnc("");
+        setGuests(0);
+
+        setOrderNote("");
+        setDraftOrderNote("");
+
+        setCashReceived("");
+
+        setDiscountValue(0);
+
+        setWantsFiscal(false);
+        setDgiiStatus("");
+        setDgiiFound(null);
+    };
     useEffect(() => {
         const details = order?.customerDetails || {};
 
@@ -1476,6 +1497,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             if (currentPrintTarget === "update") {
                 dispatch(removeAllItems());
                 dispatch(clearDraftContext());
+                dispatch(removeCustomer());
 
                 setIsOrderModalOpen(false);
 
@@ -1532,6 +1554,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 // Limpiamos el carrito local para que no se copie a otra mesa.
                 dispatch(removeAllItems());
                 dispatch(clearDraftContext());
+                dispatch(removeCustomer());
 
                 return;
             }
@@ -1603,6 +1626,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 // al volver a mesas no se reutilicen los productos de esta mesa.
             dispatch(removeAllItems());
             dispatch(clearDraftContext());
+            dispatch(removeCustomer());
+            clearLocalCheckoutState();
 
             queryClient.invalidateQueries({ queryKey: ["orders"] });
             queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -1748,7 +1773,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 // La mesa debe seguir ocupada hasta presionar "Desocupar mesa".
 // Limpiamos solo el carrito/draft local para evitar reutilizar productos.
         dispatch(removeAllItems());
+        dispatch(removeCustomer());
         dispatch(clearDraftContext());
+        clearLocalCheckoutState();
 
         queryClient.invalidateQueries({ queryKey: ["orders"] });
         queryClient.invalidateQueries({ queryKey: ["tables"] });
@@ -1799,6 +1826,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             setIsOrderModalOpen(false);
 
             dispatch(removeAllItems());
+            dispatch(removeCustomer());
             dispatch(clearDraftContext());
 
             queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -1841,6 +1869,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         if (!tableId || !hasItems) {
             dispatch(removeAllItems());
             dispatch(clearDraftContext());
+            dispatch(removeCustomer());
             navigate("/mesas", { replace: true });
             return;
         }
@@ -1895,6 +1924,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             }
 
             dispatch(removeAllItems());
+            dispatch(removeCustomer());
             dispatch(clearDraftContext());
 
             queryClient.invalidateQueries({ queryKey: ["orders"] });
