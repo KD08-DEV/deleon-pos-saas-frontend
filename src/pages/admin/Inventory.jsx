@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
 import Suppliers from "./Suppliers";
@@ -18,6 +19,7 @@ import {
     X,
     ChevronLeft,
     ChevronRight,
+    FileSpreadsheet,
 } from "lucide-react";
 import api from "../../lib/api";
 import MermaPanel from "./MermaPanel";
@@ -278,6 +280,31 @@ export default function Inventory({ plan, currentUser }) {
         supplierId: "",
         includeArchived: false,
     });
+    // Texto que el usuario escribe.
+// Separamos esto de stockFilters.q para no hacer una petición por cada tecla.
+    const [stockSearchInput, setStockSearchInput] = useState("");
+
+// Exportación Excel
+    const [exportMode, setExportMode] = useState("all");
+    const [exportingExcel, setExportingExcel] = useState(false);
+    // Debounce del buscador.
+// Solo actualiza el filtro real 450ms después de que el usuario deje de escribir.
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            const value = String(stockSearchInput || "").trim();
+
+            setStockFilters((prev) => {
+                if (prev.q === value) return prev;
+
+                return {
+                    ...prev,
+                    q: value,
+                };
+            });
+        }, 450);
+
+        return () => clearTimeout(timer);
+    }, [stockSearchInput]);
     const [mermaYMD, setMermaYMD] = useState(getTodayYMDLocal());    // Pagination
     const [page, setPage] = useState(1);
 
@@ -373,9 +400,10 @@ export default function Inventory({ plan, currentUser }) {
     }, [ingredientsResp]);
 
 // ✅ ITEMS (esto faltaba en tu archivo, pero itemsResp se usa abajo)
-    const { data: itemsResp, isLoading: itemsLoading } = useQuery({
+    const { data: itemsResp, isLoading: itemsLoading, isFetching: itemsFetching } = useQuery({
         queryKey: ["inventory/items", tenantId, stockFilters, page],
         enabled: canUseInventory && Boolean(tenantId),
+
         queryFn: async () => {
             const params = {
                 q: stockFilters?.q || "",
@@ -389,7 +417,12 @@ export default function Inventory({ plan, currentUser }) {
             const res = await api.get("/api/inventory/items", { params });
             return res.data;
         },
+
         staleTime: 10_000,
+
+        // Mantiene los productos anteriores en pantalla mientras llega
+        // el resultado nuevo.
+        placeholderData: (previousData) => previousData,
     });
     // Si el backend todavía no pagina y devuelve todo, hacemos fallback client-side
     const totalFromBackend = useMemo(() => {
@@ -858,6 +891,376 @@ export default function Inventory({ plan, currentUser }) {
             {label}
         </button>
     );
+    // ============================================================
+// EXPORTAR INVENTARIO A EXCEL
+// ============================================================
+
+    const getCategoryName = (item) => {
+        // Si viene populated desde Mongo
+        if (item?.inventoryCategoryId?.name) {
+            return item.inventoryCategoryId.name;
+        }
+
+        const categoryId =
+            item?.inventoryCategoryId?._id ||
+            item?.inventoryCategoryId ||
+            "";
+
+        const found = (categories || []).find(
+            (c) => String(c?._id) === String(categoryId)
+        );
+
+        return found?.name || "Sin categoría";
+    };
+
+    const getSupplierName = (item) => {
+        if (item?.supplierId?.name) return item.supplierId.name;
+        if (item?.supplierId?.companyName) return item.supplierId.companyName;
+
+        const supplierId =
+            item?.supplierId?._id ||
+            item?.supplierId ||
+            "";
+
+        const found = (suppliers || []).find(
+            (sp) => String(sp?._id) === String(supplierId)
+        );
+
+        return (
+            found?.name ||
+            found?.companyName ||
+            "Sin proveedor"
+        );
+    };
+
+    const getExportTypeLabel = (item) => {
+        const type = normalizeInventoryType(item?.inventoryType);
+
+        if (type === "direct") return "Producto con stock directo";
+        if (type === "recipe") return "Plato con receta";
+        if (type === "ingredient") return "Ingrediente / insumo";
+
+        return "Sin inventario";
+    };
+
+    const isInventoryRow = (item) => {
+        const category = String(item?.category || "")
+            .trim()
+            .toLowerCase();
+
+        const type = normalizeInventoryType(item?.inventoryType);
+
+        const isIngredient =
+            item?.isInventoryItem === true ||
+            category === "inventario" ||
+            type === "ingredient";
+
+        const isDirect = type === "direct";
+        const isRecipe = type === "recipe";
+
+        const isInactiveMenuDish =
+            type === "none" &&
+            item?.isInventoryItem !== true &&
+            category !== "inventario";
+
+        return (
+            isIngredient ||
+            isDirect ||
+            isRecipe ||
+            isInactiveMenuDish
+        );
+    };
+
+    const fetchAllInventoryForExport = async () => {
+        const limit = 500;
+
+        let currentPage = 1;
+        let collected = [];
+
+        const seenIds = new Set();
+
+        // Para exportar por categoría utilizamos la categoría
+        // actualmente seleccionada en el filtro.
+        const categoryId =
+            exportMode === "category"
+                ? stockFilters.inventoryCategoryId
+                : "";
+
+        while (currentPage <= 100) {
+            const res = await api.get("/api/inventory/items", {
+                params: {
+                    page: currentPage,
+                    limit,
+
+                    inventoryCategoryId:
+                        categoryId || undefined,
+
+                    // Respetamos la selección actual de archivados.
+                    includeArchived: Boolean(
+                        stockFilters.includeArchived
+                    ),
+                },
+            });
+
+            const raw = res?.data;
+
+            const pageItems =
+                raw?.items ||
+                raw?.data?.items ||
+                (Array.isArray(raw?.data) ? raw.data : []);
+
+            if (!Array.isArray(pageItems)) {
+                break;
+            }
+
+            let newItemsAdded = 0;
+
+            for (const item of pageItems) {
+                const id = String(item?._id || "");
+
+                // Evita duplicados si el backend todavía
+                // no soporta paginación correctamente.
+                if (id && seenIds.has(id)) {
+                    continue;
+                }
+
+                if (id) {
+                    seenIds.add(id);
+                }
+
+                collected.push(item);
+                newItemsAdded += 1;
+            }
+
+            const backendTotal = Number(
+                raw?.total ??
+                raw?.count ??
+                raw?.pagination?.total
+            );
+
+            // Backend con paginación.
+            if (
+                Number.isFinite(backendTotal) &&
+                collected.length >= backendTotal
+            ) {
+                break;
+            }
+
+            // Última página.
+            if (pageItems.length < limit) {
+                break;
+            }
+
+            // Protección si el backend devuelve siempre la misma página.
+            if (newItemsAdded === 0) {
+                break;
+            }
+
+            currentPage += 1;
+        }
+
+        // Aplicamos el mismo criterio que usa tu tabla.
+        collected = collected.filter(isInventoryRow);
+
+        // Productos = artículos que realmente son productos/platos
+        // manejados por inventario.
+        if (exportMode === "products") {
+            collected = collected.filter((item) => {
+                const type = normalizeInventoryType(
+                    item?.inventoryType
+                );
+
+                return type === "direct" || type === "recipe";
+            });
+        }
+
+        // Protección adicional por categoría.
+        if (exportMode === "category") {
+            collected = collected.filter((item) => {
+                const itemCategoryId =
+                    item?.inventoryCategoryId?._id ||
+                    item?.inventoryCategoryId ||
+                    "";
+
+                return (
+                    String(itemCategoryId) ===
+                    String(stockFilters.inventoryCategoryId)
+                );
+            });
+        }
+
+        return collected;
+    };
+
+    const handleExportExcel = async () => {
+        if (exportingExcel) return;
+
+        if (
+            exportMode === "category" &&
+            !stockFilters.inventoryCategoryId
+        ) {
+            enqueueSnackbar(
+                "Selecciona primero una categoría para exportarla.",
+                { variant: "warning" }
+            );
+
+            return;
+        }
+
+        try {
+            setExportingExcel(true);
+
+            const exportItems =
+                await fetchAllInventoryForExport();
+
+            if (!exportItems.length) {
+                enqueueSnackbar(
+                    "No hay registros para exportar.",
+                    { variant: "warning" }
+                );
+
+                return;
+            }
+
+            const excelRows = exportItems.map((item) => {
+                const type = normalizeInventoryType(
+                    item?.inventoryType
+                );
+
+                const stock =
+                    item?.stockCurrent === null ||
+                    item?.stockCurrent === undefined
+                        ? 0
+                        : num(item.stockCurrent);
+
+                const stockMin =
+                    item?.stockMin === null ||
+                    item?.stockMin === undefined
+                        ? 0
+                        : num(item.stockMin);
+
+                const lastCost = num(item?.lastCost);
+                const avgCost = num(item?.avgCost);
+
+                const effectiveCost =
+                    avgCost || lastCost || 0;
+
+                const inventoryValue =
+                    stock * effectiveCost;
+
+                const isInactiveInventory =
+                    type === "none" &&
+                    item?.isInventoryItem !== true &&
+                    String(item?.category || "")
+                        .trim()
+                        .toLowerCase() !== "inventario";
+
+                const isLow =
+                    !isInactiveInventory &&
+                    stock <= stockMin;
+
+                const status = isInactiveInventory
+                    ? "Sin inventario"
+                    : isLow
+                        ? "Bajo stock"
+                        : "OK";
+
+                return {
+                    "Artículo": item?.name || "",
+                    "Tipo": getExportTypeLabel(item),
+                    "Categoría": getCategoryName(item),
+                    "Unidad": item?.unit || "unidad",
+                    "Stock actual": stock,
+                    "Stock mínimo": stockMin,
+                    "Último costo": lastCost,
+                    "Costo promedio": avgCost,
+                    "Costo utilizado": effectiveCost,
+                    "Valor inventario": inventoryValue,
+                    "Proveedor": getSupplierName(item),
+                    "Estado": status,
+                    "Archivado": item?.isArchived ? "Sí" : "No",
+                    "ID": item?._id || "",
+                };
+            });
+
+            const workbook = XLSX.utils.book_new();
+
+            const worksheet =
+                XLSX.utils.json_to_sheet(excelRows);
+
+            // Ancho de columnas
+            worksheet["!cols"] = [
+                { wch: 32 }, // artículo
+                { wch: 28 }, // tipo
+                { wch: 24 }, // categoría
+                { wch: 12 }, // unidad
+                { wch: 14 }, // stock
+                { wch: 14 }, // mínimo
+                { wch: 16 }, // último costo
+                { wch: 16 }, // costo promedio
+                { wch: 16 }, // costo utilizado
+                { wch: 18 }, // valor inventario
+                { wch: 26 }, // proveedor
+                { wch: 16 }, // estado
+                { wch: 12 }, // archivado
+                { wch: 28 }, // id
+            ];
+
+            XLSX.utils.book_append_sheet(
+                workbook,
+                worksheet,
+                "Inventario"
+            );
+
+            const today = getTodayYMD();
+
+            let exportName = "Todos";
+
+            if (exportMode === "products") {
+                exportName = "Productos";
+            }
+
+            if (exportMode === "category") {
+                const category = (categories || []).find(
+                    (c) =>
+                        String(c?._id) ===
+                        String(stockFilters.inventoryCategoryId)
+                );
+
+                exportName =
+                    category?.name || "Categoria";
+            }
+
+            // Limpiamos caracteres inválidos para nombre de archivo.
+            exportName = String(exportName)
+                .replace(/[\\/:*?"<>|]/g, "-")
+                .replace(/\s+/g, "_");
+
+            XLSX.writeFile(
+                workbook,
+                `Inventario_${exportName}_${today}.xlsx`
+            );
+
+            enqueueSnackbar(
+                `${excelRows.length} registros exportados a Excel.`,
+                { variant: "success" }
+            );
+        } catch (error) {
+            console.error(
+                "[Inventory] Error exportando Excel:",
+                error
+            );
+
+            enqueueSnackbar(
+                error?.response?.data?.message ||
+                error?.message ||
+                "No se pudo exportar el inventario.",
+                { variant: "error" }
+            );
+        } finally {
+            setExportingExcel(false);
+        }
+    };
 
     // ---------- Guard: plan ----------
     if (!canUseInventory) {
@@ -923,26 +1326,51 @@ export default function Inventory({ plan, currentUser }) {
             {/* STOCK TAB */}
             {tab === "stock" && (
                 <div className={`${cardCls} p-4 mt-4`}>
-                    <div className="flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
-                            <div>
-                                <div className="text-white/60 text-xs mb-1">Buscar</div>
+                    <div className="space-y-4">
+
+                        {/* ===================================================== */}
+                        {/* FILTROS */}
+                        {/* ===================================================== */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+
+                            {/* BUSCAR */}
+                            <div className="min-w-0">
+                                <div className="text-white/60 text-xs mb-1.5">
+                                    Buscar
+                                </div>
+
                                 <input
                                     className={inputCls}
-                                    placeholder="Nombre..."
-                                    value={stockFilters.q}
-                                    onChange={(e) => setStockFilters((s) => ({ ...s, q: e.target.value }))}
+                                    placeholder="Buscar por nombre..."
+                                    value={stockSearchInput}
+                                    onChange={(e) => setStockSearchInput(e.target.value)}
                                 />
+
+                                {itemsFetching && stockFilters.q && (
+                                    <div className="text-[11px] text-yellow-200/60 mt-1">
+                                        Buscando...
+                                    </div>
+                                )}
                             </div>
 
-                            <div>
-                                <div className="text-white/60 text-xs mb-1">Categoría</div>
+                            {/* CATEGORÍA */}
+                            <div className="min-w-0">
+                                <div className="text-white/60 text-xs mb-1.5">
+                                    Categoría
+                                </div>
+
                                 <select
                                     className={selectCls}
                                     value={stockFilters.inventoryCategoryId}
-                                    onChange={(e) => setStockFilters((s) => ({ ...s, inventoryCategoryId: e.target.value }))}
+                                    onChange={(e) =>
+                                        setStockFilters((s) => ({
+                                            ...s,
+                                            inventoryCategoryId: e.target.value,
+                                        }))
+                                    }
                                 >
-                                    <option value="">Todas</option>
+                                    <option value="">Todas las categorías</option>
+
                                     {categories.map((c) => (
                                         <option key={c._id} value={c._id}>
                                             {c.name}
@@ -951,14 +1379,24 @@ export default function Inventory({ plan, currentUser }) {
                                 </select>
                             </div>
 
-                            <div>
-                                <div className="text-white/60 text-xs mb-1">Proveedor</div>
+                            {/* PROVEEDOR */}
+                            <div className="min-w-0 sm:col-span-2 xl:col-span-1">
+                                <div className="text-white/60 text-xs mb-1.5">
+                                    Proveedor
+                                </div>
+
                                 <select
                                     className={selectCls}
                                     value={stockFilters.supplierId}
-                                    onChange={(e) => setStockFilters((s) => ({ ...s, supplierId: e.target.value }))}
+                                    onChange={(e) =>
+                                        setStockFilters((s) => ({
+                                            ...s,
+                                            supplierId: e.target.value,
+                                        }))
+                                    }
                                 >
-                                    <option value="">Todos</option>
+                                    <option value="">Todos los proveedores</option>
+
                                     {suppliers.map((sp) => (
                                         <option key={sp._id} value={sp._id}>
                                             {sp.name || sp.companyName || "Proveedor"}
@@ -968,28 +1406,91 @@ export default function Inventory({ plan, currentUser }) {
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 items-center justify-end">
-                            <button
-                                onClick={() => setStockFilters((s) => ({ ...s, includeArchived: !s.includeArchived }))}
-                                className={`px-4 py-3 rounded-xl border inline-flex items-center gap-2 ${
-                                    stockFilters.includeArchived
-                                        ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
-                                        : "bg-white/5 border-white/10 text-white/80"
-                                }`}
-                            >
-                                <Archive className="w-4 h-4" />
-                                {stockFilters.includeArchived ? "Mostrando archivados" : "Ocultando archivados"}
-                            </button>
+                        {/* ===================================================== */}
+                        {/* ACCIONES */}
+                        {/* ===================================================== */}
+                        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3 pt-3 border-t border-white/5">
 
-                            {canManageInventoryItems && (
+                            {/* EXPORTACIÓN */}
+                            <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+
+                                <div className="w-full sm:w-[230px]">
+                                    <div className="text-white/60 text-xs mb-1.5">
+                                        Exportar
+                                    </div>
+
+                                    <select
+                                        value={exportMode}
+                                        onChange={(e) => setExportMode(e.target.value)}
+                                        className={selectCls}
+                                    >
+                                        <option value="all">
+                                            Todo el inventario
+                                        </option>
+
+                                        <option value="category">
+                                            Categoría seleccionada
+                                        </option>
+
+                                        <option value="products">
+                                            Solo productos
+                                        </option>
+                                    </select>
+                                </div>
+
                                 <button
-                                    onClick={openNewItem}
-                                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center gap-2"
+                                    type="button"
+                                    onClick={handleExportExcel}
+                                    disabled={exportingExcel}
+                                    className={`h-[46px] px-4 rounded-xl border inline-flex items-center justify-center gap-2 whitespace-nowrap ${
+                                        exportingExcel
+                                            ? "bg-white/5 border-white/10 text-white/40 cursor-not-allowed"
+                                            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20"
+                                    }`}
                                 >
-                                    <Plus className="w-4 h-4" />
-                                    Nuevo artículo
+                                    <FileSpreadsheet className="w-4 h-4 shrink-0" />
+
+                                    {exportingExcel
+                                        ? "Exportando..."
+                                        : "Exportar Excel"}
                                 </button>
-                            )}
+                            </div>
+
+                            {/* ACCIONES DERECHA */}
+                            <div className="flex flex-wrap gap-2 xl:justify-end">
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setStockFilters((s) => ({
+                                            ...s,
+                                            includeArchived: !s.includeArchived,
+                                        }))
+                                    }
+                                    className={`h-[46px] px-4 rounded-xl border inline-flex items-center justify-center gap-2 whitespace-nowrap ${
+                                        stockFilters.includeArchived
+                                            ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                            : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                                    }`}
+                                >
+                                    <Archive className="w-4 h-4 shrink-0" />
+
+                                    {stockFilters.includeArchived
+                                        ? "Mostrando archivados"
+                                        : "Ocultando archivados"}
+                                </button>
+
+                                {canManageInventoryItems && (
+                                    <button
+                                        type="button"
+                                        onClick={openNewItem}
+                                        className="h-[46px] px-4 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center justify-center gap-2 whitespace-nowrap hover:bg-yellow-500/20"
+                                    >
+                                        <Plus className="w-4 h-4 shrink-0" />
+                                        Nuevo artículo
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
