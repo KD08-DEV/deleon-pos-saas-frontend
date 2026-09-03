@@ -227,32 +227,47 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
     -moz-appearance: textfield;
 }
-/* Scrollbar moderno (WebKit: Chrome/Edge/Safari) */
+/* Scrollbar Premium DeLeonSoft */
 .modern-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: 12px;
+    height: 12px;
 }
 
 .modern-scroll::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(255,255,255,0.05);
+    border-radius: 999px;
+    margin: 6px;
 }
 
 .modern-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
+    background: linear-gradient(
+            180deg,
+            #ffd447,
+            #f6b100,
+            #c98a00
+    );
     border-radius: 999px;
-    border: 3px solid rgba(0, 0, 0, 0); /* hace el thumb más “delgado” visualmente */
+    border: 3px solid #111111;
     background-clip: padding-box;
+    box-shadow: 0 0 12px rgba(246,177,0,0.35);
+    transition: all .25s ease;
 }
 
-.modern-scroll:hover::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.22);
-    border: 3px solid rgba(0, 0, 0, 0);
-    background-clip: padding-box;
+.modern-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+            180deg,
+            #fff0a3,
+            #ffd447,
+            #f6b100
+    );
+    box-shadow: 0 0 18px rgba(246,177,0,0.6);
 }
+
 
 /* Firefox */
 .modern-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+    scrollbar-width: auto;
+    scrollbar-color: #f6b100 rgba(255,255,255,0.05);
 }
 /* FIX: impresión de facturas en fondo blanco y centrado */
 @media print {

@@ -184,6 +184,7 @@ const MenuManagement = ({ currentUser }) => {
     const queryClient = useQueryClient();
 
     const [searchTerm, setSearchTerm] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("");
     const [confirmDelete, setConfirmDelete] = useState({
         open: false,
@@ -226,29 +227,45 @@ const MenuManagement = ({ currentUser }) => {
     });
 
 
-    const { data, isLoading, isError } = useQuery({
-        queryKey: ["dishes", tenantId, page, limit, searchTerm, selectedCategory],
+    const {
+        data,
+        isLoading,
+        isFetching,
+        isError
+    } = useQuery({
+        queryKey: [
+            "dishes",
+            tenantId,
+            page,
+            limit,
+            debouncedSearch,
+            selectedCategory
+        ],
         queryFn: () =>
             getDishes({
                 tenantId,
                 page,
                 limit,
-                search: searchTerm,
+                search: debouncedSearch,
                 category: selectedCategory,
             }),
         enabled: Boolean(tenantId),
         staleTime: 30_000,
-        keepPreviousData: true,
+        placeholderData: (previousData) => previousData,
     });
 
     const { data: allDishesData } = useQuery({
-        queryKey: ["dishes-all-for-categories", tenantId, searchTerm],
+        queryKey: [
+            "dishes-all-for-categories",
+            tenantId,
+            debouncedSearch
+        ],
         queryFn: () =>
             getDishes({
                 tenantId,
                 page: 1,
                 limit: CATEGORY_FETCH_LIMIT,
-                search: searchTerm,
+                search: debouncedSearch,
             }),
         enabled: Boolean(tenantId),
         staleTime: 30_000,
@@ -473,9 +490,15 @@ const MenuManagement = ({ currentUser }) => {
     }, []);
     useEffect(() => {
         setPage(1);
-    }, [searchTerm, selectedCategory]);
+    }, [debouncedSearch, selectedCategory]);
 
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm.trim());
+        }, 400);
 
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     const addRemovableIngredient = () => {
         setDishForm((current) => ({
@@ -811,10 +834,13 @@ const MenuManagement = ({ currentUser }) => {
                             type="text"
                             placeholder="Buscar por nombre o categoría..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={(e) => {
+                                setSearchTerm(e.target.value);
+                            }}
                             className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                         />
                     </div>
+
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
@@ -828,6 +854,13 @@ const MenuManagement = ({ currentUser }) => {
                         ))}
                     </select>
                 </div>
+
+                {isFetching && debouncedSearch && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
+                        <div className="h-4 w-4 rounded-full border-2 border-[#f6b100] border-t-transparent animate-spin" />
+                        Buscando productos...
+                    </div>
+                )}
             </div>
 
             {/* Grid de platos */}

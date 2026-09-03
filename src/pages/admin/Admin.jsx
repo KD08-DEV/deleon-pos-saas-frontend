@@ -778,8 +778,7 @@ const Admin = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-4">
                     {/* MENÚ LATERAL CON SUBMENÚS */}
                     <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-4 shadow-xl sticky top-4">
-                            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
+                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-4 shadow-xl sticky top-4 max-h-[calc(100vh-120px)] overflow-y-auto modern-scroll">                            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
                                 <LayoutDashboard className="w-5 h-5 text-[#f6b100]" />
                                 <h3 className="text-sm font-semibold text-white">Navegación</h3>
                             </div>

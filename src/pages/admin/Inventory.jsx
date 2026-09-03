@@ -27,11 +27,15 @@ import MermaPanel from "./MermaPanel";
 const cardCls =
     "rounded-2xl border border-gray-800/30 bg-[#0b0b0b]/60 backdrop-blur";
 const inputCls =
-    "w-full p-3 border border-gray-800/30 rounded-xl bg-[#0b0b0b] text-white placeholder:text-gray-500 " +
-    "focus:outline-none focus:ring-2 focus:ring-yellow-500/40";
+    "w-full px-4 py-3.5 border border-white/15 rounded-xl " +
+    "bg-[#151515] text-white text-base placeholder:text-white/40 " +
+    "focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/40 " +
+    "transition";
 const selectCls =
-    "w-full p-3 border border-gray-800/30 rounded-xl bg-[#0b0b0b] text-white " +
-    "focus:outline-none focus:ring-2 focus:ring-yellow-500/40";
+    "w-full px-4 py-3.5 border border-white/15 rounded-xl " +
+    "bg-[#151515] text-white text-base " +
+    "focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/40 " +
+    "transition";
 
 const UNIT_OPTIONS = ["unidad", "lb", "kg", "g", "oz", "ml", "l"];
 const PAGE_SIZE = 10;
@@ -177,13 +181,13 @@ function Modal({ open, title, onClose, children }) {
         <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-start md:items-center justify-center px-3 sm:px-4 py-4 sm:py-6 overflow-y-auto">
             <div className="w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl">
                 <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#0b0b0c] z-10">
-                    <div className="text-white font-semibold pr-3">{title}</div>
+                    <div className="text-white text-xl font-bold pr-3">{title}</div>
                     <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 shrink-0">
                         <X className="w-5 h-5 text-white/70" />
                     </button>
                 </div>
 
-                <div className="p-4 sm:p-5 overflow-y-auto max-h-[calc(92vh-72px)]">
+                <div className="p-5 sm:p-6 overflow-y-auto max-h-[calc(92vh-72px)]">
                     {children}
                 </div>
             </div>
@@ -1496,17 +1500,40 @@ export default function Inventory({ plan, currentUser }) {
 
                     {/* Desktop table */}
                     <div className="hidden md:block mt-4 overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-base">
                             <thead>
-                            <tr className="text-left text-white/60 border-b border-white/10">
-                                <th className="py-3 pr-4 min-w-[220px]">Artículo</th>
-                                <th className="py-3 pr-4">Unidad</th>
-                                <th className="py-3 pr-4">Stock</th>
-                                <th className="py-3 pr-4">Mínimo</th>
-                                <th className="py-3 pr-4">Costo prom.</th>
-                                <th className="py-3 pr-4">Proveedor</th>
-                                <th className="py-3 pr-4">Estado</th>
-                                <th className="py-3 pr-4 text-right">Acciones</th>
+                            <tr className="text-left text-white/80 border-b border-white/10">
+                                <th className="py-3 pr-4 min-w-[220px] text-base font-semibold">
+                                    Artículo
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Unidad
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Stock
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Mínimo
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Costo prom.
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Proveedor
+                                </th>
+
+                                <th className="py-3 pr-4 text-base font-semibold">
+                                    Estado
+                                </th>
+
+                                <th className="py-3 pr-4 text-right text-base font-semibold">
+                                    Acciones
+                                </th>
                             </tr>
                             </thead>
 
@@ -1542,20 +1569,36 @@ export default function Inventory({ plan, currentUser }) {
                                     return (
                                         <tr key={it._id} className="border-b border-white/5">
                                             <td className="py-4 pr-4">
-                                                <div className="text-white font-medium">{it.name}</div>
-                                                <div className="text-white/30 text-xs">{it._id}</div>
+                                                <div className="text-white font-semibold text-base leading-tight">
+                                                    {it.name}
+                                                </div>
+
+                                                <div className="text-white/30 text-xs mt-1 truncate max-w-[220px]">
+                                                    {it._id}
+                                                </div>
                                             </td>
-                                            <td className="py-4 pr-4 text-white/80">{it.unit || "unidad"}</td>
-                                            <td className="py-4 pr-4 text-white/80">
-                                                {it.stockCurrent === null || it.stockCurrent === undefined ? "—" : num(it.stockCurrent)}
+                                            <td className="py-4 pr-4 text-white text-base font-medium">
+                                                {it.unit || "unidad"}
                                             </td>
-                                            <td className="py-4 pr-4 text-white/80">
+                                            <td
+                                                className={`py-4 pr-4 text-base font-semibold ${
+                                                    num(it.stockCurrent) < 0
+                                                        ? "text-red-400"
+                                                        : "text-white"
+                                                }`}
+                                            >
+                                                {it.stockCurrent === null || it.stockCurrent === undefined
+                                                    ? "—"
+                                                    : num(it.stockCurrent)}
+                                            </td>
+                                            <td className="py-4 pr-4 text-white text-base">
                                                 {it.stockMin === null || it.stockMin === undefined ? "—" : num(it.stockMin)}
                                             </td>
-                                            <td className="py-4 pr-4 text-white/80">
-                                                {moneyRD(num(it.avgCost) || num(it.lastCost) || 0)}
+                                            <td className="py-4 pr-4 text-white text-base font-medium">
+
+                                            {moneyRD(num(it.avgCost) || num(it.lastCost) || 0)}
                                             </td>
-                                            <td className="py-4 pr-4 text-white/80">{providerName}</td>
+                                            <td className="py-4 pr-4 text-white text-base">{providerName}</td>
                                             <td className="py-4 pr-4">
                                                 {isInactiveInventory ? (
                                                     <Badge tone="warning">Sin inventario</Badge>
@@ -1672,6 +1715,8 @@ export default function Inventory({ plan, currentUser }) {
                                 const isLow =
                                     !isInactiveInventory &&
                                     num(it.stockCurrent) <= num(it.stockMin);
+                                const isNegativeStock =
+                                    num(it.stockCurrent) < 0;
 
                                 const providerName =
                                     it?.supplierId?.name ||
@@ -1688,12 +1733,22 @@ export default function Inventory({ plan, currentUser }) {
                                                 <div className="text-white/40 text-xs mt-1">Proveedor: {providerName}</div>
                                             </div>
                                             <div>
-                                                {isInactiveInventory ? (
-                                                    <Badge tone="warning">Sin inventario</Badge>
+                                                {isNegativeStock ? (
+                                                    <Badge tone="danger">
+                                                        Stock negativo
+                                                    </Badge>
+                                                ) : isInactiveInventory ? (
+                                                    <Badge tone="warning">
+                                                        Sin inventario
+                                                    </Badge>
                                                 ) : isLow ? (
-                                                    <Badge tone="warning">Bajo</Badge>
+                                                    <Badge tone="warning">
+                                                        Bajo stock
+                                                    </Badge>
                                                 ) : (
-                                                    <Badge>OK</Badge>
+                                                    <Badge>
+                                                        OK
+                                                    </Badge>
                                                 )}
                                             </div>
                                         </div>
@@ -1868,7 +1923,7 @@ export default function Inventory({ plan, currentUser }) {
                     </div>
 
                     <div className="mt-4 overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-[15px]">
                             <thead>
                             <tr className="text-left text-white/60 border-b border-white/10">
                                 <th className="py-3 pr-4 min-w-[160px]">Fecha</th>
@@ -2686,7 +2741,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
 
             {!isEdit && createMode === "fromDish" && (
                 <div className="mb-4">
-                    <div className="text-white/70 text-xs mb-1">Selecciona un plato</div>
+                    <div className="text-white text-base font-semibold mb-2">                        Selecciona un plato</div>
                     <select className={selectCls} value={selectedDishId} onChange={(e) => setSelectedDishId(e.target.value)}>
                         <option value="">—</option>
                         {dishTemplates.map((d) => (
@@ -2972,12 +3027,12 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Nombre</div>
+                    <div className="text-white text-base font-semibold mb-2">Nombre</div>
                     <input className={inputCls} value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Unidad</div>
+                    <div className="text-white text-base font-semibold mb-2">Unidad</div>
                     <select className={selectCls} value={form.unit} onChange={(e) => setForm((s) => ({ ...s, unit: e.target.value }))}>
                         {UNIT_OPTIONS.map((u) => (
                             <option key={u} value={u}>
@@ -2988,7 +3043,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Categoría inventario</div>
+                    <div className="text-white text-base font-semibold mb-2">Categoría inventario</div>
                     <select
                         className={selectCls}
                         value={form.inventoryCategoryId}
@@ -3004,7 +3059,7 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Proveedor actual (opcional)</div>
+                    <div className="text-white text-base font-semibold mb-2">Proveedor actual (opcional)</div>
                     <select className={selectCls} value={form.supplierId} onChange={(e) => setForm((s) => ({ ...s, supplierId: e.target.value }))}>
                         <option value="">Sin proveedor</option>
                         {suppliers.map((sp) => (
@@ -3016,17 +3071,17 @@ function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ing
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Stock mínimo</div>
+                    <div className="text-white text-base font-semibold mb-2">Stock mínimo</div>
                     <input type="number" className={inputCls} value={form.stockMin} onChange={(e) => setForm((s) => ({ ...s, stockMin: e.target.value }))} />
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Último costo</div>
+                    <div className="text-white text-base font-semibold mb-2">Último costo</div>
                     <input type="number" className={inputCls} value={form.lastCost} onChange={(e) => setForm((s) => ({ ...s, lastCost: e.target.value }))} />
                 </div>
 
                 <div>
-                    <div className="text-white/70 text-xs mb-1">Costo promedio</div>
+                    <div className="text-white text-base font-semibold mb-2">Costo promedio</div>
                     <input type="number" className={inputCls} value={form.avgCost} onChange={(e) => setForm((s) => ({ ...s, avgCost: e.target.value }))} />
                 </div>
             </div>
@@ -3248,8 +3303,14 @@ function MovementModal({ open, type, item, defaultYield = false, saving = false,
 
     return (
         <Modal open={open} title={title} onClose={handleClose}>
-            <div className="text-white/70 text-sm mb-3">
-                Artículo: <span className="text-white">{item?.name || "—"}</span>
+            <div className="mb-5 rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+                <div className="text-white/70 text-sm">
+                    Artículo
+                </div>
+
+                <div className="text-white font-semibold text-lg mt-1">
+                    {item?.name || "—"}
+                </div>
             </div>
 
             {canYield && (
@@ -3280,20 +3341,38 @@ function MovementModal({ open, type, item, defaultYield = false, saving = false,
             {!useYield && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                        <div className="text-white/70 text-xs mb-1">Cantidad</div>
-                        <input className={inputCls} type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
+                        <div className="text-white text-base font-semibold mb-2">
+                            Cantidad
+                        </div>
+
+                        <input
+                            className={inputCls}
+                            type="number"
+                            value={qty}
+                            onChange={(e) => setQty(e.target.value)}
+                        />
                     </div>
 
                     {type === "purchase" && (
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Costo unitario</div>
-                            <input className={inputCls} type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+                            <div className="text-white text-base font-semibold mb-2">
+                                Costo unitario
+                            </div>
+
+                            <input
+                                className={inputCls}
+                                type="number"
+                                value={unitCost}
+                                onChange={(e) => setUnitCost(e.target.value)}
+                            />
                         </div>
                     )}
 
                     {type === "adjust" && (
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Dirección</div>
+                            <div className="text-white text-base font-semibold mb-2">
+                                Dirección
+                            </div>
                             <select className={selectCls} value={direction} onChange={(e) => setDirection(e.target.value)}>
                                 <option value="out">Reducir</option>
                                 <option value="in">Aumentar</option>
@@ -3302,8 +3381,15 @@ function MovementModal({ open, type, item, defaultYield = false, saving = false,
                     )}
 
                     <div className="md:col-span-2">
-                        <div className="text-white/70 text-xs mb-1">Nota</div>
-                        <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+                        <div className="text-white text-base font-semibold mb-2">
+                            Nota
+                        </div>
+
+                        <input
+                            className={inputCls}
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                        />
                     </div>
                 </div>
             )}
@@ -3312,23 +3398,32 @@ function MovementModal({ open, type, item, defaultYield = false, saving = false,
                 <div className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Cantidad comprada (ej: 44.60)</div>
+                            <div className="text-white text-base font-semibold mb-2">
+                                Cantidad comprada (ej: 44.60)
+                            </div>
                             <input className={inputCls} type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
                         </div>
 
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Costo total compra (ej: 7136)</div>
+                            <div className="text-white text-base font-semibold mb-2">Costo total compra (ej: 7136)</div>
                             <input className={inputCls} type="number" value={totalCost} onChange={(e) => setTotalCost(e.target.value)} />
                         </div>
 
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Cantidad final usable (ej: 28)</div>
+                            <div className="text-white text-base font-semibold mb-2">Cantidad final usable (ej: 28)</div>
                             <input className={inputCls} type="number" value={finalQty} onChange={(e) => setFinalQty(e.target.value)} />
                         </div>
 
                         <div>
-                            <div className="text-white/70 text-xs mb-1">Nota</div>
-                            <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+                            <div className="text-white text-base font-semibold mb-2">
+                                Nota
+                            </div>
+
+                            <input
+                                className={inputCls}
+                                value={note}
+                                onChange={(e) => setNote(e.target.value)}
+                            />
                         </div>
                     </div>
 

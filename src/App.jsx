@@ -218,6 +218,11 @@ function Layout() {
         !isCustomerDisplayRoute;
     // ====== CASH SESSION GATE (solo Cajera) ======
     const isCajera = userData?.role === "Cajera";
+    console.log("CASH DEBUG", {
+        userData,
+        role: userData?.role,
+        isCajera
+    });
     const [cashGateLoading, setCashGateLoading] = useState(false);
     const [cashSession, setCashSession] = useState(null);
     const [pendingCashSession, setPendingCashSession] = useState(null);
@@ -225,7 +230,7 @@ function Layout() {
     const [openModal, setOpenModal] = useState(false);
     const [openingAmount, setOpeningAmount] = useState("");
     const [cashGateError, setCashGateError] = useState("");
-
+    const [showCloseCashConfirm, setShowCloseCashConfirm] = useState(false);
     const getLocalYMD = () => {
         const d = new Date();
         const yyyy = d.getFullYear();
@@ -289,10 +294,160 @@ function Layout() {
 
     const getActiveRegisterId = () => {
         try {
-            return String(localStorage.getItem(getScopedRegisterStorageKey()) || "")
+            // 1. Clave correcta para tenant + client + usuario actual
+            const scopedKey = getScopedRegisterStorageKey();
+
+            const scopedValue = String(
+                localStorage.getItem(scopedKey) || ""
+            )
                 .trim()
                 .toUpperCase();
-        } catch {
+
+            // Ya existe correctamente para este usuario
+            if (
+                scopedValue &&
+                scopedValue !== "__ALL_REGISTERS__"
+            )
+            {
+                return scopedValue;
+            }
+            // 2. Buscar una caja que se haya guardado antes de que
+            // el usuario estuviera disponible en Redux ("noUser")
+            const scope = getCashRegisterStorageScope();
+
+            const noUserKey = [
+                REGISTER_STORAGE_PREFIX,
+                scope.host,
+                scope.tenantId,
+                scope.clientId,
+                "noUser",
+            ].join(":");
+
+            const noUserValue = String(
+                localStorage.getItem(noUserKey) || ""
+            )
+                .trim()
+                .toUpperCase();
+
+            // 3. Compatibilidad con la clave antigua
+            const legacyValue = String(
+                localStorage.getItem(LEGACY_REGISTER_STORAGE_KEY) || ""
+            )
+                .trim()
+                .toUpperCase();
+
+            // Primero preferimos la scoped antigua con noUser.
+            // Si no existe, usamos la legacy.
+            const recoveredRegisterId =
+                [noUserValue, legacyValue]
+                    .find(
+                        (v) =>
+                            v &&
+                            v !== "__ALL_REGISTERS__" &&
+                            v !== "MAIN"
+                    ) || "";
+
+            if (!recoveredRegisterId) {
+                console.warn("[CASH] No se encontró caja activa para el usuario", {
+                    userId: userData?._id,
+                    tenantId: scope.tenantId,
+                    clientId: scope.clientId,
+                });
+
+                return "";
+            }
+
+            // 4. Migrar automáticamente a la clave correcta del usuario
+            localStorage.setItem(
+                scopedKey,
+                recoveredRegisterId
+            );
+
+            // Limpiar claves viejas
+            localStorage.removeItem(noUserKey);
+            localStorage.removeItem(LEGACY_REGISTER_STORAGE_KEY);
+
+            console.log("[CASH] Caja migrada al usuario actual", {
+                userId: userData?._id,
+                registerId: recoveredRegisterId,
+                scopedKey,
+            });
+
+            return recoveredRegisterId;
+        } catch (error) {
+            console.error("[CASH] Error obteniendo caja activa", error);
+            return "";
+        }
+    };
+    const [activeCashRegisterId, setActiveCashRegisterId] = useState("");
+    const resolveActiveRegisterId = async () => {
+
+        if (activeCashRegisterId) {
+            return activeCashRegisterId;
+        }
+
+        const saved = getActiveRegisterId();
+
+        console.log("[RESOLVE REGISTER]", {
+            saved,
+            userId: userData?._id
+        });
+
+
+// Para cajeras siempre validar la caja asignada al usuario
+        const role = String(userData?.role || "").trim();
+
+        if (
+            role !== "Cajera" &&
+            saved &&
+            saved !== "__ALL_REGISTERS__"
+        ) {
+            return saved;
+        }
+
+
+        try {
+
+            const res = await api.get("/api/admin/registers");
+
+            console.log("[REGISTER RESPONSE]", res.data);
+
+
+            const registers = res?.data?.data || [];
+
+
+            console.log("[AVAILABLE REGISTERS]", registers);
+
+
+            const myRegister = registers.find(
+                (r) =>
+                    String(
+                        r.defaultCashierUserId?._id ||
+                        r.defaultCashierUserId
+                    ) === String(userData?._id)
+            );
+
+
+            console.log("[MY REGISTER]", myRegister);
+
+
+            if (myRegister?.code) {
+
+                saveActiveRegisterId(myRegister.code);
+
+                return myRegister.code;
+            }
+
+
+            return "";
+
+        } catch(error) {
+
+            console.error(
+                "[REGISTER RESOLVE ERROR]",
+                error
+            );
+
             return "";
         }
     };
@@ -343,7 +498,13 @@ function Layout() {
         setCashGateError("");
 
         try {
-            const activeRegisterId = getActiveRegisterId();
+            const activeRegisterId = await resolveActiveRegisterId();
+            if (!activeRegisterId) {
+                setCashGateError(
+                    "No tienes una caja asignada. Contacta al administrador."
+                );
+                return;
+            }
             const cashScope = ensureCashScope();
             if (!activeRegisterId) {
                 setOpenModal(false);
@@ -412,12 +573,25 @@ function Layout() {
             }
 
             if (isCajera && pending) {
+
+                const pendingRegister = String(
+                    pending.registerId || activeRegisterId
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+                setActiveCashRegisterId(pendingRegister);
+
+                saveActiveRegisterId(pendingRegister);
+
+
                 setPendingCashSession(pending);
                 setCashGateMode("pending-close");
                 setOpenModal(true);
+
                 return;
             }
-
             setPendingCashSession(null);
 
             const res = await api.get("/api/admin/cash-session/current", {
@@ -430,17 +604,28 @@ function Layout() {
             });
 
             const payload = res?.data ?? null;
+            console.log("CURRENT CASH RESPONSE", payload);
 
             const session =
+
                 payload?.data ??
                 payload?.session ??
                 payload?.cashSession ??
                 (payload?._id ? payload : null) ??
                 null;
+            console.log("PARSED SESSION", session);
 
             setCashSession(session);
 
-            if (String(session?.status || "").toUpperCase() === "CLOSED" || session?.closedAt) {
+            const sessionStatus = String(session?.status || "").toUpperCase();
+
+            if (
+                session &&
+                sessionStatus === "CLOSED" &&
+                session?.dateYMD === todayYMD
+            ) {
+                setCashSession(session);
+                setCashGateError("La caja de hoy ya fue cerrada.");
                 setOpenModal(false);
                 return;
             }
@@ -488,11 +673,17 @@ function Layout() {
     useEffect(() => {
         if (isCustomerDisplayRoute) return;
         if (!isCajera) return;
+        if (!userData?._id) return;
+        if (!userData?.tenantId) return;
 
         fetchCashSession();
 
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isCajera, isCustomerDisplayRoute]);
+    }, [
+        isCajera,
+        isCustomerDisplayRoute,
+        userData?._id,
+        userData?.tenantId
+    ]);
     useEffect(() => {
         if (isCustomerDisplayRoute) return;
         if (!isCajera) return;
@@ -505,7 +696,14 @@ function Layout() {
             // Si cerraste una caja pendiente, mantenemos esa misma caja activa
             // para abrir la caja de hoy en la caja correcta.
             if (closedRegisterId) {
-                saveActiveRegisterId(closedRegisterId);
+
+                const registerId = String(closedRegisterId)
+                    .trim()
+                    .toUpperCase();
+
+                setActiveCashRegisterId(registerId);
+
+                saveActiveRegisterId(registerId);
             }
 
             localStorage.removeItem("deleonsoft_pending_cash_date");
@@ -540,7 +738,9 @@ function Layout() {
 
         try {
             setCashGateLoading(true);
-            const activeRegisterId = getActiveRegisterId();
+            const activeRegisterId =
+                activeCashRegisterId ||
+                await resolveActiveRegisterId();
             const cashScope = ensureCashScope();
 
             const cashHeaders = {
@@ -550,6 +750,11 @@ function Layout() {
             if (cashScope.tenantId) {
                 cashHeaders["x-tenant-id"] = cashScope.tenantId;
             }
+            console.log("OPEN CASH FINAL REGISTER", {
+                activeRegisterId,
+                user: userData?._id,
+                saved: getActiveRegisterId()
+            });
 
             await api.post(
                 "/api/admin/cash-session/open",
@@ -632,7 +837,16 @@ function Layout() {
             {/* Modal Apertura de Caja / Cierre pendiente (solo Cajera) */}
             {!isCustomerDisplayRoute && isCajera && openModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-                    <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
+                    <div className="relative w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
+
+                        <button
+                            type="button"
+                            onClick={() => setShowCloseCashConfirm(true)}
+                            className="absolute top-4 right-4 text-white/40 hover:text-white text-xl transition"
+                            aria-label="Cerrar"
+                        >
+                            ✕
+                        </button>
                         {cashGateMode === "pending-close" ? (
                             <>
                                 <h2 className="text-xl font-semibold text-white">Cierre pendiente</h2>
@@ -740,6 +954,46 @@ function Layout() {
                             </>
                         )}
                     </div>
+                    {showCloseCashConfirm && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 rounded-2xl">
+
+                            <div className="w-full max-w-sm rounded-xl bg-[#161616] border border-white/10 p-5">
+
+                                <h3 className="text-lg font-semibold text-white">
+                                    ¿Cerrar apertura de caja?
+                                </h3>
+
+                                <p className="text-sm text-white/70 mt-2">
+                                    Si cierras esta ventana, no podrás registrar ventas hasta abrir la caja con un fondo inicial.
+                                </p>
+
+                                <div className="mt-5 flex gap-3">
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCloseCashConfirm(false)}
+                                        className="flex-1 rounded-xl bg-white/10 hover:bg-white/20 text-white py-3"
+                                    >
+                                        Cancelar
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowCloseCashConfirm(false);
+                                            setOpenModal(false);
+                                        }}
+                                        className="flex-1 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                    >
+                                        Cerrar
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+                    )}
                 </div>
             )}
 

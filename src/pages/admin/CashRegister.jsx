@@ -2267,7 +2267,26 @@ const CashRegister = () => {
                 const message = err?.response?.data?.message;
 
                 if (message === "PENDING_CASH_SESSION_CLOSE") {
-                    showToast("Tienes una caja anterior pendiente de cierre.", "error");
+                    const pendingSession = err?.response?.data?.data;
+
+                    const pendingDate =
+                        pendingSession?.dateYMD ||
+                        pendingSession?.createdAt?.slice(0, 10) ||
+                        "fecha desconocida";
+
+                    const register =
+                        pendingSession?.registerId ||
+                        activeRegisterId ||
+                        "";
+
+                    showToast(
+                        `Tienes una caja anterior pendiente de cierre (${pendingDate}) ${
+                            register ? `Caja: ${register}` : ""
+                        }. Debes cerrarla antes de ingresar el fondo inicial.`,
+                        "error"
+                    );
+
+                    return;
                 } else if (message === "CASH_SESSION_ALREADY_CLOSED") {
                     showToast("Esta caja ya fue cerrada para esta fecha.", "error");
                 } else if (message === "SESSION_ALREADY_EXISTS") {
@@ -5087,7 +5106,7 @@ const CashRegister = () => {
 
                     <div className="hidden sm:block">
                         <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
-                            <div className="overflow-x-auto">
+                            <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar">
                                 <table className="w-full text-left border-collapse">
                                     <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                     <tr>
@@ -5163,8 +5182,7 @@ const CashRegister = () => {
                     style={{ touchAction: "none" }}
                 >
                     <div
-                        className="w-full max-w-7xl max-h-[calc(100vh-8rem)] bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto"
-                        onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-7xl h-[calc(100vh-6rem)] bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col pointer-events-auto"                        onClick={(e) => e.stopPropagation()}
                         onWheel={(e) => e.stopPropagation()}
                         onTouchMove={(e) => e.stopPropagation()}
                     >
