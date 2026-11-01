@@ -4,10 +4,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Search, Filter, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-import api from "../../lib/api";
+import api, { getScope } from "../../lib/api";
 const DEFAULT_REGISTER_ID = "MAIN";
 const ALL_REGISTERS_ID = "__ALL_REGISTERS__";
-
+import useTenant from "../../hooks/useTenant";
+import { useTranslation } from "react-i18next";
+import { getAdjustmentCode, getPreviewTaxRate, getPreviewTaxAmount, getAvailableOriginalCredit } from "../../lib/ecfAdjustmentUiRules.mjs";
+import {
+    formatDate,
+    formatDateTime,
+    formatMoney,
+    getTenantLocalization,
+    getTodayYMD,
+    getYMDInTimezone,
+} from "../../lib/localization";
+import Invoice from "../../components/invoice/Invoice.jsx";
+import CashCloseDocumentsModal from "../../components/cash/CashCloseDocumentsModal.jsx";
+import EcfIncidentsModal from "../../components/cash/EcfIncidentsModal.jsx";
+import { resolveClosingViewerRole, canViewClosingDocumentsForRole } from "../../lib/cashCloseViewerRole.mjs";
 const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
 const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
 
@@ -117,16 +131,6 @@ const saveRegisterId = (value) => {
 import { useSelector } from "react-redux";
 import { listExpenses } from "../../lib/adminFinanceApi";
 
-
-
-
-
-const currency = (n) =>
-    new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 2,
-    }).format(Number(n || 0));
 // Formatea números con coma de miles mientras escribes (1,000 / 12,345.67)
 const formatThousands = (value) => {
     let s = String(value ?? "");
@@ -294,13 +298,7 @@ const getInvoiceNumber = (r) => {
     return value;
 };
 
-const getTodayKey = () => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-};
+
 
 function getUserFromStorage() {
     // Probamos varias llaves comunes porque en tu app veo que logueas "userData" en App.jsx
@@ -359,20 +357,126 @@ function getRoleFromToken() {
 }
 
 
-
-const getOpeningCashStorageKey = () => {
-    // Intento: tenantId + userId + fecha. Si no existen, cae a host + fecha.
-    const u = getUserFromStorage();
-    const tenantId = u?.tenantId || u?.tenant?._id || u?.tenant?.id || "";
-    const userId = u?._id || u?.id || u?.user?._id || "";
-    const host = typeof window !== "undefined" ? window.location.host : "app";
-    const day = getTodayKey();
-
-    return `cash_opening_${host}_${tenantId || "noTenant"}_${userId || "noUser"}_${day}`;
-};
-
 const CashRegister = () => {
-    const [batchesModalOpen, setBatchesModalOpen] = useState(false);
+    const { t, i18n } = useTranslation();
+
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const currency = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
+    const paymentMethodLabel = (value) => {
+        const raw = String(value || "").trim();
+
+        const normalized = raw
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+
+        if (!normalized) {
+            return t("cashRegisterPage.paymentMethods.cash");
+        }
+
+        if (normalized.includes("efect") || normalized === "cash") {
+            return t("cashRegisterPage.paymentMethods.cash");
+        }
+
+        if (normalized.includes("tarj") || normalized.includes("card")) {
+            return t("cashRegisterPage.paymentMethods.card");
+        }
+
+        if (normalized.includes("transf")) {
+            return t("cashRegisterPage.paymentMethods.transfer");
+        }
+
+        if (normalized.includes("credit")) {
+            return t("cashRegisterPage.paymentMethods.credit");
+        }
+
+        if (normalized.includes("ticket")) {
+            return t("cashRegisterPage.paymentMethods.ticket");
+        }
+
+        if (
+            normalized.includes("pedidoya") ||
+            normalized.includes("pedido ya")
+        ) {
+            return "Pedido Ya";
+        }
+
+        if (
+            normalized.includes("ubereats") ||
+            normalized.includes("uber eats")
+        ) {
+            return "Uber Eats";
+        }
+
+        if (normalized.includes("delivery")) {
+            return "Delivery";
+        }
+
+        if (normalized.includes("otro")) {
+            return t("cashRegisterPage.paymentMethods.other");
+        }
+
+        return raw;
+    };
+
+    const denominationTypeLabel = (type) => {
+        return String(type || "").toLowerCase() === "billete"
+            ? t("cashRegisterPage.closing.bill")
+            : t("cashRegisterPage.closing.coin");
+    };
+
+    const paymentStatusLabel = (value, fallback = "pending") => {
+        const raw = String(value || "").trim();
+
+        const normalized = raw
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+
+        if (
+            normalized === "paid" ||
+            normalized === "pagado"
+        ) {
+            return t("cashRegisterPage.status.paid");
+        }
+
+        if (
+            normalized === "pending" ||
+            normalized === "pendiente"
+        ) {
+            return t("cashRegisterPage.status.pending");
+        }
+
+        if (
+            normalized === "partial" ||
+            normalized === "parcial"
+        ) {
+            return t("cashRegisterPage.status.partial");
+        }
+
+        if (raw) {
+            return raw;
+        }
+
+        return t(`cashRegisterPage.status.${fallback}`);
+    };
+
+    const supportsCashDenominations =
+        localization.currency === "DOP";
+
+    const supportsDominicanFiscal =
+        String(tenantInfo?.localization?.countryCode || "").toUpperCase() === "DO";
     const [adminCloseTargetSession, setAdminCloseTargetSession] = useState(null);
     const [hideAdminSelectedSession, setHideAdminSelectedSession] = useState(false);
     const closeFormRef = useRef(null);
@@ -380,14 +484,42 @@ const CashRegister = () => {
         const saved = getSavedRegisterId();
         return saved || "";
     });
-    const getLocalYMD = () => {
-        const d = new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
-    const todayYMD = getLocalYMD();
+    const [
+        todayYMD,
+        setTodayYMD,
+    ] =
+        useState(
+            () =>
+                getTodayYMD(
+                    localization
+                )
+        );
+
+    useEffect(() => {
+        const updateToday =
+            () => {
+                setTodayYMD(
+                    getTodayYMD(
+                        localization
+                    )
+                );
+            };
+
+        updateToday();
+
+        const interval =
+            window.setInterval(
+                updateToday,
+                60_000
+            );
+
+        return () =>
+            window.clearInterval(
+                interval
+            );
+    }, [
+        localization.timezone,
+    ]);
 
 
     const [selectedYMD, setSelectedYMD] = useState(todayYMD);
@@ -438,18 +570,6 @@ const CashRegister = () => {
     // Modal: edición del fondo inicial (para NO usar prompt)
     const [modalIsEditingOpening, setModalIsEditingOpening] = useState(false);
     const [modalOpeningInput, setModalOpeningInput] = useState("");
-    const [mermaModalOpen, setMermaModalOpen] = useState(false);
-    const [mermaSearch, setMermaSearch] = useState("");
-    const [mermaQtyInput, setMermaQtyInput] = useState("");
-    const [mermaCostInput, setMermaCostInput] = useState("");
-    const [mermaNote, setMermaNote] = useState("");
-    const [mermaMode, setMermaMode] = useState("create");
-    const [batchToClose, setBatchToClose] = useState(null);
-    const [mermaSelectedDish, setMermaSelectedDish] = useState(null);
-    const [unitCostInput, setUnitCostInput] = useState("");
-    const [finalQtyInput, setFinalQtyInput] = useState("");
-    const [rawQtyInput, setRawQtyInput] = useState("");
-    const [mermaEditTab, setMermaEditTab] = useState("cooked"); // "cooked" | "raw"
     const [closingCountedInput, setClosingCountedInput] = useState("");
     const [closingNote, setClosingNote] = useState("");
     const [closingInputMode, setClosingInputMode] = useState(CLOSING_INPUT_MODE_TOTAL);
@@ -520,13 +640,22 @@ const CashRegister = () => {
 
         return [
             {
-                label: `Ticket RD$ ${ticketAmount}`,
+                label: t(
+                    "cashRegisterPage.closing.ticketValue",
+                    {
+                        amount: currency(ticketAmount),
+                    }
+                ),
                 value: ticketAmount,
                 count: ticketCount,
                 kind: "ticket",
             },
         ];
-    }, [ticketAmount, ticketCount]);
+    }, [
+        ticketAmount,
+        ticketCount,
+        i18n.resolvedLanguage,
+    ]);
 
     const cashEquivalentCountedTotal = useMemo(
         () => Number((closingBreakdownTotal + closingTicketTotal).toFixed(2)),
@@ -574,13 +703,22 @@ const CashRegister = () => {
 
         return [
             {
-                label: `Ticket RD$ ${adjustTicketAmount}`,
+                label: t(
+                    "cashRegisterPage.closing.ticketValue",
+                    {
+                        amount: currency(adjustTicketAmount),
+                    }
+                ),
                 value: adjustTicketAmount,
                 count: adjustTicketCount,
                 kind: "ticket",
             },
         ];
-    }, [adjustTicketAmount, adjustTicketCount]);
+    }, [
+        adjustTicketAmount,
+        adjustTicketCount,
+        i18n.resolvedLanguage,
+    ]);
 
     const adjustCombinedBreakdownPayload = useMemo(
         () => [...adjustBreakdownPayload, ...adjustTicketBreakdownPayload],
@@ -630,6 +768,7 @@ const CashRegister = () => {
         getRoleFromToken() ||
         ""
     ).trim();
+    const [confirmedFullCredit, setConfirmedFullCredit] = useState(false);
     const [ecfAdjustmentModal, setEcfAdjustmentModal] = useState({
         open: false,
         order: null,
@@ -642,20 +781,19 @@ const CashRegister = () => {
         amount: "",
         tax: "",
         reason: "",
-        modificationCode: "1",
+        modificationCode: "3",
     });
+    const [confirmedFullDebit, setConfirmedFullDebit] = useState(false);
 
     const [lastEcfAdjustmentResult, setLastEcfAdjustmentResult] = useState(null);
     const [selectedAdjustmentInvoice, setSelectedAdjustmentInvoice] = useState(null);
+    const [selectedOrderInvoice, setSelectedOrderInvoice] = useState(null);
+    const [showClosingDocuments, setShowClosingDocuments] = useState(false);
+    const [showEcfIncidents, setShowEcfIncidents] = useState(false);
 
     const roleNorm = role.toLowerCase();
 
-    const roleRaw =
-        me?.role ||
-        me?.user?.role ||
-        me?.profile?.role ||
-        me?.account?.role ||
-        "";
+
     const roleUpper = String(me?.role || role || "").trim().toUpperCase();
 
 
@@ -694,7 +832,11 @@ const CashRegister = () => {
         userData?.user?.id ||
         getUserIdFromToken?.() ||
         "";
+    // Mismo scope firmado que envia el interceptor de la API, no un objeto
+    // de usuario que puede pertenecer a la sucursal seleccionada previamente.
+    const activeApiScope = getScope();
     const currentTenantId =
+        activeApiScope?.tenantId ||
         me?.tenantId ||
         me?.tenant?.tenantId ||
         me?.tenant?._id ||
@@ -705,6 +847,7 @@ const CashRegister = () => {
         "NO_TENANT";
 
     const currentClientId =
+        activeApiScope?.clientId ||
         me?.clientId ||
         me?.client?.clientId ||
         me?.client?._id ||
@@ -828,20 +971,12 @@ const CashRegister = () => {
 
     const activeRegisterLabel =
         isViewingAllRegisters || (isAdminLike && !registers.length)
-            ? "TODAS LAS CAJAS"
+            ? t("cashRegisterPage.registers.allRegisters")
             : activeRegisterId;
 
 
-    const addDaysYMD = (ymd, days) => {
-        const d = new Date(`${ymd}T00:00:00`);
-        d.setDate(d.getDate() + days);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
 
-    const [forceSummary, setForceSummary] = useState(false);
+
     const hasUsableRegister =
         Boolean(activeRegisterId) &&
         activeRegisterId !== ALL_REGISTERS_ID &&
@@ -937,7 +1072,6 @@ const CashRegister = () => {
         (cashPayload?._id ? cashPayload : null) ??
         null;
 
-    const [sessionConflict, setSessionConflict] = useState(false);
 
     const adminCanSeeSummary = Boolean(isAdminLike);
 
@@ -1265,7 +1399,6 @@ const CashRegister = () => {
         const scopedSavedRegister = getSavedRegisterId();
 
         setSelectedRegisterId(scopedSavedRegister || "");
-        setForceSummary(false);
         setIsEditingOpening(false);
         setClosingCountedInput("");
         setClosingNote("");
@@ -1306,7 +1439,7 @@ const CashRegister = () => {
 
 
     const { data: usageResp } = useQuery({
-        queryKey: ["admin/usage"],
+        queryKey: ["admin/usage", cashScopeKey],
         queryFn: async () => {
             const res = await api.get("/api/admin/usage");
             return res.data;
@@ -1315,7 +1448,8 @@ const CashRegister = () => {
         retry: 0,
     });
     const { data: tenantEcfStatusResp } = useQuery({
-        queryKey: ["tenant-ecf-status-for-adjustments"],
+        queryKey: ["tenant-ecf-status-for-adjustments", currentTenantId, currentClientId, currentUserId, localization.countryCode],
+        enabled: supportsDominicanFiscal && Boolean(usageResp?.data?.features?.fiscal),
         queryFn: async () => {
             const res = await api.get("/api/order/ecf/status");
             return res.data;
@@ -1324,6 +1458,15 @@ const CashRegister = () => {
         retry: 0,
     });
 
+    // Autorización efectiva de notas fiscales por usuario y sucursal.
+    const { data: ecfPermissionsResp } = useQuery({
+        queryKey: ["order-ecf-permissions", currentTenantId, currentClientId, currentUserId],
+        enabled: supportsDominicanFiscal && Boolean(usageResp?.data?.features?.fiscal),
+        queryFn: async () => (await api.get("/api/order/ecf/permissions")).data,
+        retry: 0,
+        staleTime: 30_000,
+    });
+    const ecfPermissions = ecfPermissionsResp?.data || {};
     const tenantEcfStatus = tenantEcfStatusResp?.data || {};
 
     const ecfAdjustmentsEnabled =
@@ -1332,19 +1475,46 @@ const CashRegister = () => {
 
     const e33Enabled =
         ecfAdjustmentsEnabled &&
+        ecfPermissions.debit === true &&
         tenantEcfStatus?.documentTypes?.e33?.enabled === true;
 
     const e34Enabled =
         ecfAdjustmentsEnabled &&
+        ecfPermissions.credit === true &&
         tenantEcfStatus?.documentTypes?.e34?.enabled === true;
 
     const planFeatures = usageResp?.data?.features || {};
 
-    const canUseExpenses = Boolean(planFeatures.expenses);
+    // Consulta de facturas y notas: usar el rol de la membresía ACTUAL (API/Redux).
+    // El rol guardado localmente puede pertenecer a una sesión anterior; NO usarlo
+    // como primera opción ni depender de los permisos para EMITIR E33/E34.
+    // La autorización real vuelve a comprobarse en /api/admin/cash-close/fiscal-documents.
+    const closingViewerRole = resolveClosingViewerRole({
+        membershipRole: usageResp?.data?.currentUser?.role,
+        reduxRole: userData?.role || userData?.user?.role,
+        storageRole: me?.role || me?.user?.role,
+        tokenRole: getRoleFromToken(),
+    });
+    const canConsultClosingDocuments = canViewClosingDocumentsForRole(closingViewerRole);
+    // La consulta de incidentes es HISTÓRICA, solo lectura y acotada por sede.
+    // No ocultarla al desactivar e-CF ni durante un problema de certificado,
+    // perfil o conexión. El backend vuelve a validar rol, tenant y sucursal.
+    const canManageFiscalIncidents =
+        supportsDominicanFiscal &&
+        planFeatures.fiscal === true &&
+        ["owner", "admin"].includes(String(closingViewerRole || "").toLowerCase().trim());
 
-// Merma pertenece al módulo avanzado de inventario.
-// En nuestra distribución, merma debe estar en Premium / Pro.
-    const canUseMerma = Boolean(planFeatures.waste);
+    // Evitar reabrir un modal anterior si se desactiva e-CF o cambia la sesion.
+    useEffect(() => {
+        if (!canManageFiscalIncidents) setShowEcfIncidents(false);
+    }, [canManageFiscalIncidents]);
+
+
+    const canUseExpenses = Boolean(planFeatures.expenses);
+    const canUseAccountsReceivable = Boolean(planFeatures.accountsReceivable) &&
+        (isAdminLike || Boolean(userData?.permissions?.accountsReceivable?.view));
+
+
 
     const { data: expensesRows = [], refetch: refetchExpenses } = useQuery({
         queryKey: ["admin/expenses/day", selectedYMD, registerFilterValue || "ALL"],
@@ -1405,9 +1575,9 @@ const CashRegister = () => {
 
             return res.data;
         },
-        enabled: Boolean(selectedYMD),
+        enabled: Boolean(selectedYMD && canUseAccountsReceivable),
         staleTime: 10_000,
-        retry: 1,
+        retry: 0,
     });
 
     const receivableCashSummary =
@@ -1418,47 +1588,6 @@ const CashRegister = () => {
     const [openingCashInput, setOpeningCashInput] = useState("");
     const openingEditedRef = useRef(false);
 
-    const { data: mermaBatchesResp, refetch: refetchMermaBatches } = useQuery({
-        queryKey: ["merma/batches", selectedYMD],
-        enabled: Boolean(selectedYMD && canUseMerma),
-        queryFn: async () => {
-            if (!canUseMerma) {
-                return { success: false, batches: [] };
-            }
-
-            try {
-                const res = await api.get("/api/inventory/merma/batches", {
-                    params: { dateYMD: selectedYMD },
-                });
-                return res.data;
-            } catch (e) {
-                return { success: false, batches: [] };
-            }
-        },
-        staleTime: 15_000,
-        retry: 0,
-    });
-
-
-
-
-    const mermaBatches = useMemo(() => {
-        const raw = mermaBatchesResp;
-        if (Array.isArray(raw?.batches)) return raw.batches;
-        if (Array.isArray(raw?.data)) return raw.data;
-        return [];
-    }, [mermaBatchesResp]);
-
-
-    const openBatches = useMemo(
-        () => mermaBatches.filter((b) => (b?.status || "open") === "open"),
-        [mermaBatches]
-    );
-
-    const closedBatches = useMemo(
-        () => mermaBatches.filter((b) => (b?.status || "") === "closed"),
-        [mermaBatches]
-    );
     const adjustCloseCashSessionMutation = useMutation({
         mutationFn: async ({
                                dateYMD,
@@ -1512,7 +1641,10 @@ const CashRegister = () => {
             setAdjustTransferCountedInput("");
             setAdjustOtherCountedInput("");
 
-            showToast("Ajuste guardado correctamente.", "success");
+            showToast(
+                t("cashRegisterPage.messages.closeAdjustmentSaved"),
+                "success"
+            );
 
             setTimeout(() => {
                 window.location.reload();
@@ -1520,7 +1652,7 @@ const CashRegister = () => {
         },
         onError: (err) => {
 
-            alert(err?.response?.data?.message || JSON.stringify(err?.response?.data) || "Error ajustando cierre");
+            alert(err?.response?.data?.message || JSON.stringify(err?.response?.data) || t("cashRegisterPage.messages.closeAdjustmentError"));
         },
     });
 
@@ -1584,7 +1716,10 @@ const CashRegister = () => {
             setTransferCountedInput("");
             setOtherCountedInput("");
             // ✅ UX: feedback
-            showToast("Cierre registrado correctamente.", "success");
+            showToast(
+                t("cashRegisterPage.messages.closeSuccess"),
+                "success"
+            );
             // ✅ Avisar al Layout/App que una caja fue cerrada.
 // Esto permite que, si era un cierre pendiente viejo,
 // App.jsx vuelva a validar y muestre la apertura de hoy sin refrescar.
@@ -1612,11 +1747,14 @@ const CashRegister = () => {
             const msg =
                 err?.response?.data?.message ||
                 err?.response?.data?.error ||
-                "No se pudo cerrar la caja.";
+                t("cashRegisterPage.messages.closeError")
 
             // Mensaje amigable si el manager code está mal
             if (msg === "INVALID_MANAGER_CODE" || msg === "MISSING_MANAGER_CODE") {
-                showToast("Código del manager incorrecto.", "error");
+                showToast(
+                    t("cashRegisterPage.messages.invalidManagerCode"),
+                    "error"
+                );
                 return;
             }
 
@@ -1676,119 +1814,6 @@ const CashRegister = () => {
     ]);
 
 
-    const [batchesTab, setBatchesTab] = useState("open"); // "open" | "closed" | "all"
-
-    const createBatchMutation = useMutation({
-        mutationFn: async (payload) => {
-            const res = await api.post("/api/inventory/merma/batches", payload);
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["merma/batches"] });
-            queryClient.invalidateQueries({ queryKey: ["merma/summary"] });
-        },
-    });
-
-    const closeBatchMutation = useMutation({
-        mutationFn: async ({ batchId, finalQty, note, dateYMD }) => {
-            const res = await api.patch(
-                `/api/inventory/merma/batches/${encodeURIComponent(batchId)}/close`,
-                { finalQty, note, dateYMD }
-            );
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["merma/batches"] });
-            queryClient.invalidateQueries({ queryKey: ["merma/summary"] });
-        },
-    });
-
-    const updateBatchMutation = useMutation({
-        mutationFn: async ({ id, body }) => {
-            const { data } = await api.patch(`/api/inventory/merma/batches/${id}`, body);
-            return data;
-        },
-        onSuccess: async () => {
-            // 1) refresca la lista del día (esto reemplaza refetchOpenBatches/refetchClosedBatches/refetchBatches)
-            await refetchMermaBatches();
-
-            // 2) refresca el summary (tarjetas de merma)
-            queryClient.invalidateQueries({ queryKey: ["inventory/merma/summary", selectedYMD] });
-            queryClient.invalidateQueries({ queryKey: ["merma/summary"] });
-
-            // 3) refresca el lote seleccionado en pantalla (asegurando formato correcto del response)
-            const res = await api.get("/api/inventory/merma/batches", { params: { dateYMD: selectedYMD } });
-            const list = res?.data?.batches || res?.data?.data || [];
-            if (batchToClose?._id && Array.isArray(list)) {
-                const found = list.find((x) => x?._id === batchToClose._id);
-                if (found) setBatchToClose(found);
-            }
-        },
-    });
-
-
-
-    const handleSaveBatch = () => {
-        if (mermaMode === "create") {
-            const dishId = mermaSelectedDish?._id;
-            const rawQty = Number(String(rawQtyInput).replace(/[^\d.-]/g, ""));
-            if (!dishId) return alert("Selecciona un plato.");
-            if (!Number.isFinite(rawQty) || rawQty <= 0) return alert("Cantidad cruda inválida.");
-
-            const unitCost = unitCostInput
-                ? Number(String(unitCostInput).replace(/[^\d.-]/g, ""))
-                : undefined;
-
-            createBatchMutation.mutate({
-                rawItemId: dishId,
-                rawQty,
-                unitCost,
-                note: mermaNote,
-                dateYMD: selectedYMD,
-            });
-
-            setMermaModalOpen(false);
-            return;
-        }
-
-        const id = batchToClose?._id;
-        const finalQty = Number(String(finalQtyInput).replace(/[^\d.-]/g, ""));
-        const rawQty = Number(batchToClose?.rawQty || 0);
-
-        if (!id) return alert("Lote inválido.");
-        if (!Number.isFinite(finalQty) || finalQty < 0) return alert("Cantidad final inválida.");
-        if (finalQty > rawQty) return alert("La cantidad final no puede ser mayor que la cruda.");
-
-        if (mermaMode === "close") {
-            if (!batchToClose?._id) {
-                showToast("No se encontró el lote.");
-                return;
-            }
-
-            // Si estás en Entrada, no cierres aquí (se guarda con updateBatchMutation)
-            if (mermaEditTab === "raw") {
-                showToast("Estás en la pestaña Entrada. Usa “Guardar Entrada” o cambia a Salida.");
-                return;
-            }
-
-            const finalQtyNum = Number(String(finalQtyInput || "").replace(/[^\d.-]/g, ""));
-            if (Number.isNaN(finalQtyNum) || finalQtyNum < 0) {
-                showToast("Cantidad final inválida.");
-                return;
-            }
-
-            closeBatchMutation.mutate({
-                batchId: batchToClose._id,
-                finalQty: finalQtyNum,
-                note: mermaNote || "",
-                dateYMD: selectedYMD,
-            });
-        }
-
-
-        setMermaModalOpen(false);
-    };
-
     const modalRangeFrom = (modalFrom || "").trim();
     const modalRangeTo = (modalTo || "").trim();
 
@@ -1798,86 +1823,6 @@ const CashRegister = () => {
         isValidYMD(modalRangeTo) &&
         modalRangeFrom <= modalRangeTo;
 
-    const getTenantIdSafe = () => {
-        const u = getUserFromStorage?.() || {};
-        return (
-            u?.tenantId ||
-            u?.tenant?._id ||
-            u?.tenant?.id ||
-            localStorage.getItem("tenantId") ||
-            ""
-        );
-    };
-
-    const { data: dishesResp, isLoading: dishesLoading } = useQuery({
-        queryKey: ["dishes-for-merma"],
-        enabled: Boolean(canUseMerma && (mermaModalOpen || batchesModalOpen)),
-        queryFn: async () => {
-            const res = await api.get("/api/dishes");
-            return res.data;
-        },
-        staleTime: 30_000,
-        retry: 0,
-    });
-
-
-    const inventoryItemsLoading = dishesLoading;
-
-
-
-
-
-
-
-
-
-
-    const dishesList = useMemo(() => {
-        const raw = dishesResp;
-        if (Array.isArray(raw)) return raw;
-        if (Array.isArray(raw?.dishes)) return raw.dishes;
-        if (Array.isArray(raw?.data)) return raw.data;
-        return [];
-    }, [dishesResp]);
-    const dishById = useMemo(() => {
-        const m = new Map();
-        for (const d of (Array.isArray(dishesList) ? dishesList : [])) {
-            const id = String(d?._id || d?.id || "");
-            if (id) m.set(id, d);
-        }
-        return m;
-    }, [dishesList]);
-
-    const getBatchProductName = (b) => {
-        if (!b) return "Producto";
-        if (b?.rawItemName) return b.rawItemName;
-        if (b?.rawItem?.name) return b.rawItem.name;
-
-        const rawItemId =
-            typeof b?.rawItemId === "object"
-                ? String(b?.rawItemId?._id || b?.rawItemId?.id || "")
-                : String(b?.rawItemId || "");
-
-        const dish = rawItemId ? dishById.get(rawItemId) : null;
-        return dish?.name || "Producto";
-    };
-
-    const filteredDishes = useMemo(() => {
-        const list = Array.isArray(dishesList) ? dishesList : [];
-        const q = normalize(mermaSearch);
-        if (!q) return list;
-
-        return list.filter((d) => {
-            const name = normalize(d?.name);
-            const code = normalize(d?.code || d?.sku);
-            return name.includes(q) || code.includes(q);
-        });
-    }, [dishesList, mermaSearch]);
-
-    const filteredInventoryItems = filteredDishes;
-
-
-    const safeList = Array.isArray(filteredInventoryItems) ? filteredInventoryItems : [];
 
     const { data: modalRangeSessionResp } = useQuery({
         queryKey: [
@@ -1902,47 +1847,6 @@ const CashRegister = () => {
         staleTime: 10_000,
         retry: 1,
     });
-
-
-
-    const { data: mermaRes } = useQuery({
-        queryKey: ["inventory/merma/summary", selectedYMD],
-        queryFn: async () => {
-            if (!canUseMerma) {
-                return {
-                    success: false,
-                    data: {
-                        mermaQty: 0,
-                        mermaCost: 0,
-                    },
-                };
-            }
-
-            try {
-                const res = await api.get("/api/inventory/merma/summary", {
-                    params: { dateYMD: selectedYMD },
-                });
-                return res.data;
-            } catch (e) {
-                return {
-                    success: false,
-                    data: {
-                        mermaQty: 0,
-                        mermaCost: 0,
-                    },
-                };
-            }
-        },
-        enabled: Boolean(selectedYMD && canUseMerma),
-        staleTime: 10_000,
-        retry: 0,
-    });
-
-    const mermaQty = Number(mermaRes?.data?.mermaQty || 0);
-    const mermaCost = Number(mermaRes?.data?.mermaCost || 0);
-
-
-
 
 
     const { data: modalCashSessionResp } = useQuery({
@@ -1988,7 +1892,6 @@ const CashRegister = () => {
         : safeNumber(modalSession?.addedFloatTotal);
 
 
-    const modalMenudoActual = modalOpeningInitial + modalAddedTotal;
 
 
 
@@ -2047,8 +1950,11 @@ const CashRegister = () => {
             setManagerCodeInput("");
         },
         onError: (err) => {
-            showToast(err?.response?.data?.message || "Error guardando manager code");
-        },
+            showToast(
+                err?.response?.data?.message ||
+                t("cashRegisterPage.messages.managerCodeSaveError")
+            );
+            },
     });
 
     // Cajera: no puede editar si ya se guardó opening
@@ -2097,21 +2003,6 @@ const CashRegister = () => {
         setAddAmountInput?.("");
     }, [activeRegisterId]);
 
-    // Cajera solo puede guardar fondo inicial si:
-    // - es hoy
-    // - NO hay fondo inicial aún
-    // - NO hay dinero agregado aún (opcional, pero recomendado para evitar inconsistencias)
-    const cashierCanSetOpening =
-        isSelectedToday &&
-        !sessionClosed &&
-        !openingAlreadySet &&
-        addedTotal <= 0;
-
-    // Admin puede “Guardar” si aún no hay opening, o “Editar” si ya existe
-    const adminCanSetOpening =
-        isSelectedToday &&
-        !sessionClosed &&
-        !openingAlreadySet;
     useEffect(() => {
         // Si estoy editando, no sobrescribas el input
         if (isEditingOpening) return;
@@ -2152,34 +2043,6 @@ const CashRegister = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal", modalDay || "range"] });
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal-range"] });
-        },
-    });
-
-    const addCashModalMutation = useMutation({
-        mutationFn: async ({ dateYMD, registerId, amount }) => {
-            console.log("[POST add MODAL] request", { dateYMD, registerId, amount });
-
-            const res = await api.post("/api/admin/cash-session/add", {
-                dateYMD,
-                registerId,
-                amount,
-            });
-
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: ["admin/cash-session", "modal", modalDay || "range"],
-            });
-        },
-        onError: (err) => {
-            console.log("[POST add MODAL] ERROR", {
-                status: err?.response?.status,
-                url: err?.config?.url,
-                payload: err?.config?.data,
-                data: err?.response?.data,
-            });
-            showToast("No se pudo agregar dinero.");
         },
     });
 
@@ -2258,7 +2121,9 @@ const CashRegister = () => {
             });
 
             if (status === 404) {
-                showToast("No se encontró la sesión para esa fecha/caja.");
+                showToast(
+                    t("cashRegisterPage.messages.sessionNotFound")
+                );
                 queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD, activeRegisterId] });
                 return;
             }
@@ -2272,7 +2137,7 @@ const CashRegister = () => {
                     const pendingDate =
                         pendingSession?.dateYMD ||
                         pendingSession?.createdAt?.slice(0, 10) ||
-                        "fecha desconocida";
+                        "—";
 
                     const register =
                         pendingSession?.registerId ||
@@ -2280,19 +2145,41 @@ const CashRegister = () => {
                         "";
 
                     showToast(
-                        `Tienes una caja anterior pendiente de cierre (${pendingDate}) ${
-                            register ? `Caja: ${register}` : ""
-                        }. Debes cerrarla antes de ingresar el fondo inicial.`,
+                        t(
+                            "cashRegisterPage.messages.pendingPreviousSession",
+                            {
+                                date:
+                                pendingDate,
+
+                                register:
+                                    register
+                                        ? t(
+                                            "cashRegisterPage.messages.registerSuffix",
+                                            {
+                                                register,
+                                            }
+                                        )
+                                        : "",
+                            }
+                        ),
                         "error"
                     );
 
                     return;
                 } else if (message === "CASH_SESSION_ALREADY_CLOSED") {
-                    showToast("Esta caja ya fue cerrada para esta fecha.", "error");
+                    showToast(
+                        t("cashRegisterPage.messages.registerAlreadyClosed"),
+                        "error"
+                    );
                 } else if (message === "SESSION_ALREADY_EXISTS") {
-                    showToast("Ya existe una apertura para esta caja y esta cajera.", "error");
-                } else {
-                    showToast("No se pudo abrir la caja. Revisa si ya existe una sesión.", "error");
+                    showToast(
+                        t("cashRegisterPage.messages.sessionAlreadyExists"),
+                        "error"
+                    );                } else {
+                    showToast(
+                        t("cashRegisterPage.messages.openRegisterError"),
+                        "error"
+                    );
                 }
 
                 queryClient.invalidateQueries({ queryKey: ["admin/cash-session"] });
@@ -2302,7 +2189,7 @@ const CashRegister = () => {
             showToast(
                 err?.response?.data?.message ||
                 err?.response?.data?.error ||
-                "No se pudo guardar el fondo inicial."
+                t("cashRegisterPage.messages.saveOpeningError")
             );
         },
 
@@ -2356,32 +2243,48 @@ const CashRegister = () => {
                 err?.response?.data?.error;
 
             if (message === "MISSING_MANAGER_CODE") {
-                showToast("Debes ingresar el código del manager.", "error");
+                showToast(
+                    t("cashRegisterPage.messages.managerCodeRequired"),
+                    "error"
+                );
+
                 return;
             }
 
             if (message === "INVALID_MANAGER_CODE") {
-                showToast("Código del manager incorrecto.", "error");
+                showToast(
+                    t("cashRegisterPage.messages.invalidManagerCode"),
+                    "error"
+                );
+
                 return;
             }
 
             if (message === "SESSION_NOT_FOUND") {
-                showToast("No se encontró la sesión de caja para esta cajera y caja.", "error");
+                showToast(
+                    t("cashRegisterPage.messages.cashierSessionNotFound"),
+                    "error"
+                );
+
                 return;
             }
 
             if (message === "SESSION_CLOSED") {
-                showToast("La caja ya está cerrada. No se puede editar el fondo inicial.", "error");
+                showToast(
+                    t("cashRegisterPage.messages.closedOpeningEditForbidden"),
+                    "error"
+                );
+
                 return;
             }
 
-            showToast("No se pudo editar el fondo inicial.", "error");
+            showToast(
+                t("cashRegisterPage.messages.editOpeningError"),
+                "error"
+            );
         },
     });
 
-    useEffect(() => {
-        if (sessionExists) setSessionConflict(false);
-    }, [sessionExists]);
     const addCashMutation = useMutation({
         mutationFn: async ({ dateYMD, registerId, amount }) => {
             console.log("[POST add] request", { dateYMD, registerId, amount });
@@ -2416,44 +2319,26 @@ const CashRegister = () => {
             }
 
             if (status === 409 && msg === "SESSION_CLOSED") {
-                showToast("Solo admin puede agregar dinero después del cierre.");
+                showToast(
+                    t("cashRegisterPage.messages.adminOnlyAddAfterClose")
+                );
                 return;
             }
 
             if (status === 403) {
-                showToast("Solo administración puede agregar dinero.");
+                showToast(
+                    t("cashRegisterPage.messages.adminOnlyAddCash")
+                );
                 return;
             }
 
-            showToast(msg || "No se pudo agregar dinero.");
+            showToast(
+                msg ||
+                t("cashRegisterPage.messages.addCashError")
+            );
         },
     });
 
-    const adjustCashMutation = useMutation({
-        mutationFn: async ({ dateYMD, registerId, openingFloat, note }) => {
-
-            const res = await api.patch("/api/admin/cash-session/adjust", {
-                dateYMD,
-                registerId,
-                openingFloat,
-                note: note || "",
-            });
-
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["admin/cash-session", selectedYMD] });
-        },
-        onError: (err) => {
-            console.log("[PATCH adjust] ERROR", {
-                status: err?.response?.status,
-                url: err?.config?.url,
-                payload: err?.config?.data,
-                data: err?.response?.data,
-            });
-            showToast("No se pudo editar el fondo inicial. Revisa consola.");
-        },
-    });
 
 
     // Limpia filtros vacíos antes de enviar (para la query inicial)
@@ -2462,29 +2347,55 @@ const CashRegister = () => {
 // - Vista normal: carga solo selectedYMD.
 // - Modal "Registros Completos": si hay rango, carga ese rango desde backend.
     const cleanedParams = useMemo(() => {
-        const modalFromValue = String(modalFilters.from || "").trim();
-        const modalToValue = String(modalFilters.to || "").trim();
+        const modalFromValue =
+            String(
+                modalFilters.from || ""
+            ).trim();
+
+        const modalToValue =
+            String(
+                modalFilters.to || ""
+            ).trim();
 
         const useModalRange =
             showFullView &&
-            isValidYMD(modalFromValue);
+            isValidYMD(
+                modalFromValue
+            );
 
-        const from = useModalRange ? modalFromValue : selectedYMD;
-        const to = useModalRange
-            ? (isValidYMD(modalToValue) ? modalToValue : modalFromValue)
-            : selectedYMD;
+        const from =
+            useModalRange
+                ? modalFromValue
+                : selectedYMD;
+
+        const to =
+            useModalRange
+                ? (
+                    isValidYMD(
+                        modalToValue
+                    )
+                        ? modalToValue
+                        : modalFromValue
+                )
+                : selectedYMD;
 
         const params = {
             from,
             to,
         };
 
-        const registerForQuery = showFullView
-            ? modalRegisterId
-            : registerFilterValue;
+        const registerForQuery =
+            showFullView
+                ? modalRegisterId
+                : registerFilterValue;
 
-        if (registerForQuery && registerForQuery !== ALL_REGISTERS_ID) {
-            params.registerId = registerForQuery;
+        if (
+            registerForQuery &&
+            registerForQuery !==
+            ALL_REGISTERS_ID
+        ) {
+            params.registerId =
+                registerForQuery;
         }
 
         return params;
@@ -2780,82 +2691,152 @@ const CashRegister = () => {
         refetchOnWindowFocus: false,
     });
 
-    const reports = data?.data || [];
+    const reports =
+        Array.isArray(
+            data?.data
+        )
+            ? data.data
+            : [];
 
-    // Ordenar por fecha más reciente
-    const sortedReports = useMemo(() => {
-        return [...reports].sort((a, b) => {
-            const dateA = new Date(a?.paidAt || a?.createdAt || 0);
-            const dateB = new Date(b?.paidAt || b?.createdAt || 0);
-            return dateB - dateA;
-        });
-    }, [reports]);
+    const creditReports =
+        Array.isArray(
+            data?.creditData
+        )
+            ? data.creditData
+            : [];
 
-    const { data: mermaDayResp } = useQuery({
-        queryKey: ["inventory/merma-summary", selectedYMD],
-        queryFn: async () => {
-            if (!canUseMerma) {
-                return {
-                    success: false,
-                    data: {
-                        mermaQty: 0,
-                        mermaCost: 0,
-                    },
-                };
-            }
+    /*
+     * Lista completa para tablas:
+     *
+     * reports       = cobradas
+     * creditReports = ventas a crédito
+     *
+     * NO significa que Crédito se sume
+     * al dinero cobrado.
+     */
+    const allReports =
+        useMemo(() => {
+            const map =
+                new Map();
 
-            const res = await api.get("/api/inventory/merma/summary", {
-                params: { dateYMD: selectedYMD },
-            });
+            [
+                ...reports,
+                ...creditReports,
+            ].forEach(
+                (report) => {
+                    const id =
+                        String(
+                            report?._id ||
+                            ""
+                        );
 
-            return res.data;
-        },
-        enabled: Boolean(selectedYMD && canUseMerma),
-        staleTime: 10_000,
-        retry: 0,
-    });
+                    if (!id) {
+                        return;
+                    }
 
-    const mermaDay = mermaDayResp?.data || { mermaQty: 0, mermaCost: 0 };
+                    map.set(
+                        id,
+                        report
+                    );
+                }
+            );
 
-// Para el modal (si hay rango válido)
-    const { data: mermaRangeResp } = useQuery({
-        queryKey: ["inventory/merma-summary", "range", modalRangeFrom, modalRangeTo],
-        enabled: Boolean(modalRangeEnabled && canUseMerma),
-        queryFn: async () => {
-            if (!canUseMerma) {
-                return {
-                    success: false,
-                    data: {
-                        mermaQty: 0,
-                        mermaCost: 0,
-                    },
-                };
-            }
+            return Array.from(
+                map.values()
+            );
+        }, [
+            reports,
+            creditReports,
+        ]);
 
-            const res = await api.get("/api/inventory/merma/summary", {
-                params: { from: modalRangeFrom, to: modalRangeTo },
-            });
+    const getReportReferenceDate =
+        (report) => {
+            const method =
+                normalize(
+                    report
+                        ?.paymentMethod ||
+                    ""
+                );
 
-            return res.data;
-        },
-        staleTime: 10_000,
-        retry: 0,
-    });
+            const credit =
+                method === "credito" ||
+                method === "crédito" ||
+                method === "credit" ||
+                method.includes(
+                    "credito"
+                ) ||
+                method.includes(
+                    "crédito"
+                );
+
+            /*
+             * Crédito pertenece al día
+             * en que fue facturado.
+             *
+             * Una venta normal pertenece
+             * al día en que fue cobrada.
+             */
+            return credit
+                ? (
+                    report
+                        ?.invoicedAt ||
+                    report
+                        ?.createdAt
+                )
+                : (
+                    report
+                        ?.paidAt ||
+                    report
+                        ?.invoicedAt ||
+                    report
+                        ?.createdAt
+                );
+        };
+
+// Ordenar por la fecha financiera correcta.
+    const sortedReports =
+        useMemo(() => {
+            return [
+                ...allReports,
+            ].sort(
+                (a, b) => {
+                    const dateA =
+                        new Date(
+                            getReportReferenceDate(
+                                a
+                            ) || 0
+                        ).getTime();
+
+                    const dateB =
+                        new Date(
+                            getReportReferenceDate(
+                                b
+                            ) || 0
+                        ).getTime();
+
+                    return (
+                        dateB -
+                        dateA
+                    );
+                }
+            );
+        }, [
+            allReports,
+        ]);
 
 
-    const mermaRange = mermaRangeResp?.data || { mermaQty: 0, mermaCost: 0 };
+
+
 
 // Solo registros del día de HOY (fecha local)
 
 
-    const toLocalYMD = (value) => {
-        const dt = value instanceof Date ? value : new Date(value);
-        if (Number.isNaN(dt.getTime())) return null;
-        const yyyy = dt.getFullYear();
-        const mm = String(dt.getMonth() + 1).padStart(2, "0");
-        const dd = String(dt.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
+    const toBusinessYMD =
+        (value) =>
+            getYMDInTimezone(
+                value,
+                localization
+            );
 
     const isCreditOrder = (r) => {
         const method = normalize(r?.paymentMethod || "");
@@ -2870,33 +2851,71 @@ const CashRegister = () => {
 
 // Todas las órdenes del día, incluyendo crédito.
 // Esto sirve para que buildCashClosure pueda detectar crédito como fallback.
-    const rawDayReports = useMemo(() => {
-        return sortedReports.filter((r) =>
-            toLocalYMD(r?.paidAt || r?.createdAt) === selectedYMD
-        );
-    }, [sortedReports, selectedYMD]);
+    const rawDayReports =
+        useMemo(() => {
+            return sortedReports.filter(
+                (r) =>
+                    toBusinessYMD(
+                        getReportReferenceDate(
+                            r
+                        )
+                    ) ===
+                    selectedYMD
+            );
+        }, [
+            sortedReports,
+            selectedYMD,
+            localization.timezone,
+        ]);
 
-// Órdenes visibles como ventas cobradas.
-// Crédito NO aparece en la tabla ni cuenta como venta normal.
+// Solo ventas realmente cobradas.
+// Se usa para cálculos financieros que NO deben incluir Crédito.
     const dayReports = useMemo(() => {
-        return rawDayReports.filter((r) => !isCreditOrder(r));
-    }, [rawDayReports]);
+        return rawDayReports.filter(
+            (r) =>
+                !isCreditOrder(r)
+        );
+    }, [
+        rawDayReports,
+    ]);
+
+// Registros visibles en pantalla:
+// cobradas + ventas realizadas a crédito.
+    const dayVisibleReports =
+        useMemo(
+            () =>
+                rawDayReports,
+            [
+                rawDayReports,
+            ]
+        );
 
 
     // Filtro para el modal (todos los registros con filtros)
     const modalFilteredReports = useMemo(() => {
-        const from = modalFilters.from ? new Date(`${modalFilters.from}T00:00:00`) : null;
-        const to = modalFilters.to ? new Date(`${modalFilters.to}T23:59:59`) : null;
-        const method = normalize(modalFilters.method);
-        const fiscal = normalize(modalFilters.fiscal);
+        const fromYMD =
+            String(
+                modalFilters.from || ""
+            ).trim();
+
+        const toYMD =
+            String(
+                modalFilters.to || ""
+            ).trim();
+
+        const method =
+            normalize(
+                modalFilters.method
+            );
+        const fiscal = supportsDominicanFiscal
+            ? normalize(modalFilters.fiscal)
+            : "";
+
         const user = normalize(modalFilters.user);
         const client = normalize(modalFilters.client);
         const selectedRegister = String(modalRegisterId || "").trim().toUpperCase();
 
         return sortedReports.filter((r) => {
-            if (isCreditOrder(r)) {
-                return false;
-            }
             if (selectedRegister && selectedRegister !== ALL_REGISTERS_ID) {
                 const orderRegister = String(r?.registerId || DEFAULT_REGISTER_ID).trim().toUpperCase();
 
@@ -2908,9 +2927,37 @@ const CashRegister = () => {
                     return false;
                 }
             }
-            const createdAt = r?.paidAt ? new Date(r.paidAt) : (r?.createdAt ? new Date(r.createdAt) : null);
-            if (from && createdAt && createdAt < from) return false;
-            if (to && createdAt && createdAt > to) return false;
+            const recordYMD =
+                getYMDInTimezone(
+                    getReportReferenceDate(
+                        r
+                    ),
+                    localization
+                );
+
+            if (
+                (fromYMD ||
+                    toYMD) &&
+                !recordYMD
+            ) {
+                return false;
+            }
+
+            if (
+                fromYMD &&
+                recordYMD <
+                fromYMD
+            ) {
+                return false;
+            }
+
+            if (
+                toYMD &&
+                recordYMD >
+                toYMD
+            ) {
+                return false;
+            }
 
             if (method) {
                 const pm = normalize(r?.paymentMethod || "Efectivo");
@@ -2961,7 +3008,13 @@ const CashRegister = () => {
 
             return true;
         });
-    }, [sortedReports, modalFilters, modalRegisterId]);
+    }, [
+        sortedReports,
+        modalFilters,
+        modalRegisterId,
+        localization.timezone,
+        supportsDominicanFiscal,
+    ]);
 
     const buildCashClosure = (
         rows,
@@ -2971,14 +3024,53 @@ const CashRegister = () => {
         receivableSummary = {}
     ) => {
         const buckets = {
-            efectivo: { label: "Efectivo", total: 0, count: 0 },
-            tarjeta: { label: "Tarjeta", total: 0, count: 0 },
-            transferencia: { label: "Transferencia", total: 0, count: 0 },
-            delivery: { label: "Delivery", total: 0, count: 0 },
-            pedidoya: { label: "Pedido Ya", total: 0, count: 0 },
-            ubereats: { label: "Uber Eats", total: 0, count: 0 },
-            otros: { label: "Otros", total: 0, count: 0 },
-            ticket: { label: "Ticket", total: 0, count: 0 },
+            efectivo: {
+                label: t("cashRegisterPage.paymentMethods.cash"),
+                total: 0,
+                count: 0,
+            },
+
+            tarjeta: {
+                label: t("cashRegisterPage.paymentMethods.card"),
+                total: 0,
+                count: 0,
+            },
+
+            transferencia: {
+                label: t("cashRegisterPage.paymentMethods.transfer"),
+                total: 0,
+                count: 0,
+            },
+
+            delivery: {
+                label: "Delivery",
+                total: 0,
+                count: 0,
+            },
+
+            pedidoya: {
+                label: "Pedido Ya",
+                total: 0,
+                count: 0,
+            },
+
+            ubereats: {
+                label: "Uber Eats",
+                total: 0,
+                count: 0,
+            },
+
+            otros: {
+                label: t("cashRegisterPage.paymentMethods.other"),
+                total: 0,
+                count: 0,
+            },
+
+            ticket: {
+                label: t("cashRegisterPage.paymentMethods.ticket"),
+                total: 0,
+                count: 0,
+            },
         };
 
         let grandTotal = 0;
@@ -3131,7 +3223,6 @@ const CashRegister = () => {
     };
     // Resumen basado en los últimos 10 registros
 // Resumen basado en los registros de HOY
-
     const initialCashClosure = useMemo(
         () =>
             buildCashClosure(
@@ -3146,6 +3237,7 @@ const CashRegister = () => {
             openingInitial,
             addedTotal,
             expensesSummary,
+            i18n.resolvedLanguage,
             receivableCashSummary,
         ]
     );
@@ -3156,48 +3248,6 @@ const CashRegister = () => {
 
 // Resumen de cierre de caja:
 // Sale del conteo declarado por la cajera/admin al cerrar.
-    const closingBoxSummary = useMemo(() => {
-        const billsCoinsTotal = safeNumber(closingDeclaredSummary?.cashTotal);
-        const ticketTotal = safeNumber(closingDeclaredSummary?.ticketTotal);
-        const transferTotal = safeNumber(closingDeclaredSummary?.transferTotal);
-        const otherTotal = safeNumber(closingDeclaredSummary?.otherTotal);
-
-        const openingTotal = safeNumber(openingInitial) + safeNumber(addedTotal);
-        const cashExpenses = safeNumber(initialCashClosure?.cashExpenses);
-
-        const declaredTotal = Number(
-            (billsCoinsTotal + ticketTotal + transferTotal + otherTotal).toFixed(2)
-        );
-
-        const countedCashEquivalent = Number(
-            (billsCoinsTotal + ticketTotal).toFixed(2)
-        );
-
-        const hasData =
-            closingDeclaredSummary?.hasData ||
-            declaredTotal > 0 ||
-            openingTotal > 0 ||
-            cashExpenses > 0 ||
-            safeNumber(closingCountedSaved) > 0;
-
-        return {
-            hasData,
-            openingTotal,
-            billsCoinsTotal,
-            ticketTotal,
-            transferTotal,
-            otherTotal,
-            cashExpenses,
-            countedCashEquivalent,
-            declaredTotal,
-        };
-    }, [
-        closingDeclaredSummary,
-        openingInitial,
-        addedTotal,
-        initialCashClosure?.cashExpenses,
-        closingCountedSaved,
-    ]);
 
     const systemExpectedInRegisterShown = useMemo(() => {
         /*
@@ -3218,106 +3268,384 @@ const CashRegister = () => {
         initialCashClosure?.cashInRegister,
     ]);
 
-// Ventas netas (ventas - merma). OJO: esto es para reporte, NO afecta el efectivo real en caja.
-    const netSales = useMemo(() => {
-        return Number((safeNumber(initialCashClosure.grandTotal) - mermaCost).toFixed(2));
-    }, [initialCashClosure.grandTotal, mermaCost]);
 
 
 
-
-    const modalOpeningForSummary = modalDay ? modalMenudoActual : 0;
 
     const modalCashClosure = useMemo(
-        () => buildCashClosure(modalFilteredReports, modalOpeningInitial, modalAddedTotal),
-        [modalFilteredReports, modalOpeningInitial, modalAddedTotal]
+        () =>
+            buildCashClosure(
+                modalFilteredReports,
+                modalOpeningInitial,
+                modalAddedTotal
+            ),
+        [
+            modalFilteredReports,
+            modalOpeningInitial,
+            modalAddedTotal,
+            i18n.resolvedLanguage,
+        ]
     );
 
 
 
 
-
+    // La fuente de verdad es la orden guardada, no un PDF persistido en Storage.
     const verFactura = async (orderId) => {
         try {
-            const res = await api.get(`/api/invoice/${orderId}`);
-            const url = res.data?.url || res.data?.invoiceUrl;
-
-            if (!res.data?.success || !url) {
-                showToast("No se pudo obtener la factura");
-                return;
-            }
-
-            window.open(url, "_blank", "noopener,noreferrer");
+            const res = await api.get(`/api/order/${orderId}`);
+            const fresh = res?.data?.data?.order ?? res?.data?.order ?? res?.data?.data ?? res?.data;
+            if (!fresh?._id) throw new Error("ORDER_NOT_FOUND");
+            setSelectedOrderInvoice(fresh);
         } catch (error) {
-            console.error("Error cargando factura:", error);
-            showToast("Error al cargar la factura");
+            console.error("Error cargando orden para factura:", error);
+            showToast(t("cashRegisterPage.messages.invoiceLoadError"));
         }
     };
 
 
-    const downloadExcel = async (reportsToExport = dayReports, summary = initialCashClosure) => {
+    const downloadExcel = async (
+        reportsToExport = dayReports,
+        summary = initialCashClosure
+    ) => {
         try {
-            const cleanReportsToExport = reportsToExport.filter((r) => {
-                const method = String(r?.paymentMethod || "").trim().toLowerCase();
-                return method !== "credito" && method !== "credit";
+            const columns = {
+                invoice:
+                    t(
+                        "cashRegisterPage.excel.columns.invoice"
+                    ),
+
+                date:
+                    t(
+                        "cashRegisterPage.excel.columns.date"
+                    ),
+
+                user:
+                    t(
+                        "cashRegisterPage.excel.columns.user"
+                    ),
+
+                customer:
+                    t(
+                        "cashRegisterPage.excel.columns.customer"
+                    ),
+
+                method:
+                    t(
+                        "cashRegisterPage.excel.columns.method"
+                    ),
+
+                total:
+                    t(
+                        "cashRegisterPage.excel.columns.total"
+                    ),
+
+                status:
+                    t(
+                        "cashRegisterPage.excel.columns.status"
+                    ),
+
+                orderId:
+                    t(
+                        "cashRegisterPage.excel.columns.orderId"
+                    ),
+            };
+
+            const rows =
+                reportsToExport.map(
+                    (r) => ({
+                        [columns.invoice]:
+                            getInvoiceNumber(
+                                r
+                            ),
+
+                        [columns.date]:
+                            getReportReferenceDate(
+                                r
+                            )
+                                ? formatDate(
+                                    getReportReferenceDate(
+                                        r
+                                    ),
+                                    localization
+                                )
+                                : "",
+
+                        [columns.user]:
+                            r?.user?.name ||
+                            "—",
+
+                        [columns.customer]:
+                            getClientName(
+                                r
+                            ),
+
+                        [columns.method]:
+                            paymentMethodLabel(
+                                r?.paymentMethod ||
+                                "Efectivo"
+                            ),
+
+                        [columns.total]:
+                            Number(
+                                r?.bills
+                                    ?.totalWithTax ??
+                                r?.totalWithTax ??
+                                r?.total ??
+                                0
+                            ),
+
+                        [columns.status]:
+                            isCreditOrder(
+                                r
+                            )
+                                ? paymentStatusLabel(
+                                    r?.creditStatus ||
+                                    r?.paymentStatus,
+                                    "pending"
+                                )
+                                : paymentStatusLabel(
+                                    r?.paymentStatus,
+                                    "paid"
+                                ),
+
+                        [columns.orderId]:
+                            r?._id ||
+                            "",
+                    })
+                );
+
+            const ws =
+                XLSX.utils
+                    .json_to_sheet(
+                        rows
+                    );
+
+            const wb =
+                XLSX.utils
+                    .book_new();
+
+            XLSX.utils
+                .book_append_sheet(
+                    wb,
+                    ws,
+                    t(
+                        "cashRegisterPage.excel.salesSheet"
+                    )
+                );
+
+            const fieldColumn =
+                t(
+                    "cashRegisterPage.excel.columns.field"
+                );
+
+            const valueColumn =
+                t(
+                    "cashRegisterPage.excel.columns.value"
+                );
+
+            const summaryRow = (
+                field,
+                value
+            ) => ({
+                [fieldColumn]:
+                field,
+
+                [valueColumn]:
+                value,
             });
-
-            const rows = cleanReportsToExport.map((r) => ({
-                Factura: getInvoiceNumber(r),
-                Fecha: r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "",
-                Usuario: r?.user?.name || "—",
-                Cliente: getClientName(r),
-                Metodo: r?.paymentMethod || "Efectivo",
-                Total: Number(r?.bills?.totalWithTax ?? r?.totalWithTax ?? r?.total ?? 0),
-                OrderId: r?._id || "",
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Cierre de Caja");
 
             const summaryRows = [
-                { Campo: "Fondo inicial (menudo)", Valor: Number(summary?.openingInitial || 0) },
-                { Campo: "Ventas a crédito / CxC", Valor: Number((summary?.creditSales || 0) * -1) },
-                { Campo: "Abonos CxC cobrados", Valor: Number(summary?.receivablePaymentsTotal || 0) },
-                { Campo: "Abonos CxC efectivo", Valor: Number(summary?.receivablePaymentsCash || 0) },
-                { Campo: "Abonos CxC tarjeta", Valor: Number(summary?.receivablePaymentsCard || 0) },
-                { Campo: "Abonos CxC transferencia", Valor: Number(summary?.receivablePaymentsTransfer || 0) },
-                { Campo: "Efectivo (ventas)", Valor: Number(summary?.cashSales || 0) },
-                { Campo: "Efectivo en caja (fondo + ventas)", Valor: Number(summary?.cashInRegister || 0) },
-                { Campo: "Total general (todas las ventas)", Valor: Number(summary?.grandTotal || 0) },
-                { Campo: "Órdenes", Valor: Number(summary?.totalCount || 0) },
-                { Campo: "Total (ventas + menudo)", Valor: Number(summary?.totalWithMenudo || 0) },
-                { Campo: "Dinero agregado", Valor: Number(summary?.addedTotal || 0) },
-                { Campo: "Merma (costo)", Valor: Number(mermaDay.mermaCost || 0) },
-                { Campo: "Ventas netas (ventas - merma)", Valor: Number((summary?.grandTotal || 0) - (mermaDay.mermaCost || 0)) },
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.opening"
+                    ),
+                    Number(
+                        summary?.openingInitial ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.creditSales"
+                    ),
+                    Number(
+                        (
+                            summary?.creditSales ||
+                            0
+                        ) *
+                        -1
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.receivablePayments"
+                    ),
+                    Number(
+                        summary
+                            ?.receivablePaymentsTotal ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.receivableCash"
+                    ),
+                    Number(
+                        summary
+                            ?.receivablePaymentsCash ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.receivableCard"
+                    ),
+                    Number(
+                        summary
+                            ?.receivablePaymentsCard ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.receivableTransfer"
+                    ),
+                    Number(
+                        summary
+                            ?.receivablePaymentsTransfer ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.cashSales"
+                    ),
+                    Number(
+                        summary?.cashSales ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.cashInRegister"
+                    ),
+                    Number(
+                        summary
+                            ?.cashInRegister ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.grandTotal"
+                    ),
+                    Number(
+                        summary?.grandTotal ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.orders"
+                    ),
+                    Number(
+                        summary?.totalCount ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.totalWithOpening"
+                    ),
+                    Number(
+                        summary
+                            ?.totalWithMenudo ||
+                        0
+                    )
+                ),
+
+                summaryRow(
+                    t(
+                        "cashRegisterPage.excel.summary.addedCash"
+                    ),
+                    Number(
+                        summary?.addedTotal ||
+                        0
+                    )
+                ),
+
             ];
-            const ws2 = XLSX.utils.json_to_sheet(summaryRows);
-            XLSX.utils.book_append_sheet(wb, ws2, "Resumen");
 
-            const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-            const blob = new Blob([arrayBuffer], {
-                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            });
+            const ws2 =
+                XLSX.utils
+                    .json_to_sheet(
+                        summaryRows
+                    );
 
-            saveAs(blob, `cierre_caja_${new Date().toISOString().split("T")[0]}.xlsx`);
+            XLSX.utils
+                .book_append_sheet(
+                    wb,
+                    ws2,
+                    t(
+                        "cashRegisterPage.excel.summarySheet"
+                    )
+                );
+
+            const arrayBuffer =
+                XLSX.write(
+                    wb,
+                    {
+                        bookType:
+                            "xlsx",
+
+                        type:
+                            "array",
+                    }
+                );
+
+            const blob =
+                new Blob(
+                    [
+                        arrayBuffer,
+                    ],
+                    {
+                        type:
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    }
+                );
+
+            saveAs(
+                blob,
+                `${t(
+                    "cashRegisterPage.excel.filePrefix"
+                )}_${getTodayYMD(
+                    localization
+                )}.xlsx`
+            );
         } catch (error) {
-            console.error("Error exportando Excel:", error);
-            showToast("Error al exportar el archivo. Verifica tu sesión.");
+            console.error(
+                "Error exportando Excel:",
+                error
+            );
+
+            showToast(
+                t(
+                    "cashRegisterPage.messages.exportError"
+                )
+            );
         }
     };
-
-    const opening = Number(session?.openingFloatInitial || 0);
-    const added = Number(session?.addedFloatTotal || 0);
-
-    const expectedCashSales = Number(
-        (dayReports || [])
-            .filter((r) => (r?.paymentMethod || "").toUpperCase() === "EFECTIVO")
-            .reduce((sum, r) => sum + (Number(r?.bills?.totalWithTax) || 0), 0)
-            .toFixed(2)
-    );
-
-    const expectedInRegister = Number((opening + added + expectedCashSales).toFixed(2));
 
     const [addAmountInput, setAddAmountInput] = useState("");
     const [toast, setToast] = useState({ open: false, message: "", type: "error" });
@@ -3329,15 +3657,21 @@ const CashRegister = () => {
         showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3500);
     };
     const resetEcfAdjustmentForm = (documentType = "34") => {
+        setConfirmedFullDebit(false);
+        setConfirmedFullCredit(false);
         setEcfAdjustmentForm({
             adjustmentMode: "partial",
             amount: "",
             tax: "",
             reason:
                 documentType === "34"
-                    ? "Devolución parcial de producto"
-                    : "Monto adicional pendiente de facturar",
-            modificationCode: "1",
+                    ? t(
+                        "cashRegisterPage.ecf.defaultCreditReason"
+                    )
+                    : t(
+                        "cashRegisterPage.ecf.defaultDebitReason"
+                    ),
+            modificationCode: getAdjustmentCode(documentType, "partial"),
         });
         setLastEcfAdjustmentResult(null);
     };
@@ -3345,21 +3679,29 @@ const CashRegister = () => {
     const openEcfAdjustmentModal = async (order, documentType = "34") => {
         try {
             if (!ecfAdjustmentsEnabled) {
-                showToast("El e-CF está desactivado para este tenant.");
+                showToast(
+                    t("cashRegisterPage.ecf.disabled")
+                );
                 return;
             }
 
             if (documentType === "33" && !e33Enabled) {
-                showToast("La Nota de Débito e33 no está habilitada.");
+                showToast(
+                    t("cashRegisterPage.ecf.debitDisabled")
+                );
                 return;
             }
 
             if (documentType === "34" && !e34Enabled) {
-                showToast("La Nota de Crédito e34 no está habilitada.");
+                showToast(
+                    t("cashRegisterPage.ecf.creditDisabled")
+                );
                 return;
             }
             if (!order?._id) {
-                showToast("Orden no disponible.");
+                showToast(
+                    t("cashRegisterPage.ecf.orderUnavailable")
+                );
                 return;
             }
 
@@ -3373,7 +3715,9 @@ const CashRegister = () => {
                 );
 
             if (!isAccepted || !ecfData?.eNCF) {
-                showToast("Solo puedes crear notas sobre facturas e-CF aceptadas.");
+                showToast(
+                    t("cashRegisterPage.ecf.acceptedOnly")
+                );
                 return;
             }
 
@@ -3389,7 +3733,7 @@ const CashRegister = () => {
             console.error("[openEcfAdjustmentModal] error:", error);
             showToast(
                 error?.response?.data?.message ||
-                "No se pudo validar el e-CF de esta factura."
+                t("cashRegisterPage.ecf.validationError")
             );
         }
     };
@@ -3404,15 +3748,16 @@ const CashRegister = () => {
         resetEcfAdjustmentForm("34");
     };
 
-    const calculateSuggestedTax = (amount) => {
-        const value = Number(String(amount || "").replace(/[^\d.-]/g, ""));
-        if (!Number.isFinite(value) || value <= 0) return "";
-        return String(Number((value * 0.18).toFixed(2)));
-    };
+    // Preview is advisory only. The backend derives and validates taxes from
+    // the persisted original fiscal snapshot before reserving an e-NCF.
+    const previewTaxRate = getPreviewTaxRate(ecfAdjustmentModal?.order);
+    const previewBase = parseMoneyInput(ecfAdjustmentForm.amount);
+    const previewTaxAmount = getPreviewTaxAmount(previewBase, previewTaxRate);
 
     const {
         data: ecfAdjustmentsResponse,
         isLoading: ecfAdjustmentsLoading,
+        isError: ecfAdjustmentsFailed,
     } = useQuery({
         queryKey: ["order-ecf-adjustments", ecfAdjustmentModal?.order?._id],
         queryFn: async () => {
@@ -3487,13 +3832,13 @@ const CashRegister = () => {
         );
     }, [ecfAdjustments]);
 
-    const availableCreditTotal = roundMoney(
-        Math.max(
-            originalEcfTotal + acceptedDebitNotesTotal - acceptedCreditNotesTotal,
-            0
-        )
+    const availableCreditTotal = getAvailableOriginalCredit(
+        originalEcfTotal,
+        acceptedCreditNotesTotal
     );
 
+    // Identificador estable ante reintentos de red; se renueva tras una emisión confirmada.
+    const ecfAdjustmentRequestIdRef = useRef(null);
     const issueEcfAdjustmentMutation = useMutation({
         mutationFn: async () => {
             const orderId = ecfAdjustmentModal?.order?._id;
@@ -3505,45 +3850,81 @@ const CashRegister = () => {
 
             const adjustmentMode = String(ecfAdjustmentForm.adjustmentMode || "partial");
             const amount = Number(String(ecfAdjustmentForm.amount || "").replace(/[^\d.-]/g, ""));
-            const tax = Number(String(ecfAdjustmentForm.tax || "").replace(/[^\d.-]/g, ""));
             const reason = String(ecfAdjustmentForm.reason || "").trim();
-            const modificationCode = String(ecfAdjustmentForm.modificationCode || "1").trim();
+            const modificationCode = getAdjustmentCode(documentType, adjustmentMode);
 
-            if (!reason) {
-                throw new Error("Debes escribir el motivo de la nota.");
+            if (ecfAdjustmentsLoading || ecfAdjustmentsFailed) {
+                throw new Error("Es necesario consultar las notas fiscales existentes antes de emitir otra.");
+            }
+            if (documentType === "34" && adjustmentMode === "total" && !confirmedFullCredit) {
+                throw new Error("Confirma expresamente la anulación del saldo pendiente del comprobante.");
+            }
+            if (documentType === "33" && adjustmentMode === "total" && !confirmedFullDebit) {
+                throw new Error("Confirma que deseas aumentar la factura por un importe igual a su total original.");
             }
 
+            if (!reason) {
+                throw new Error(
+                    t("cashRegisterPage.ecf.reasonRequired")
+                );
+            }
+
+            if (!ecfAdjustmentRequestIdRef.current) {
+                ecfAdjustmentRequestIdRef.current =
+                    (typeof crypto !== "undefined" && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            }
             const payload = {
+                requestId: ecfAdjustmentRequestIdRef.current,
                 documentType,
                 adjustmentMode,
                 reason,
                 modificationCode,
+                ...(documentType === "34" && adjustmentMode === "total"
+                    ? { confirmFullCancellation: true } : {}),
             };
 
             if (adjustmentMode !== "total") {
                 if (!Number.isFinite(amount) || amount <= 0) {
-                    throw new Error("Debes colocar un monto válido.");
+                    throw new Error(
+                        t("cashRegisterPage.ecf.validAmountRequired")
+                    );
                 }
 
                 payload.amount = amount;
-                payload.tax = Number.isFinite(tax) && tax >= 0 ? tax : 0;
+                // No enviar ITBIS arbitrario: el backend calcula el impuesto
+                // a partir del desglose fiscal verificado del e-CF original.
             }
 
             if (documentType === "34") {
                 const requestedCreditTotal =
                     adjustmentMode === "total"
-                        ? originalEcfTotal
-                        : roundMoney(
-                            amount + (Number.isFinite(tax) && tax >= 0 ? tax : 0)
-                        );
+                        ? availableCreditTotal
+                        : (previewTaxAmount === null ? amount : roundMoney(amount + previewTaxAmount));
 
                 if (availableCreditTotal <= 0) {
-                    throw new Error("Esta factura ya no tiene balance disponible para nota de crédito.");
+                    throw new Error(
+                        t("cashRegisterPage.ecf.noCreditBalance")
+                    );
                 }
 
                 if (requestedCreditTotal > availableCreditTotal + 0.01) {
                     throw new Error(
-                        `La nota de crédito excede el balance disponible. Disponible: ${currency(availableCreditTotal)}. Solicitado: ${currency(requestedCreditTotal)}.`
+                        t(
+                            "cashRegisterPage.ecf.creditExceedsBalance",
+                            {
+                                available:
+                                    currency(
+                                        availableCreditTotal
+                                    ),
+
+                                requested:
+                                    currency(
+                                        requestedCreditTotal
+                                    ),
+                            }
+                        )
                     );
                 }
             }
@@ -3551,12 +3932,27 @@ const CashRegister = () => {
             const res = await api.post(`/api/order/${orderId}/ecf/adjustment`, payload);
             return res.data;
         },
+        onMutate: () => {
+            setLastEcfAdjustmentResult(null);
+        },
         onSuccess: (res) => {
+            ecfAdjustmentRequestIdRef.current = null;
             const data = res?.data || {};
             setLastEcfAdjustmentResult(data);
 
             showToast(
-                `${data?.documentType === "33" ? "Nota de débito" : "Nota de crédito"} emitida: ${data?.eNCF || ""}`,
+                t(
+                    "cashRegisterPage.ecf.noteIssued",
+                    {
+                        type:
+                            data?.documentType === "33"
+                                ? t("cashRegisterPage.ecf.debitNote")
+                                : t("cashRegisterPage.ecf.creditNote"),
+
+                        number:
+                            data?.eNCF || "",
+                    }
+                ),
                 "success"
             );
 
@@ -3566,20 +3962,40 @@ const CashRegister = () => {
         },
         onError: (error) => {
             console.error("[issueEcfAdjustmentMutation] error:", error);
-            showToast(
-                error?.response?.data?.message ||
-                error?.message ||
-                "No se pudo emitir la nota."
-            );
+            const code = String(error?.response?.data?.code || error?.response?.data?.message || error?.message || "");
+            const friendlyErrors = {
+                E34_PARTIAL_REQUIRES_CODE_3: "Las notas de crédito parciales deben utilizar el código 3 (corrección de montos).",
+                E34_TOTAL_REQUIRES_CODE_1: "La anulación total de una factura utiliza el código 1.",
+                E33_REQUIRES_AMOUNT_CORRECTION_CODE_3: "La nota de débito utiliza el código 3 (corrección de montos).",
+                ECF_ADJUSTMENT_TAX_RATE_MISMATCH: "El ITBIS no coincide con el tratamiento fiscal de la factura original.",
+                ECF_ADJUSTMENT_ITEMIZED_TAX_REQUIRED: "La factura original combina tratamientos fiscales. Se necesita una nota desglosada por artículos, aún no disponible.",
+                ECF_ADJUSTMENT_ORIGINAL_TAX_SNAPSHOT_REQUIRED: "La factura original no tiene un desglose fiscal verificable. No se puede emitir la nota automáticamente.",
+                ECF_TEXT_ONLY_ADJUSTMENT_NOT_IMPLEMENTED: "La corrección solamente de texto todavía no está disponible.",
+            };
+            showToast(friendlyErrors[code] || error?.response?.data?.message || error?.message || t("cashRegisterPage.ecf.issueError"));
         },
     });
     const getAdjustmentTitle = (documentType) => {
-        const type = String(documentType || "").trim();
+        const type =
+            String(
+                documentType || ""
+            ).trim();
 
-        if (type === "33") return "Nota de Débito Electrónica e-CF";
-        if (type === "34") return "Nota de Crédito Electrónica e-CF";
+        if (type === "33") {
+            return t(
+                "cashRegisterPage.ecf.debitNoteElectronic"
+            );
+        }
 
-        return "Nota Electrónica e-CF";
+        if (type === "34") {
+            return t(
+                "cashRegisterPage.ecf.creditNoteElectronic"
+            );
+        }
+
+        return t(
+            "cashRegisterPage.ecf.electronicNote"
+        );
     };
 
     const buildAdjustmentInvoiceOrder = (doc = {}) => {
@@ -3627,9 +4043,9 @@ const CashRegister = () => {
             },
 
             customerDetails: {
-                name: originalEcf?.customer?.name || "Consumidor Final",
-                rnc: originalEcf?.customer?.document || "",
-                rncCedula: originalEcf?.customer?.document || "",
+                name: doc?.customer?.name || originalEcf?.customer?.name || "Consumidor Final",
+                rnc: doc?.customer?.document || originalEcf?.customer?.document || "",
+                rncCedula: doc?.customer?.document || originalEcf?.customer?.document || "",
                 phone: "",
                 address: "",
             },
@@ -3685,7 +4101,11 @@ const CashRegister = () => {
 
     const renderInvoiceActions = (r) => {
         if (!r?._id) {
-            return <span className="text-xs text-gray-500">No disponible</span>;
+            return (
+                <span className="text-xs text-gray-500">
+                    {t("cashRegisterPage.common.unavailable")}
+                </span>
+            );
         }
 
         return (
@@ -3695,7 +4115,7 @@ const CashRegister = () => {
                     onClick={() => verFactura(r._id)}
                     className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
                 >
-                    Ver
+                    {t("cashRegisterPage.actions.view")}
                 </button>
 
                 {e34Enabled && (
@@ -3704,7 +4124,7 @@ const CashRegister = () => {
                         onClick={() => openEcfAdjustmentModal(r, "34")}
                         className="px-2 py-1 rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 text-xs font-semibold hover:bg-red-500/20 transition-colors"
                     >
-                        Nota crédito
+                        {t("cashRegisterPage.ecf.creditNote")}
                     </button>
                 )}
 
@@ -3714,7 +4134,7 @@ const CashRegister = () => {
                         onClick={() => openEcfAdjustmentModal(r, "33")}
                         className="px-2 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
                     >
-                        Nota débito
+                        {t("cashRegisterPage.ecf.debitNote")}
                     </button>
                 )}
             </div>
@@ -3773,15 +4193,37 @@ const CashRegister = () => {
         <div className={showFullView ? "pointer-events-none select-none" : ""}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-white">Cierre de Caja</h2>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h2 className="text-2xl font-bold text-white">
+                            {t("cashRegisterPage.title")}
+                        </h2>
+                        {canConsultClosingDocuments && (
+                            <button type="button" onClick={() => setShowClosingDocuments(true)}
+                                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20">
+                                {String(i18n.resolvedLanguage || "es").startsWith("en")
+                                    ? "View invoices and notes" : "Ver facturas y notas"}
+                            </button>
+                        )}
+                        {canManageFiscalIncidents && (
+                            <button type="button" onClick={() => setShowEcfIncidents(true)}
+                                className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
+                                Incidentes e-CF
+                            </button>
+                        )}
+                    </div>
                     <div className="text-sm text-gray-400 mt-1">
-                        Caja activa: <span className="text-white font-medium">{activeRegisterLabel}</span>
+                        {t("cashRegisterPage.registers.active")}:{" "}
+                        <span className="text-white font-medium">
+                            {activeRegisterLabel}
+                        </span>
                     </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <span className="text-sm text-gray-400 whitespace-nowrap">Fecha:</span>
+                       <span className="text-sm text-gray-400 whitespace-nowrap">
+                            {t("cashRegisterPage.common.date")}:
+                        </span>
                         <input
                             type="date"
                             value={selectedYMD}
@@ -3791,8 +4233,9 @@ const CashRegister = () => {
                     </div>
 
                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <span className="text-sm text-gray-400 whitespace-nowrap">Caja:</span>
-
+                        <span className="text-sm text-gray-400 whitespace-nowrap">
+                            {t("cashRegisterPage.common.register")}:
+                        </span>
                         {isAdminLike ? (
                             <select
                                 value={activeRegisterId}
@@ -3800,7 +4243,9 @@ const CashRegister = () => {
                                 className="w-full sm:w-auto min-w-[220px] bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
                                 disabled={registersLoading}
                             >
-                                <option value={ALL_REGISTERS_ID}>ADMIN — Ver todas las ventas</option>
+                                <option value={ALL_REGISTERS_ID}>
+                                    {t("cashRegisterPage.registers.allSales")}
+                                </option>
 
                                 {registers.length > 0 &&
                                     registers.map((r) => (
@@ -3823,7 +4268,7 @@ const CashRegister = () => {
                             className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
                         >
                             <Search className="w-4 h-4" />
-                            Ver Registros Completos
+                            {t("cashRegisterPage.actions.viewFullRecords")}
                         </button>
                     )}
                 </div>
@@ -3837,9 +4282,12 @@ const CashRegister = () => {
                     {/* Columna izquierda: texto + cards (esto elimina el espacio vacío) */}
                     <div className="space-y-4">
                         <div>
-                            <h3 className="text-white font-semibold text-lg">Fondo inicial de caja (menudo)</h3>
+                            <h3 className="text-white font-semibold text-lg">
+                                {t("cashRegisterPage.opening.title")}
+                            </h3>
+
                             <p className="text-sm text-gray-400 mt-1">
-                                Este monto no es venta: es el efectivo con el que se inicia la caja para dar cambio.
+                                {t("cashRegisterPage.opening.description")}
                             </p>
                         </div>
 
@@ -3847,33 +4295,50 @@ const CashRegister = () => {
                         {(isAdminLike || sessionClosed) && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                <div className="text-xs text-gray-400 mb-1">Menudo (fondo inicial + agregado)</div>
+                                <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.currentFloat")}</div>
                                 <div className="text-sm font-semibold text-white">{currency(menudoActual)}</div>
                                 <div className="text-[11px] text-gray-500 mt-1">
-                                    Inicial: {currency(openingInitial)} · Agregado: {currency(addedTotal)}
+                                    {t(
+                                        "cashRegisterPage.opening.initialAdded",
+                                        {
+                                            initial:
+                                                currency(openingInitial),
+
+                                            added:
+                                                currency(addedTotal),
+                                        }
+                                    )}
                                 </div>
                             </div>
 
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                <div className="text-xs text-gray-400 mb-1">Efectivo (ventas)</div>
+                                <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashSales")}</div>
                                 <div className="text-sm font-semibold text-white">{currency(initialCashClosure.cashSales)}</div>
                             </div>
 
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                <div className="text-xs text-gray-400 mb-1">Gastos del día</div>
+                                <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.dayExpenses")}</div>
                                 <div className="text-sm font-semibold text-red-400">
                                     {currency(initialCashClosure.totalExpenses)}
                                 </div>
                                 <div className="text-[11px] text-gray-500 mt-1">
-                                    En efectivo: {currency(initialCashClosure.cashExpenses)}
+                                    {t(
+                                        "cashRegisterPage.opening.cashExpenses",
+                                        {
+                                            amount:
+                                                currency(
+                                                    initialCashClosure.cashExpenses
+                                                ),
+                                        }
+                                    )}
                                 </div>
                             </div>
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors">
-                                <div className="text-xs text-gray-400 mb-1">Efectivo en caja (fondo + ventas)</div>
+                                <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashInRegister")}</div>
                                 <div className="text-sm font-semibold text-[#f6b100]">{currency(initialCashClosure.cashInRegister)}</div>
                             </div>
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                <div className="text-xs text-gray-400 mb-1">Ventas netas</div>
+                                <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.netSales")}</div>
                                 <div className="text-sm font-semibold text-white">
                                     {currency(initialCashClosure.netSales)}
                                 </div>
@@ -3885,7 +4350,7 @@ const CashRegister = () => {
 
                     {/* Columna derecha: formulario */}
                     <div className="w-full max-w-sm justify-self-end">
-                        <label className="text-xs text-gray-400 mb-1 block">Monto (ej. 2000)</label>
+                        <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.opening.amountExample")}</label>
                         <input
                             value={openingCashInput}
                             disabled={disableOpeningInput}
@@ -3903,7 +4368,7 @@ const CashRegister = () => {
 
                         {isAdminLike && sessionExists && (isSelectedToday || isAdmin) && (
                             <div className="mt-3">
-                                <label className="text-xs text-gray-400 mb-1 block">Agregar dinero</label>
+                                <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.opening.addMoney")}</label>
                                 <div className="flex gap-2">
                                     <input
                                         value={addAmountInput}
@@ -3916,17 +4381,23 @@ const CashRegister = () => {
                                         type="button"
                                         onClick={() => {
                                             if (!isAdminLike) {
-                                                showToast("Solo administración puede agregar dinero.");
+                                                showToast(
+                                                    t("cashRegisterPage.messages.adminOnlyAddCash")
+                                                );
                                                 return;
                                             }
 
                                             if (!sessionExists) {
-                                                showToast("No existe una sesión de caja para esta fecha.");
+                                                showToast(
+                                                    t("cashRegisterPage.messages.sessionNotFound")
+                                                );
                                                 return;
                                             }
 
                                             if (sessionClosed && !isAdminLike) {
-                                                showToast("La caja ya está cerrada. No se puede agregar dinero.");
+                                                showToast(
+                                                    t("cashRegisterPage.messages.cannotAddToClosedRegister")
+                                                );
                                                 return;
                                             }
 
@@ -3934,7 +4405,9 @@ const CashRegister = () => {
                                             const amount = Number(cleaned);
 
                                             if (!Number.isFinite(amount) || amount <= 0) {
-                                                showToast("Monto inválido.");
+                                                showToast(
+                                                    t("cashRegisterPage.messages.invalidAmount")
+                                                );
                                                 return;
                                             }
 
@@ -3948,12 +4421,12 @@ const CashRegister = () => {
                                         }}
                                         className="px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                     >
-                                        Agregar
+                                        {t("cashRegisterPage.actions.add")}
                                     </button>
                                 </div>
 
                                 <div className="text-xs text-gray-500 mt-1">
-                                    Solo administración puede agregar dinero o ajustar el fondo inicial.
+                                    {t("cashRegisterPage.opening.adminOnlyHint")}
                                 </div>
                             </div>
                         )}
@@ -3972,7 +4445,12 @@ const CashRegister = () => {
                                         const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
 
                                         if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
-                                            showToast("Selecciona una caja específica antes de guardar el fondo inicial.", "error");
+                                            showToast(
+                                                t(
+                                                    "cashRegisterPage.messages.selectSpecificRegisterBeforeOpening"
+                                                ),
+                                                "error"
+                                            );
                                             return;
                                         }
 
@@ -3984,7 +4462,7 @@ const CashRegister = () => {
                                     }}
                                     className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
                                 >
-                                    Guardar fondo inicial
+                                    {t("cashRegisterPage.opening.saveInitial")}
                                 </button>
                             )}
                             {isCashier && openingAlreadySet && !sessionClosed && !isEditingOpening && (
@@ -3996,18 +4474,20 @@ const CashRegister = () => {
                                     }}
                                     className="mt-2 w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                 >
-                                    Editar fondo inicial con código manager
+                                    {t("cashRegisterPage.opening.editWithManager")}
                                 </button>
                             )}
                             {isCashier && isEditingOpening && openingAlreadySet && !sessionClosed && (
                                 <div className="mt-3 space-y-2">
-                                    <label className="text-xs text-gray-400">Código del manager</label>
+                                    <label className="text-xs text-gray-400">{t("cashRegisterPage.manager.code")}</label>
                                     <input
                                         type="password"
                                         value={openingManagerCode}
                                         onChange={(e) => setOpeningManagerCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
                                         className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm"
-                                        placeholder="Ej: 1234"
+                                        placeholder={t(
+                                            "cashRegisterPage.manager.codePlaceholder"
+                                        )}
                                         inputMode="numeric"
                                         autoComplete="new-password"
                                     />
@@ -4025,14 +4505,21 @@ const CashRegister = () => {
                                                 }
 
                                                 if (!openingManagerCode.trim()) {
-                                                    showToast("Código del manager requerido.");
+                                                    showToast(
+                                                        t("cashRegisterPage.messages.managerCodeRequired")
+                                                    );
                                                     return;
                                                 }
 
                                                 const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
 
                                                 if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
-                                                    showToast("Selecciona una caja específica antes de editar el fondo inicial.", "error");
+                                                    showToast(
+                                                        t(
+                                                            "cashRegisterPage.messages.selectSpecificRegisterBeforeEditingOpening"
+                                                        ),
+                                                        "error"
+                                                    );
                                                     return;
                                                 }
 
@@ -4047,7 +4534,9 @@ const CashRegister = () => {
                                             disabled={adjustOpeningMutation.isPending}
                                             className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
                                         >
-                                            {adjustOpeningMutation.isPending ? "Guardando..." : "Guardar cambio"}
+                                            {adjustOpeningMutation.isPending
+                                                ? t("cashRegisterPage.actions.saving")
+                                                : t("cashRegisterPage.actions.saveChange")}
                                         </button>
 
                                         <button
@@ -4059,7 +4548,7 @@ const CashRegister = () => {
                                             }}
                                             className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                         >
-                                            Cancelar
+                                            {t("cashRegisterPage.actions.cancel")}
                                         </button>
                                     </div>
                                 </div>
@@ -4077,12 +4566,22 @@ const CashRegister = () => {
                                         const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
 
                                         if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
-                                            showToast("Selecciona una caja específica antes de guardar el fondo inicial.", "error");
+                                            showToast(
+                                                t(
+                                                    "cashRegisterPage.messages.selectSpecificRegisterBeforeEditingOpening"
+                                                ),
+                                                "error"
+                                            );
                                             return;
                                         }
 
                                         if (registers.length > 0 && !registers.some((r) => r.code === cleanRegisterId)) {
-                                            showToast("La caja seleccionada no existe o no está activa.", "error");
+                                            showToast(
+                                                t(
+                                                    "cashRegisterPage.messages.selectedRegisterUnavailable"
+                                                ),
+                                                "error"
+                                            );
                                             return;
                                         }
 
@@ -4094,7 +4593,13 @@ const CashRegister = () => {
                                     }}
                                     className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
                                 >
-                                    Guardar fondo inicial (Admin) — {selectedYMD}
+                                    {t(
+                                        "cashRegisterPage.opening.saveInitialAdmin",
+                                        {
+                                            date:
+                                            selectedYMD,
+                                        }
+                                    )}
                                 </button>
                             )}
 
@@ -4108,7 +4613,7 @@ const CashRegister = () => {
                                             onClick={() => setIsEditingOpening(true)}
                                             className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                         >
-                                            Editar fondo inicial
+                                            {t("cashRegisterPage.opening.editInitial")}
                                         </button>
                                     ) : (
                                         <>
@@ -4122,7 +4627,12 @@ const CashRegister = () => {
                                                     const cleanRegisterId = String(activeRegisterId || "").trim().toUpperCase();
 
                                                     if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
-                                                        showToast("Selecciona una caja específica antes de editar el fondo inicial.", "error");
+                                                        showToast(
+                                                            t(
+                                                                "cashRegisterPage.messages.selectSpecificRegisterBeforeEditingOpening"
+                                                            ),
+                                                            "error"
+                                                        );
                                                         return;
                                                     }
 
@@ -4135,7 +4645,7 @@ const CashRegister = () => {
                                                 }}
                                                 className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
                                             >
-                                                Guardar cambios
+                                                {t("cashRegisterPage.actions.saveChanges")}
                                             </button>
 
                                             <button
@@ -4146,7 +4656,7 @@ const CashRegister = () => {
                                                 }}
                                                 className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                             >
-                                                Cancelar
+                                                {t("cashRegisterPage.actions.cancel")}
                                             </button>
                                         </>
                                     )}
@@ -4157,8 +4667,18 @@ const CashRegister = () => {
                             {/* Mensajes */}
                             <div className="text-xs text-gray-500 mt-2">
                                 {isSelectedToday
-                                    ? (openingAlreadySet ? "Fondo inicial guardado para hoy." : "Aún no se ha guardado el fondo inicial de hoy.")
-                                    : "Mostrando histórico del día seleccionado."}
+                                    ? (
+                                        openingAlreadySet
+                                            ? t(
+                                                "cashRegisterPage.opening.savedToday"
+                                            )
+                                            : t(
+                                                "cashRegisterPage.opening.notSavedToday"
+                                            )
+                                    )
+                                    : t(
+                                        "cashRegisterPage.opening.showingHistory"
+                                    )}
                             </div>
                         </div>
 
@@ -4208,7 +4728,7 @@ const CashRegister = () => {
                                     }}
                                     className="w-full px-3 py-2 bg-[#262626] border border-gray-800/50 rounded-lg text-white font-semibold"
                                 >
-                                    Editar cierre final
+                                    {t("cashRegisterPage.adjustClose.title")}
                                 </button>
                             </div>
                         )}
@@ -4218,7 +4738,7 @@ const CashRegister = () => {
                                 onClick={() => setManagerCodeModalOpen(true)}
                                 className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633]"
                             >
-                                Configurar código manager
+                                {t("cashRegisterPage.manager.title")}
                             </button>
                         )}
 
@@ -4229,12 +4749,12 @@ const CashRegister = () => {
 
             {showSummary && (
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
-                    <h3 className="text-white font-semibold text-lg">Comparación (Reporte de Cierre de Caja)</h3>
+                    <h3 className="text-white font-semibold text-lg">
+                        {t("cashRegisterPage.closing.comparisonTitle")}
+                    </h3>
 
                     {(() => {
-                        const cashSalesOnly = safeNumber(initialCashClosure?.cashSales);
-                        const openingAndAdded = safeNumber(openingInitial) + safeNumber(addedTotal);
-                        const receivableCash = safeNumber(initialCashClosure?.receivablePaymentsCash);
+
 
                         const counted = safeNumber(closingCountedForComparison);
 
@@ -4247,17 +4767,17 @@ const CashRegister = () => {
                         return (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                    <div className="text-xs text-gray-400 mb-1">Sistema (efectivo esperado)</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.closing.systemExpected")}</div>
                                     <div className="text-sm font-semibold text-white">{currency(expected)}</div>
                                 </div>
 
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                    <div className="text-xs text-gray-400 mb-1">Contado (efectivo en caja)</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.closing.countedCash")}</div>
                                     <div className="text-sm font-semibold text-white">{currency(counted)}</div>
                                 </div>
 
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
-                                    <div className="text-xs text-gray-400 mb-1">Diferencia</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.closing.difference")}</div>
                                     <div className={`text-sm font-semibold ${diff === 0 ? "text-white" : diff < 0 ? "text-red-400" : "text-green-400"}`}>
                                         {currency(diff)}
                                     </div>
@@ -4267,7 +4787,7 @@ const CashRegister = () => {
                     })()}
                     {(session?.closing?.note || session?.notes) && (
                         <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
-                            <div className="text-xs text-gray-400">Nota del cierre</div>
+                            <div className="text-xs text-gray-400">{t("cashRegisterPage.closing.closeNote")}</div>
                             <div className="text-sm text-white mt-1">{session?.closing?.note || session?.notes}</div>
                         </div>
                     )}
@@ -4304,57 +4824,60 @@ const CashRegister = () => {
                                     <div className="flex items-center justify-between gap-3 mb-3">
                                         <div>
                                             <div className="text-xs text-gray-400">
-                                                Desglose del efectivo contado
+                                                {t("cashRegisterPage.closing.breakdownTitle")}
                                             </div>
                                             <div className="text-[11px] text-gray-500">
-                                                Billetes, monedas, tickets, transferencias y otros montos declarados al cierre.
+                                                {t("cashRegisterPage.closing.breakdownDescription")}
                                             </div>
                                         </div>
 
                                         <div className="text-[11px] text-gray-500">
-                                            {useConsolidatedSummary ? "Contado consolidado" : "Contado caja"}
+                                            {useConsolidatedSummary
+                                                ? t("cashRegisterPage.closing.consolidatedCounted")
+                                                : t("cashRegisterPage.closing.registerCounted")}
                                         </div>
                                         <div className="text-sm font-bold text-[#f6b100]">
                                             {currency(closingDeclaredSummary.countedCashEquivalent)}
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">                                        <div className="rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Billetes/monedas</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                                        <div className="rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2">
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.closing.billsCoins")}</div>
                                             <div className="text-sm text-white font-semibold">
                                                 {currency(closingDeclaredSummary.cashTotal)}
                                             </div>
                                         </div>
 
                                         <div className="rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Ticket</div>
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.paymentMethods.ticket")}</div>
                                             <div className="text-sm text-white font-semibold">
                                                 {currency(closingDeclaredSummary.ticketTotal)}
                                             </div>
                                         </div>
 
                                         <div className="rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Transferencia</div>
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.paymentMethods.transfer")}</div>
                                             <div className="text-sm text-white font-semibold">
                                                 {currency(closingDeclaredSummary.transferTotal)}
                                             </div>
                                         </div>
 
                                         <div className="rounded-lg bg-[#0b0b0b] border border-gray-800/40 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Otros</div>
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.paymentMethods.other")}</div>
                                             <div className="text-sm text-white font-semibold">
                                                 {currency(closingDeclaredSummary.otherTotal)}
                                             </div>
                                         </div>
 
                                         <div className="rounded-lg bg-[#0b0b0b] border border-[#f6b100]/30 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Contado caja</div>
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.closing.registerCounted")}</div>
                                             <div className="text-sm text-[#f6b100] font-bold">
                                                 {currency(closingDeclaredSummary.countedCashEquivalent)}
                                             </div>
                                         </div>
                                         <div className="rounded-lg bg-[#0b0b0b] border border-[#f6b100]/30 px-3 py-2">
-                                            <div className="text-[11px] text-gray-500">Total cierre</div>
+                                            <div className="text-[11px] text-gray-500">{t("cashRegisterPage.closing.totalClose")}</div>
                                             <div className="text-sm text-[#f6b100] font-bold">
                                                 {currency(closingDeclaredSummary.total)}
                                             </div>
@@ -4371,12 +4894,12 @@ const CashRegister = () => {
                                                 <div>
                                                     <div className="text-sm font-semibold text-white">
                                                         {showClosingBreakdownDetail
-                                                            ? "Ocultar billetes y monedas registrados"
-                                                            : "Ver billetes y monedas registrados"}
+                                                            ? t("cashRegisterPage.closing.hideBreakdown")
+                                                            : t("cashRegisterPage.closing.showBreakdown")}
                                                     </div>
 
                                                     <div className="text-[11px] text-gray-500 mt-0.5">
-                                                        Haz click para ver el detalle exacto contado al cierre.
+                                                        {t("cashRegisterPage.closing.breakdownHint")}
                                                     </div>
                                                 </div>
 
@@ -4396,7 +4919,7 @@ const CashRegister = () => {
                                                     {cashBreakdown.length > 0 && (
                                                         <div className="mt-2">
                                                             <div className="text-[11px] text-gray-500 mb-2">
-                                                                Detalle de billetes y monedas
+                                                                {t("cashRegisterPage.closing.billsCoinsDetail")}
                                                             </div>
 
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -4407,11 +4930,19 @@ const CashRegister = () => {
                                                                     >
                                                                         <div>
                                                                             <div className="text-sm text-white font-semibold">
-                                                                                {item.label || `RD$ ${item.value}`}
+                                                                                {currency(item.value)}
                                                                             </div>
 
                                                                             <div className="text-[11px] text-gray-500">
-                                                                                Cantidad: {Number(item.count || 0)}
+                                                                                {t(
+                                                                                    "cashRegisterPage.common.quantityValue",
+                                                                                    {
+                                                                                        count:
+                                                                                            Number(
+                                                                                                item.count || 0
+                                                                                            ),
+                                                                                    }
+                                                                                )}
                                                                             </div>
                                                                         </div>
 
@@ -4429,7 +4960,7 @@ const CashRegister = () => {
                                                     {ticketBreakdown.length > 0 && (
                                                         <div className="mt-3">
                                                             <div className="text-[11px] text-gray-500 mb-2">
-                                                                Detalle de tickets
+                                                                {t("cashRegisterPage.closing.ticketsDetail")}
                                                             </div>
 
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -4440,11 +4971,27 @@ const CashRegister = () => {
                                                                     >
                                                                         <div>
                                                                             <div className="text-sm text-white font-semibold">
-                                                                                {item.label || `Ticket RD$ ${item.value}`}
+                                                                                {t(
+                                                                                    "cashRegisterPage.closing.ticketValue",
+                                                                                    {
+                                                                                        amount:
+                                                                                            currency(
+                                                                                                item.value
+                                                                                            ),
+                                                                                    }
+                                                                                )}
                                                                             </div>
 
                                                                             <div className="text-[11px] text-gray-500">
-                                                                                Cantidad: {Number(item.count || 0)}
+                                                                                {t(
+                                                                                    "cashRegisterPage.common.quantityValue",
+                                                                                    {
+                                                                                        count:
+                                                                                            Number(
+                                                                                                item.count || 0
+                                                                                            ),
+                                                                                    }
+                                                                                )}
                                                                             </div>
                                                                         </div>
 
@@ -4471,11 +5018,11 @@ const CashRegister = () => {
             {isAdminLike && adminVisibleOpenSessions.length > 0 && (
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                     <h3 className="text-white font-semibold text-lg">
-                        Sesiones abiertas de esta caja
+                        {t("cashRegisterPage.sessions.openTitle")}
                     </h3>
 
                     <p className="text-sm text-gray-400 mt-1">
-                        Selecciona la sesión de la cajera que deseas cerrar.
+                        {t("cashRegisterPage.sessions.openDescription")}
                     </p>
 
                     <div className="mt-4 space-y-3">
@@ -4491,15 +5038,35 @@ const CashRegister = () => {
                                 <div className="flex items-center justify-between gap-3">
                                     <div>
                                         <div className="text-white font-semibold">
-                                            {s?.openedBy?.name || "Cajera sin nombre"}
+                                            {s?.openedBy?.name ||
+                                                t("cashRegisterPage.sessions.unnamedCashier")}
                                         </div>
 
                                         <div className="text-xs text-gray-400 mt-1">
-                                            Caja: {s.registerId} · Fondo inicial: {currency(s.openingFloatInitial || 0)}
+                                            {t(
+                                                "cashRegisterPage.sessions.registerAndOpening",
+                                                {
+                                                    register:
+                                                    s.registerId,
+
+                                                    amount:
+                                                        currency(
+                                                            s.openingFloatInitial ||
+                                                            0
+                                                        ),
+                                                }
+                                            )}
                                         </div>
 
                                         <div className="text-xs text-gray-500 mt-1">
-                                            Abierta: {s.openedAt ? new Date(s.openedAt).toLocaleString() : "—"}
+                                            {t("cashRegisterPage.sessions.openedAt")}:{" "} {
+                                            s.openedAt
+                                                ? formatDateTime(
+                                                    s.openedAt,
+                                                    localization
+                                                )
+                                                : "—"
+                                        }
                                         </div>
                                     </div>
 
@@ -4508,7 +5075,7 @@ const CashRegister = () => {
                                         onClick={() => handleSelectAdminSessionToClose(s)}
                                         className="px-4 py-2 rounded-lg bg-[#f6b100] text-black font-semibold"
                                     >
-                                        Cerrar esta sesión
+                                        {t("cashRegisterPage.sessions.closeThis")}
                                     </button>
                                 </div>
                             </div>
@@ -4522,20 +5089,33 @@ const CashRegister = () => {
                     ref={closeFormRef}
                     className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
                 >
-                    <h3 className="text-white font-semibold text-lg">Cierre final de caja</h3>
+                    <h3 className="text-white font-semibold text-lg">{t("cashRegisterPage.closing.finalTitle")}</h3>
                     {isAdminLike && closeTargetSession && (
                         <div className="mt-3 mb-4 rounded-xl border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
                             <div className="text-sm text-[#f6b100] font-semibold">
-                                Sesión seleccionada para cierre
+                                {t("cashRegisterPage.closing.selectedSession")}
                             </div>
 
                             <div className="mt-1 text-white font-semibold">
-                                {closeTargetSession?.openedBy?.name || "Cajera sin nombre"}
+                                {closeTargetSession?.openedBy?.name ||
+                                    t("cashRegisterPage.sessions.unnamedCashier")}
                             </div>
 
                             <div className="mt-1 text-xs text-gray-400">
-                                Caja: {closeTargetSession?.registerId} · Fondo inicial:{" "}
-                                {currency(closeTargetSession?.openingFloatInitial || 0)}
+                                {t(
+                                    "cashRegisterPage.sessions.registerAndOpening",
+                                    {
+                                        register:
+                                        closeTargetSession?.registerId,
+
+                                        amount:
+                                            currency(
+                                                closeTargetSession
+                                                    ?.openingFloatInitial ||
+                                                0
+                                            ),
+                                    }
+                                )}
                             </div>
 
                             <button
@@ -4549,12 +5129,12 @@ const CashRegister = () => {
                                 }}
                                 className="mt-3 px-3 py-2 rounded-lg bg-[#1a1a1a] border border-gray-700 text-white text-sm font-semibold hover:bg-[#222]"
                             >
-                                Ocultar sesion
+                                {t("cashRegisterPage.actions.hideSession")}
                             </button>
                         </div>
                     )}
                     <p className="text-sm text-gray-400 mt-1">
-                        Para ver el resumen, primero registra el efectivo contado al cierre.
+                        {t("cashRegisterPage.closing.instruction")}
                     </p>
 
                     <div className="mt-4">
@@ -4568,33 +5148,40 @@ const CashRegister = () => {
                                         : "text-gray-300 hover:bg-white/5"
                                 }`}
                             >
-                                Total contado
+                                {t("cashRegisterPage.closing.totalCounted")}
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={() => setClosingInputMode(CLOSING_INPUT_MODE_BREAKDOWN)}
-                                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                                    closingInputMode === CLOSING_INPUT_MODE_BREAKDOWN
-                                        ? "bg-[#f6b100] text-black"
-                                        : "text-gray-300 hover:bg-white/5"
-                                }`}
-                            >
-                                Billetes y monedas
-                            </button>
+                            {supportsCashDenominations && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setClosingInputMode(
+                                            CLOSING_INPUT_MODE_BREAKDOWN
+                                        )
+                                    }
+                                    className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                        closingInputMode ===
+                                        CLOSING_INPUT_MODE_BREAKDOWN
+                                            ? "bg-[#f6b100] text-black"
+                                            : "text-gray-300 hover:bg-white/5"
+                                    }`}
+                                >
+                                    {t("cashRegisterPage.closing.billsAndCoins")}
+                                </button>
+                            )}
                         </div>
                     </div>
 
                     {closingInputMode === CLOSING_INPUT_MODE_TOTAL && (
                         <div className="mt-4">
                             <label className="text-xs text-gray-400">
-                                Efectivo contado (lo que tienes en caja)
+                                {t("cashRegisterPage.closing.countedLabel")}
                             </label>
                             <input
                                 value={closingCountedInput}
                                 onChange={(e) => setClosingCountedInput(formatThousands(e.target.value))}
                                 className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                                placeholder="Ej: 2,000"
+                                placeholder="2,000"
                             />
                         </div>
                     )}
@@ -4604,15 +5191,17 @@ const CashRegister = () => {
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <div>
                                     <div className="text-sm font-semibold text-white">
-                                        Conteo por denominación
+                                        {t("cashRegisterPage.closing.denominationTitle")}
                                     </div>
                                     <div className="text-xs text-gray-500">
-                                        Ingresa la cantidad de cada billete o moneda.
+                                        {t("cashRegisterPage.closing.denominationDescription")}
                                     </div>
                                 </div>
 
                                 <div className="text-right">
-                                    <div className="text-xs text-gray-500">Total contado</div>
+                                    <div className="text-xs text-gray-500">
+                                        {t("cashRegisterPage.closing.totalCounted")}
+                                    </div>
                                     <div className="text-lg font-bold text-[#f6b100]">
                                         {currency(closingBreakdownTotal)}
                                     </div>
@@ -4635,7 +5224,9 @@ const CashRegister = () => {
                                                         {item.label}
                                                     </div>
                                                     <div className="text-[11px] text-gray-500">
-                                                        {item.type}
+                                                        {denominationTypeLabel(
+                                                            item.type
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -4655,7 +5246,7 @@ const CashRegister = () => {
                                             </div>
 
                                             <div className="mt-2 text-xs text-gray-500 text-right">
-                                                Subtotal:{" "}
+                                                {t("cashRegisterPage.common.subtotal")}:{" "}
                                                 <span className="text-gray-300 font-semibold">
                                 {currency(lineTotal)}
                             </span>
@@ -4669,7 +5260,7 @@ const CashRegister = () => {
 
                         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
-                        <div className="text-base md:text-lg font-semibold text-white">Tickets</div>
+                        <div className="text-base md:text-lg font-semibold text-white">{t("cashRegisterPage.paymentMethods.tickets")}</div>
 
                         <div className="text-sm text-white/75 mb-4">
                         Crédito físico contado como efectivo.
@@ -4678,7 +5269,7 @@ const CashRegister = () => {
                         <div className="grid grid-cols-2 gap-3">
                         <div>
                         <label className="block text-sm font-medium text-white/90 mb-1">
-                        Monto ticket
+                            {t("cashRegisterPage.closing.ticketAmount")}
                         </label>
 
                         <input
@@ -4686,13 +5277,13 @@ const CashRegister = () => {
                     onChange={(e) => setTicketAmountInput(formatThousands(e.target.value))}
                     inputMode="decimal"
                     className="mt-1 w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-                    placeholder="Ej: 100"
+                    placeholder=" 100"
                 />
                 </div>
 
                 <div>
                 <label className="block text-sm font-medium text-white/90 mb-1">
-                Cantidad
+                    {t("cashRegisterPage.common.quantity")}
                 </label>
 
                 <input
@@ -4710,7 +5301,7 @@ const CashRegister = () => {
         </div>
 
     <div className="mt-3 text-sm text-white/85 text-right">
-        Subtotal tickets:{" "}
+        {t("cashRegisterPage.closing.ticketSubtotal")}:{" "}
         <span className="text-white font-bold text-base">
                 {currency(closingTicketTotal)}
             </span>
@@ -4719,15 +5310,15 @@ const CashRegister = () => {
 
     <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
         <div className="text-base md:text-lg font-semibold text-white">
-            Transferencias
+            {t("cashRegisterPage.paymentMethods.transfers")}
         </div>
 
         <div className="text-sm text-white/75 mb-4">
-            Monto confirmado por transferencia.
+            {t("cashRegisterPage.closing.transferDescription")}
         </div>
 
         <label className="block text-sm font-medium text-white/90 mb-1">
-            Monto transferencia
+            {t("cashRegisterPage.closing.transferAmount")}
         </label>
 
         <input
@@ -4735,11 +5326,11 @@ const CashRegister = () => {
             onChange={(e) => setTransferCountedInput(formatThousands(e.target.value))}
             inputMode="decimal"
             className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-            placeholder="Ej: 1,500"
+            placeholder=" 1,500"
         />
 
         <div className="mt-3 text-sm text-white/85 text-right">
-            Total transferencia:{" "}
+            {t("cashRegisterPage.closing.transferTotal")}:{" "}
             <span className="text-white font-bold text-base">
                 {currency(transferCountedTotal)}
             </span>
@@ -4747,14 +5338,14 @@ const CashRegister = () => {
     </div>
 
     <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
-        <div className="text-base md:text-lg font-semibold text-white">Otros</div>
+        <div className="text-base md:text-lg font-semibold text-white">{t("cashRegisterPage.paymentMethods.other")}</div>
 
         <div className="text-sm text-white/75 mb-4">
-            Otro método o ajuste contado.
+            {t("cashRegisterPage.closing.otherDescription")}
         </div>
 
         <label className="block text-sm font-medium text-white/90 mb-1">
-            Monto otros
+            {t("cashRegisterPage.closing.otherAmount")}
         </label>
 
         <input
@@ -4762,11 +5353,11 @@ const CashRegister = () => {
             onChange={(e) => setOtherCountedInput(formatThousands(e.target.value))}
             inputMode="decimal"
             className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-            placeholder="Ej: 500"
+            placeholder=" 500"
         />
 
         <div className="mt-3 text-sm text-white/85 text-right">
-            Total otros:{" "}
+            {t("cashRegisterPage.closing.otherTotal")}:{" "}
             <span className="text-white font-bold text-base">
                 {currency(otherCountedTotal)}
             </span>
@@ -4777,21 +5368,21 @@ const CashRegister = () => {
     <div className="mt-5 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <div>
-                <div className="text-sm text-white/80">Billetes/monedas</div>
+                <div className="text-sm text-white/80">{t("cashRegisterPage.closing.billsCoins")}</div>
                 <div className="text-lg font-bold text-white">
                     {currency(closingBreakdownTotal)}
                 </div>
             </div>
 
             <div>
-                <div className="text-sm text-white/80">Tickets</div>
+                <div className="text-sm text-white/80">{t("cashRegisterPage.paymentMethods.tickets")}</div>
                 <div className="text-lg font-bold text-white">
                     {currency(closingTicketTotal)}
                 </div>
             </div>
 
             <div>
-                <div className="text-sm text-white/80">Transferencia + otros</div>
+                <div className="text-sm text-white/80">{t("cashRegisterPage.closing.transferAndOther")}</div>
                 <div className="text-lg font-bold text-white">
                     {currency(transferCountedTotal + otherCountedTotal)}
                 </div>
@@ -4799,7 +5390,7 @@ const CashRegister = () => {
 
             <div>
                 <div className="text-sm text-white/90 font-medium">
-                    Total declarado
+                    {t("cashRegisterPage.closing.totalDeclared")}
                 </div>
                 <div className="text-xl font-extrabold text-white">
                     {currency(totalDeclaredAtClose)}
@@ -4813,23 +5404,26 @@ const CashRegister = () => {
 
 
                     <div className="mt-4">
-                        <label className="text-xs text-gray-400">Nota del cierre (opcional)</label>
+                        <label className="text-xs text-gray-400">{t("cashRegisterPage.closing.optionalNote")}</label>
                         <textarea
                             value={closingNote}
                             onChange={(e) => setClosingNote(e.target.value)}
                             className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white min-h-[90px] resize-none"
-                            placeholder="Ej: faltó cambio, sobrante, observación de la cajera, etc."
-                        />
+                            placeholder={t(
+                                "cashRegisterPage.closing.notePlaceholder"
+                            )}                        />
                     </div>
 
                     <div className="mt-4">
-                        <label className="text-xs text-gray-400">Código del manager</label>
+                        <label className="text-xs text-gray-400">{t("cashRegisterPage.manager.code")}</label>
                         <input
                             type="password"
                             value={closeManagerCode}
                             onChange={(e) => setCloseManagerCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
                             className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                            placeholder="Ej: 1234"
+                            placeholder={t(
+                                "cashRegisterPage.manager.codePlaceholder"
+                            )}
                             inputMode="numeric"
                             autoComplete="new-password"
                         />
@@ -4840,22 +5434,32 @@ const CashRegister = () => {
                         type="button"
                         onClick={() => {
                             if (!sessionExists) {
-                                showToast("No hay una caja abierta para esta fecha.");
+                                showToast(
+                                    t("cashRegisterPage.messages.noOpenRegisterForDate")
+                                );
                                 return;
                             }
 
                             if (isViewingAllRegisters) {
-                                showToast("Selecciona una caja específica para poder cerrarla.", "error");
+                                showToast(
+                                    t("cashRegisterPage.messages.selectSpecificRegisterToClose"),
+                                    "error"
+                                );
                                 return;
                             }
 
                             if (!openingAlreadySet) {
-                                showToast("Primero debe existir un fondo inicial para poder cerrar la caja.");
+                                showToast(
+                                    t("cashRegisterPage.messages.openingRequiredBeforeClose")
+                                );
                                 return;
                             }
 
                             if (!closeManagerCode.trim()) {
-                                showToast("Código del manager requerido.", "error");
+                                showToast(
+                                    t("cashRegisterPage.messages.managerCodeRequired"),
+                                    "error"
+                                );
                                 return;
                             }
 
@@ -4880,7 +5484,10 @@ const CashRegister = () => {
                                     : 0;
 
                             if (!Number.isFinite(countedTotal) || countedTotal < 0) {
-                                showToast("Monto inválido.", "error");
+                                showToast(
+                                    t("cashRegisterPage.messages.invalidAmount"),
+                                    "error"
+                                );
                                 return;
                             }
 
@@ -4890,13 +5497,18 @@ const CashRegister = () => {
                                 manualTransferTotal <= 0 &&
                                 manualOtherTotal <= 0
                             ) {
-                                showToast("Debes ingresar billetes, tickets, transferencia u otros.", "error");
+                                showToast(
+                                    t("cashRegisterPage.messages.closingBreakdownRequired"),
+                                    "error"
+                                );
                                 return;
                             }
 
                             const fid = closeTargetSession?._id || closeTargetSession?.id;
                             if (!fid) {
-                                showToast("No se encontró el ID de la sesión.");
+                                showToast(
+                                    t("cashRegisterPage.messages.sessionIdNotFound")
+                                );
                                 return;
                             }
 
@@ -4907,7 +5519,10 @@ const CashRegister = () => {
                                 .toUpperCase();
 
                             if (!cleanRegisterId || cleanRegisterId === ALL_REGISTERS_ID) {
-                                showToast("Selecciona una caja específica antes de cerrar.", "error");
+                                showToast(
+                                    t("cashRegisterPage.messages.selectSpecificRegisterBeforeClose"),
+                                    "error"
+                                );
                                 return;
                             }
 
@@ -4930,7 +5545,9 @@ const CashRegister = () => {
                         disabled={closeCashSessionMutation.isPending}
                         className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
                     >
-                        {closeCashSessionMutation.isPending ? "Cerrando caja..." : "Registrar cierre"}
+                        {closeCashSessionMutation.isPending
+                            ? t("cashRegisterPage.closing.closing")
+                            : t("cashRegisterPage.closing.registerClose")}
                     </button>
                 </div>
             )}
@@ -4942,16 +5559,24 @@ const CashRegister = () => {
                 <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5">
                 <div className="flex items-center justify-between mb-4">
                     <h3 id="cash-summary" className="text-white font-semibold text-lg">
-                        Resumen de ventas
+                        {t("cashRegisterPage.salesSummary.title")}
                     </h3>
                     <div className="text-sm text-gray-300">
-                        Total cobrado:{" "}
+                        {t("cashRegisterPage.salesSummary.totalCollected")}:{" "}
                         <span className="font-semibold text-[#f6b100] text-lg">
                             {currency(summaryCashClosure.grandTotal)}
                         </span>
 
                         <span className="text-gray-500 ml-2">
-                            ({summaryCashClosure.totalCount} órdenes cobradas)
+                            (
+                            {t(
+                                "cashRegisterPage.salesSummary.paidOrders",
+                                {
+                                    count:
+                                    summaryCashClosure.totalCount,
+                                }
+                            )}
+                            )
                         </span>
                     </div>
                 </div>
@@ -4965,13 +5590,19 @@ const CashRegister = () => {
                         ["transferencia", summaryCashClosure.buckets.transferencia],
 
                         ["cxc-abonos", {
-                            label: "Abonos CxC",
+                            label:
+                                t(
+                                    "cashRegisterPage.salesSummary.receivablePayments"
+                                ),
                             total: summaryCashClosure.receivablePaymentsTotal,
                             count: 0,
                         }],
 
                         ["cxc-credito", {
-                            label: "Ventas a crédito (CxC)",
+                            label:
+                                t(
+                                    "cashRegisterPage.salesSummary.creditSales"
+                                ),
                             total: summaryCashClosure.creditSales * -1,
                             count: summaryCashClosure.creditSalesCount,
                         }],
@@ -4998,7 +5629,13 @@ const CashRegister = () => {
                             >
                                 {currency(v.total)}
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">{v.count} órdenes</div>
+                            <div className="text-xs text-gray-500 mt-1">{t(
+                                "cashRegisterPage.common.orderCount",
+                                {
+                                    count:
+                                    v.count,
+                                }
+                            )}</div>
                         </div>
                     ))}
 
@@ -5011,11 +5648,16 @@ const CashRegister = () => {
             {adminCanSeeSummary && (
             <div className="flex gap-3 mb-6">
                 <button
-                    onClick={() => downloadExcel(dayReports, summaryCashClosure)}
+                    onClick={() =>
+                        downloadExcel(
+                            dayVisibleReports,
+                            summaryCashClosure
+                        )
+                    }
                     className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
                 >
                     <Download className="w-4 h-4" />
-                    Exportar a Excel
+                    {t("cashRegisterPage.actions.exportExcel")}
                 </button>
             </div>
         )}
@@ -5023,12 +5665,12 @@ const CashRegister = () => {
             {/* Vista móvil (cards) - últimos 10 */}
             <div className="sm:hidden">
                 <div className="space-y-3">
-                    {(dayReports?.length ?? 0) === 0 ? (
+                    {(dayVisibleReports?.length ?? 0) === 0 ? (
                         <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-6 text-center text-gray-500">
-                            No hay registros disponibles
+                            {t("cashRegisterPage.table.noRecords")}
                         </div>
                     ) : (
-                        dayReports.map((r) => (
+                        dayVisibleReports.map((r) => (
                             <div
                                 key={r._id}
                                 className="rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4"
@@ -5036,16 +5678,21 @@ const CashRegister = () => {
                                 {/* Header */}
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="text-sm text-gray-400">Usuario</div>
+                                        <div className="text-sm text-gray-400">{t("cashRegisterPage.common.user")}</div>
                                         <div className="text-white font-semibold truncate">
                                             {r?.user?.name || "—"}
                                         </div>
                                     </div>
 
                                     <div className="text-right shrink-0">
-                                        <div className="text-sm text-gray-400">Fecha</div>
+                                        <div className="text-sm text-gray-400">{t("cashRegisterPage.common.date")}</div>
                                         <div className="text-white text-sm">
-                                            {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                                            {getReportReferenceDate(r)
+                                                ? formatDate(
+                                                    getReportReferenceDate(r),
+                                                    localization
+                                                )
+                                                : "—"}
                                         </div>
                                     </div>
                                 </div>
@@ -5053,19 +5700,22 @@ const CashRegister = () => {
                                 {/* Body */}
                                 <div className="mt-3 grid grid-cols-2 gap-3">
                                     <div className="min-w-0">
-                                        <div className="text-xs text-gray-400">Cliente</div>
+                                        <div className="text-xs text-gray-400">{t("cashRegisterPage.common.customer")}</div>
                                         <div className="text-sm text-white truncate">{getClientName(r)}</div>
                                     </div>
 
                                     <div className="min-w-0">
-                                        <div className="text-xs text-gray-400">Método</div>
+                                        <div className="text-xs text-gray-400">{t("cashRegisterPage.common.method")}</div>
                                         <div className="text-sm text-white truncate">
-                                            {r?.paymentMethod || "Efectivo"}
+                                            {paymentMethodLabel(
+                                                r?.paymentMethod ||
+                                                "Efectivo"
+                                            )}
                                         </div>
                                     </div>
 
                                     <div className="col-span-2">
-                                        <div className="text-xs text-gray-400">Total</div>
+                                        <div className="text-xs text-gray-400">{t("cashRegisterPage.common.total")}</div>
                                         <div className="text-lg font-bold text-[#f6b100]">
                                             {currency(r?.bills?.totalWithTax)}
                                         </div>
@@ -5087,19 +5737,34 @@ const CashRegister = () => {
                     )}
                 </div>
 
-                {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
+                {Array.isArray(sortedReports) &&
+                    sortedReports.length >
+                    (dayVisibleReports?.length ?? 0) && (
                     <div className="mt-3 rounded-lg border border-gray-800/50 bg-[#1a1a1a]/50 p-3 text-center text-xs text-gray-400">
-                        Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                        {t(
+                            "cashRegisterPage.fullRecords.showingDayHistory",
+                            {
+                                count:
+                                dayVisibleReports.length,
+
+                                date:
+                                selectedYMD,
+                            }
+                        )}
                     </div>
                 )}
             </div>
             {/* Tabla (últimos 10) */}
             {isAdmin ? (
                 isLoading ? (
-                    <div className="text-center py-8 text-gray-400">Cargando...</div>
+                    <div className="text-center py-8 text-gray-400">{t("cashRegisterPage.common.loading")}</div>
                 ) : isError ? (
                     <div className="text-center py-8 text-red-400">
-                        Error al cargar registros{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
+                        {t("cashRegisterPage.messages.recordsLoadError")}
+                        {error?.response?.status
+                            ? ` (HTTP ${error.response.status})`
+                            : ""}
+                        .
                     </div>
                 ) : (
 
@@ -5110,25 +5775,31 @@ const CashRegister = () => {
                                 <table className="w-full text-left border-collapse">
                                     <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">No. Factura</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
-                                        <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.table.invoiceNumber")}
+                                        </th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.date")}</th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.user")}
+                                        </th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.customer")}
+                                        </th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.method")}
+                                        </th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.total")}
+                                        </th>
+                                        <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.invoice")}</th>
                                     </tr>
                                     </thead>
 
                                     <tbody>
-                                    {(dayReports?.length ?? 0) === 0 ? (
+                                    {(dayVisibleReports?.length ?? 0) === 0 ? (
                                         <tr>
-                                            <td colSpan={6} className="text-center py-8 text-gray-500">
-                                                No hay registros disponibles
+                                            <td
+                                                colSpan={7} className="text-center py-8 text-gray-500">
+                                                {t("cashRegisterPage.table.noRecords")}
                                             </td>
                                         </tr>
                                     ) : (
-                                        dayReports.map((r) => (
+                                        dayVisibleReports.map((r) => (
                                             <tr
                                                 key={r._id}
                                                 className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
@@ -5137,11 +5808,28 @@ const CashRegister = () => {
                                                     {getInvoiceNumber(r)}
                                                 </td>
                                                 <td className="p-3 text-sm text-gray-300">
-                                                    {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                                                    {getReportReferenceDate(r)
+                                                        ? formatDate(
+                                                            getReportReferenceDate(r),
+                                                            localization
+                                                        )
+                                                        : "—"}
                                                 </td>
                                                 <td className="p-3 text-sm text-gray-300">{r?.user?.name || "—"}</td>
                                                 <td className="p-3 text-sm text-gray-300">{getClientName(r)}</td>
-                                                <td className="p-3 text-sm text-gray-300">{r?.paymentMethod || "Efectivo"}</td>
+                                                <td className="p-3 text-sm">
+                                                    {isCreditOrder(r) ? (
+                                                        <span className="inline-flex items-center rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-1 text-xs font-semibold text-orange-300">
+                                                    {t("cashRegisterPage.paymentMethods.credit")}
+                                                </span>
+                                                    ) : (<span className="text-gray-300">
+                                                    {paymentMethodLabel(
+                                                        r?.paymentMethod ||
+                                                        "Efectivo"
+                                                    )}
+                                                </span>
+                                                                                            )}
+                                                                                        </td>
                                                 <td className="p-3 text-sm font-bold text-[#f6b100]">
                                                     {currency(r?.bills?.totalWithTax)}
                                                 </td>
@@ -5155,9 +5843,20 @@ const CashRegister = () => {
                                 </table>
                             </div>
 
-                            {Array.isArray(sortedReports) && sortedReports.length > (dayReports?.length ?? 0) && (
+                            {Array.isArray(sortedReports) &&
+                                sortedReports.length >
+                                (dayVisibleReports?.length ?? 0) && (
                                 <div className="p-4 bg-[#1a1a1a]/50 border-t border-gray-800/50 text-center text-sm text-gray-400">
-                                    Mostrando {dayReports.length} registros del día {selectedYMD}. Para ver histórico, usa “Ver Registros Completos”.
+                                    {t(
+                                        "cashRegisterPage.fullRecords.showingDayHistory",
+                                        {
+                                            count:
+                                            dayVisibleReports.length,
+
+                                            date:
+                                            selectedYMD,
+                                        }
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -5166,7 +5865,7 @@ const CashRegister = () => {
                 )
             ) : (
                 <div className="mt-4 text-sm text-white/60">
-                    Los registros del día solo están disponibles para administración.
+                    {t("cashRegisterPage.fullRecords.adminOnly")}
                 </div>
             )}
 
@@ -5196,13 +5895,13 @@ const CashRegister = () => {
                                         className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 text-white rounded-lg font-semibold hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
                                     >
                                         <Filter className="w-4 h-4" />
-                                        Filtros
+                                        {t("cashRegisterPage.actions.filters")}
                                     </button>
 
                                     {showFiltersMenu && (
                                         <div className="absolute right-0 top-full mt-2 w-80 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg shadow-xl z-50 p-4">
                                             <div className="flex items-center justify-between mb-4">
-                                                <h4 className="text-sm font-semibold text-white">Filtros de Búsqueda</h4>
+                                                <h4 className="text-sm font-semibold text-white">{t("cashRegisterPage.filters.title")}</h4>
                                                 <button
                                                     onClick={() => setShowFiltersMenu(false)}
                                                     className="p-1 hover:bg-[#1a1a1a] rounded transition-colors"
@@ -5213,7 +5912,7 @@ const CashRegister = () => {
 
                                             <div className="space-y-3">
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Fecha desde</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.filters.from")}</label>
                                                     <input
                                                         type="date"
                                                         value={modalFilters.from}
@@ -5223,7 +5922,7 @@ const CashRegister = () => {
                                                 </div>
 
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Fecha hasta</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.filters.to")}</label>
                                                     <input
                                                         type="date"
                                                         value={modalFilters.to}
@@ -5233,24 +5932,44 @@ const CashRegister = () => {
                                                 </div>
 
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Método de pago</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.filters.paymentMethod")}</label>
                                                     <select
                                                         value={modalFilters.method}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, method: e.target.value }))}
                                                         className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                                     >
-                                                        <option value="">Todos los métodos</option>
-                                                        <option value="Efectivo">Efectivo</option>
-                                                        <option value="Tarjeta">Tarjeta</option>
-                                                        <option value="Transferencia">Transferencia</option>
-                                                        <option value="Pedido Ya">Pedido Ya</option>
-                                                        <option value="Uber Eats">Uber Eats</option>
-                                                        <option value="Delivery">Delivery</option>
+                                                        <option value="">
+                                                            {t("cashRegisterPage.filters.allMethods")}
+                                                        </option>
+
+                                                        <option value="Efectivo">
+                                                            {t("cashRegisterPage.paymentMethods.cash")}
+                                                        </option>
+
+                                                        <option value="Tarjeta">
+                                                            {t("cashRegisterPage.paymentMethods.card")}
+                                                        </option>
+
+                                                        <option value="Transferencia">
+                                                            {t("cashRegisterPage.paymentMethods.transfer")}
+                                                        </option>
+
+                                                        <option value="Pedido Ya">
+                                                            Pedido Ya
+                                                        </option>
+
+                                                        <option value="Uber Eats">
+                                                            Uber Eats
+                                                        </option>
+
+                                                        <option value="Delivery">
+                                                            Delivery
+                                                        </option>
 
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Caja</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.common.register")}</label>
 
                                                     {isAdminLike ? (
                                                         <select
@@ -5264,7 +5983,9 @@ const CashRegister = () => {
                                                             className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                                                             disabled={registersLoading}
                                                         >
-                                                            <option value={ALL_REGISTERS_ID}>ADMIN — Ver todas las ventas</option>
+                                                            <option value={ALL_REGISTERS_ID}>
+                                                                {t("cashRegisterPage.registers.allSales")}
+                                                            </option>
 
                                                             {registers.map((r) => (
                                                                 <option key={r._id || r.code} value={r.code}>
@@ -5278,37 +5999,83 @@ const CashRegister = () => {
                                                         </div>
                                                     )}
                                                 </div>
+                                                {supportsDominicanFiscal && (
+                                                    <div>
+                                                        <label className="text-xs text-gray-400 mb-1 block">
+                                                            {t("cashRegisterPage.filters.fiscalDocument")}
+                                                        </label>
+
+                                                        <select
+                                                            value={modalFilters.fiscal}
+                                                            onChange={(e) =>
+                                                                setModalFilters((f) => ({
+                                                                    ...f,
+                                                                    fiscal: e.target.value,
+                                                                }))
+                                                            }
+                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                        >
+                                                            <option value="">
+                                                                {t("cashRegisterPage.filters.all")}
+                                                            </option>
+
+                                                            <option value="fiscal">
+                                                                {t("cashRegisterPage.filters.withFiscal")}
+                                                            </option>
+
+                                                            <option value="credito_fiscal">
+                                                                {t("cashRegisterPage.filters.fiscalCredit")}
+                                                            </option>
+
+                                                            <option value="consumidor_final">
+                                                                {t("cashRegisterPage.filters.finalConsumer")}
+                                                            </option>
+
+                                                            <option value="debito_fiscal">
+                                                                {t("cashRegisterPage.filters.fiscalDebit")}
+                                                            </option>
+
+                                                            <option value="nota_credito">
+                                                                {t("cashRegisterPage.filters.creditNote")}
+                                                            </option>
+
+                                                            <option value="b01">
+                                                                {t("cashRegisterPage.filters.onlyB01")}
+                                                            </option>
+
+                                                            <option value="b02">
+                                                                {t("cashRegisterPage.filters.onlyB02")}
+                                                            </option>
+
+                                                            <option value="e31">
+                                                                {t("cashRegisterPage.filters.onlyE31")}
+                                                            </option>
+
+                                                            <option value="e32">
+                                                                {t("cashRegisterPage.filters.onlyE32")}
+                                                            </option>
+
+                                                            <option value="e33">
+                                                                {t("cashRegisterPage.filters.onlyE33")}
+                                                            </option>
+
+                                                            <option value="e34">
+                                                                {t("cashRegisterPage.filters.onlyE34")}
+                                                            </option>
+
+                                                            <option value="nofiscal">
+                                                                {t("cashRegisterPage.filters.withoutFiscal")}
+                                                            </option>
+                                                        </select>
+                                                    </div>
+                                                )}
+
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Comprobante fiscal</label>
-                                                    <select
-                                                        value={modalFilters.fiscal}
-                                                        onChange={(e) => setModalFilters((f) => ({ ...f, fiscal: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                                    >
-                                                        <option value="">Todos</option>
-
-                                                        <option value="fiscal">Con comprobante fiscal / e-CF</option>
-
-                                                        <option value="credito_fiscal">Crédito fiscal (B01 / E31)</option>
-                                                        <option value="consumidor_final">Consumidor final (B02 / E32)</option>
-                                                        <option value="debito_fiscal">Débito fiscal / Nota de débito (E33)</option>
-                                                        <option value="nota_credito">Nota de crédito (E34)</option>
-
-                                                        <option value="b01">Solo B01</option>
-                                                        <option value="b02">Solo B02</option>
-                                                        <option value="e31">Solo E31</option>
-                                                        <option value="e32">Solo E32</option>
-                                                        <option value="e33">Solo E33</option>
-                                                        <option value="e34">Solo E34</option>
-
-                                                        <option value="nofiscal">Sin comprobante fiscal / e-CF</option>
-                                                    </select>
-                                                </div>
-
-                                                <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Buscar por usuario</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.filters.userSearch")}</label>
                                                     <input
-                                                        placeholder="Nombre del usuario..."
+                                                        placeholder={t(
+                                                            "cashRegisterPage.filters.userPlaceholder"
+                                                        )}
                                                         value={modalFilters.user}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, user: e.target.value }))}
                                                         className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50"
@@ -5316,9 +6083,11 @@ const CashRegister = () => {
                                                 </div>
 
                                                 <div>
-                                                    <label className="text-xs text-gray-400 mb-1 block">Buscar por cliente</label>
+                                                    <label className="text-xs text-gray-400 mb-1 block">{t("cashRegisterPage.filters.customerSearch")}</label>
                                                     <input
-                                                        placeholder="Nombre del cliente..."
+                                                        placeholder={t(
+                                                            "cashRegisterPage.filters.customerPlaceholder"
+                                                        )}
                                                         value={modalFilters.client}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, client: e.target.value }))}
                                                         className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50"
@@ -5328,7 +6097,7 @@ const CashRegister = () => {
                                                 {(modalFilters.from ||
                                                     modalFilters.to ||
                                                     modalFilters.method ||
-                                                    modalFilters.fiscal ||
+                                                    (supportsDominicanFiscal && modalFilters.fiscal) ||
                                                     (modalFilters.registerId && modalFilters.registerId !== defaultModalRegisterId) ||
                                                     modalFilters.user ||
                                                     modalFilters.client) && (
@@ -5336,7 +6105,7 @@ const CashRegister = () => {
                                                         onClick={resetModalFilters}
                                                         className="w-full text-xs text-gray-400 hover:text-white transition-colors py-1"
                                                     >
-                                                        Limpiar filtros
+                                                        {t("cashRegisterPage.actions.clearFilters")}
                                                     </button>
                                                 )}
                                             </div>
@@ -5357,18 +6126,27 @@ const CashRegister = () => {
                         {/* Resumen modal */}
                         <div className="px-6 py-4 border-b border-gray-800/50 bg-[#111111]/50">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-white font-semibold">Resumen</h3>
+                                <h3 className="text-white font-semibold">{t("cashRegisterPage.fullRecords.summary")}</h3>
                                 <div className="text-sm text-gray-300">
-                                    Total:{" "}
+                                    {t("cashRegisterPage.common.total")}:{" "}
                                     <span className="font-semibold text-[#f6b100]">{currency(modalCashClosure.totalWithMenudo)}</span>
-                                    <span className="text-gray-500 ml-2">({modalCashClosure.totalCount} órdenes)</span>
+                                    <span className="text-gray-500 ml-2">(
+                                        {t(
+                                            "cashRegisterPage.common.orderCount",
+                                            {
+                                                count:
+                                                modalCashClosure.totalCount,
+                                            }
+                                        )}
+                                        )
+                                    </span>
                                 </div>
                             </div>
 
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2">
-                                    <div className="text-xs text-gray-400 mb-1">Fondo inicial</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.title")}</div>
                                     {modalDay && (
                                         <div className="mt-3 rounded-lg bg-[#0f0f0f] border border-gray-800/40 p-3">
                                             <div className="text-xs text-gray-400 mb-2">
@@ -5396,7 +6174,13 @@ const CashRegister = () => {
                                                             onClick={() => setModalIsEditingOpening(true)}
                                                             className="w-full px-3 py-2 bg-[#262626] border border-gray-800/50 rounded-lg text-white font-semibold"
                                                         >
-                                                            Editar fondo inicial (admin) — {modalDay}
+                                                            {t(
+                                                                "cashRegisterPage.opening.editInitialAdmin",
+                                                                {
+                                                                    date:
+                                                                    modalDay,
+                                                                }
+                                                            )}
                                                         </button>
                                                     ) : (
                                                         <div className="flex gap-2">
@@ -5435,7 +6219,7 @@ const CashRegister = () => {
                                                                 }}
                                                                 className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
                                                             >
-                                                                Guardar cambios
+                                                                {t("cashRegisterPage.actions.saveChanges")}
                                                             </button>
 
                                                             <button
@@ -5446,7 +6230,7 @@ const CashRegister = () => {
                                                                 }}
                                                                 className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                                                             >
-                                                                Cancelar
+                                                                {t("cashRegisterPage.actions.cancel")}
                                                             </button>
                                                         </div>
                                                     )}
@@ -5460,11 +6244,11 @@ const CashRegister = () => {
                                 <div className="text-sm font-semibold text-white">{currency(modalCashClosure.openingInitial)}</div>
                                 </div>
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2">
-                                    <div className="text-xs text-gray-400 mb-1">Efectivo (ventas)</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashSales")}</div>
                                     <div className="text-sm font-semibold text-white">{currency(modalCashClosure.cashSales)}</div>
                                 </div>
                                 <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2 hover:border-[#f6b100]/30 transition-colors">
-                                    <div className="text-xs text-gray-400 mb-1">Efectivo en caja</div>
+                                    <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashInRegister")}</div>
                                     <div className="text-sm font-semibold text-[#f6b100]">{currency(modalCashClosure.cashInRegister)}</div>
                                 </div>
                             </div>
@@ -5478,7 +6262,10 @@ const CashRegister = () => {
                                     ["pedidoya", modalCashClosure.buckets.pedidoya],
                                     ["ubereats", modalCashClosure.buckets.ubereats],
 
-                                    ["menudo", { label: "Menudo (fondo inicial + agregado)", total: (modalCashClosure.openingInitial + modalCashClosure.addedTotal), count: 0 }],
+                                    ["menudo", { label:
+                                            t(
+                                                "cashRegisterPage.opening.currentFloat"
+                                            ), total: (modalCashClosure.openingInitial + modalCashClosure.addedTotal), count: 0 }],
 
                                     ...(safeNumber(modalCashClosure.buckets?.otros?.total) > 0 || safeNumber(modalCashClosure.buckets?.otros?.count) > 0
                                         ? [["otros", modalCashClosure.buckets.otros]]
@@ -5487,7 +6274,13 @@ const CashRegister = () => {
                                     <div key={k} className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2">
                                         <div className="text-xs text-gray-400 mb-1">{v.label}</div>
                                         <div className="text-sm font-semibold text-white">{currency(v.total)}</div>
-                                        <div className="text-xs text-gray-500 mt-1">{v.count} órdenes</div>
+                                        <div className="text-xs text-gray-500 mt-1">{t(
+                                            "cashRegisterPage.common.orderCount",
+                                            {
+                                                count:
+                                                v.count,
+                                            }
+                                        )}</div>
                                     </div>
 
                                 ))}
@@ -5503,7 +6296,7 @@ const CashRegister = () => {
                                     className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
                                 >
                                     <Download className="w-4 h-4" />
-                                    Exportar a Excel
+                                    {t("cashRegisterPage.actions.exportExcel")}
                                 </button>
                             </div>
 
@@ -5512,19 +6305,20 @@ const CashRegister = () => {
                                     <table className="w-full text-left border-collapse">
                                         <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                                         <tr>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">No.Factura</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Usuario</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
-                                            <th className="p-3 text-sm font-semibold text-gray-300">Factura</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.table.invoiceNumber")}
+                                            </th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.date")}</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.user")}</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.customer")}</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.method")}</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.total")}</th>
+                                            <th className="p-3 text-sm font-semibold text-gray-300">{t("cashRegisterPage.common.invoice")}</th>
                                         </tr>
                                         </thead>
                                         <tbody>
                                         {modalFilteredReports.length === 0 ? (
                                             <tr>
-                                                <td colSpan="7" className="text-center py-8 text-gray-500">                                                    No hay registros disponibles
+                                                <td colSpan="7" className="text-center py-8 text-gray-500">             {t("cashRegisterPage.table.noRecords")}
                                                 </td>
                                             </tr>
                                         ) : (
@@ -5538,11 +6332,19 @@ const CashRegister = () => {
                                                     </td>
 
                                                     <td className="p-3 text-sm text-gray-300">
-                                                        {r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}
+                                                        {getReportReferenceDate(r)
+                                                            ? formatDate(
+                                                                getReportReferenceDate(r),
+                                                                localization
+                                                            )
+                                                            : "—"}
                                                     </td>
                                                     <td className="p-3 text-sm text-gray-300">{r?.user?.name || "—"}</td>
                                                     <td className="p-3 text-sm text-gray-300">{getClientName(r)}</td>
-                                                    <td className="p-3 text-sm text-gray-300">{r?.paymentMethod || "Efectivo"}</td>
+                                                    <td className="p-3 text-sm text-gray-300">{paymentMethodLabel(
+                                                        r?.paymentMethod ||
+                                                        "Efectivo"
+                                                    )}</td>
                                                     <td className="p-3 text-sm font-bold text-[#f6b100]">
                                                         {currency(r?.bills?.totalWithTax)}
                                                     </td>
@@ -5553,10 +6355,10 @@ const CashRegister = () => {
                                                                 onClick={() => verFactura(r._id)}
                                                                 className="text-blue-400 hover:text-blue-300 hover:underline text-sm transition-colors"
                                                             >
-                                                                Ver
+                                                                {t("cashRegisterPage.actions.view")}
                                                             </button>
                                                         ) : (
-                                                            <span className="text-xs text-gray-500">No disponible</span>
+                                                            <span className="text-xs text-gray-500">{t("cashRegisterPage.common.unavailable")}</span>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -5568,8 +6370,7 @@ const CashRegister = () => {
                             </div>
 
                             <div className="text-xs text-gray-500 mt-3">
-                                Nota: el “Fondo inicial” se guarda localmente para hoy. Si quieres que quede guardado en la base de datos por
-                                turno/caja, lo ideal es crear un modelo de “CashRegisterSession”.
+
                             </div>
                         </div>
                     </div>
@@ -5583,7 +6384,7 @@ const CashRegister = () => {
                     <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h2 className="text-xl font-semibold text-white">Editar cierre final</h2>
+                                <h2 className="text-xl font-semibold text-white">{t("cashRegisterPage.adjustClose.title")}</h2>
                                 <p className="text-sm text-white/60 mt-1">
                                     Puedes corregir el cierre como total directo o por billetes, tickets y transferencia.
                                 </p>
@@ -5599,7 +6400,7 @@ const CashRegister = () => {
                         </div>
 
                         <div className="mt-4">
-                            <label className="text-xs text-gray-400">Código del manager</label>
+                            <label className="text-xs text-gray-400">{t("cashRegisterPage.manager.code")}</label>
                             <input
                                 type="password"
                                 value={adjustManagerCode}
@@ -5607,7 +6408,9 @@ const CashRegister = () => {
                                     setAdjustManagerCode(e.target.value.replace(/\D/g, "").slice(0, 8))
                                 }
                                 className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                                placeholder="Ej: 1234"
+                                placeholder={t(
+                                    "cashRegisterPage.manager.codePlaceholder"
+                                )}
                                 inputMode="numeric"
                                 autoComplete="new-password"
                             />
@@ -5624,7 +6427,7 @@ const CashRegister = () => {
                                             : "text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
-                                    Total contado
+                                    {t("cashRegisterPage.closing.totalCounted")}
                                 </button>
 
                                 <button
@@ -5636,7 +6439,7 @@ const CashRegister = () => {
                                             : "text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
-                                    Billetes y monedas
+                                    {t("cashRegisterPage.closing.billsAndCoins")}
                                 </button>
                             </div>
                         </div>
@@ -5644,32 +6447,34 @@ const CashRegister = () => {
                         {adjustInputMode === CLOSING_INPUT_MODE_TOTAL && (
                             <div className="mt-4">
                                 <label className="text-xs text-gray-400">
-                                    Efectivo contado ajustado
+                                    {t("cashRegisterPage.adjustClose.adjustedCash")}
                                 </label>
                                 <input
                                     value={adjustCountedInput}
                                     onChange={(e) => setAdjustCountedInput(formatThousands(e.target.value))}
                                     className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                                    placeholder="Ej: 2,050"
+                                    placeholder=" 2,050"
                                     inputMode="decimal"
                                 />
                             </div>
                         )}
 
-                        {adjustInputMode === CLOSING_INPUT_MODE_BREAKDOWN && (
+                        {supportsCashDenominations &&
+                            adjustInputMode ===
+                            CLOSING_INPUT_MODE_BREAKDOWN && (
                             <div className="mt-4 rounded-xl bg-[#0f0f0f] border border-gray-800/50 p-4">
                                 <div className="flex items-center justify-between gap-3 mb-3">
                                     <div>
                                         <div className="text-sm font-semibold text-white">
-                                            Conteo por denominación
+                                            {t("cashRegisterPage.closing.denominationTitle")}
                                         </div>
                                         <div className="text-xs text-gray-500">
-                                            Corrige billetes, monedas, tickets, transferencias u otros.
+                                            {t("cashRegisterPage.adjustClose.denominationDescription")}
                                         </div>
                                     </div>
 
                                     <div className="text-right">
-                                        <div className="text-xs text-gray-500">Billetes/monedas</div>
+                                        <div className="text-xs text-gray-500">{t("cashRegisterPage.closing.billsCoins")}</div>
                                         <div className="text-lg font-bold text-[#f6b100]">
                                             {currency(adjustBreakdownTotal)}
                                         </div>
@@ -5692,7 +6497,9 @@ const CashRegister = () => {
                                                             {item.label}
                                                         </div>
                                                         <div className="text-[11px] text-gray-500">
-                                                            {item.type}
+                                                            {denominationTypeLabel(
+                                                                item.type
+                                                            )}
                                                         </div>
                                                     </div>
 
@@ -5712,7 +6519,7 @@ const CashRegister = () => {
                                                 </div>
 
                                                 <div className="mt-2 text-xs text-gray-500 text-right">
-                                                    Subtotal:{" "}
+                                                    {t("cashRegisterPage.common.subtotal")}:{" "}
                                                     <span className="text-gray-300 font-semibold">
                                             {currency(lineTotal)}
                                         </span>
@@ -5725,17 +6532,17 @@ const CashRegister = () => {
                                 <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
                                         <div className="text-base md:text-lg font-semibold text-white">
-                                            Tickets
+                                            {t("cashRegisterPage.paymentMethods.tickets")}
                                         </div>
 
                                         <div className="text-sm text-white/75 mb-4">
-                                            Crédito físico contado como efectivo.
+                                            {t("cashRegisterPage.closing.ticketDescription")}
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
                                                 <label className="block text-sm font-medium text-white/90 mb-1">
-                                                    Monto ticket
+                                                    {t("cashRegisterPage.closing.ticketAmount")}
                                                 </label>
                                                 <input
                                                     value={adjustTicketAmountInput}
@@ -5744,13 +6551,13 @@ const CashRegister = () => {
                                                     }
                                                     inputMode="decimal"
                                                     className="mt-1 w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-                                                    placeholder="Ej: 100"
+                                                    placeholder=" 100"
                                                 />
                                             </div>
 
                                             <div>
                                                 <label className="block text-sm font-medium text-white/90 mb-1">
-                                                    Cantidad
+                                                    {t("cashRegisterPage.common.quantity")}
                                                 </label>
                                                 <input
                                                     value={adjustTicketCountInput}
@@ -5794,7 +6601,7 @@ const CashRegister = () => {
                                             }
                                             inputMode="decimal"
                                             className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-                                            placeholder="Ej: 1,500"
+                                            placeholder=" 1,500"
                                         />
 
                                         <div className="mt-3 text-sm text-white/85 text-right">
@@ -5807,15 +6614,15 @@ const CashRegister = () => {
 
                                     <div className="rounded-lg bg-[#151515] border border-gray-700/60 p-4">
                                         <div className="text-base md:text-lg font-semibold text-white">
-                                            Otros
+                                            {t("cashRegisterPage.paymentMethods.other")}
                                         </div>
 
                                         <div className="text-sm text-white/75 mb-4">
-                                            Otro método o ajuste contado.
+                                            {t("cashRegisterPage.paymentMethods.other")}
                                         </div>
 
                                         <label className="block text-sm font-medium text-white/90 mb-1">
-                                            Monto otros
+                                            {t("cashRegisterPage.closing.otherAmount")}
                                         </label>
 
                                         <input
@@ -5825,11 +6632,11 @@ const CashRegister = () => {
                                             }
                                             inputMode="decimal"
                                             className="w-full px-3 py-2.5 bg-[#0b0b0b] border border-gray-700 rounded-lg text-white text-base font-semibold text-right placeholder:text-white/35"
-                                            placeholder="Ej: 500"
+                                            placeholder=" 500"
                                         />
 
                                         <div className="mt-3 text-sm text-white/85 text-right">
-                                            Total otros:{" "}
+                                            {t("cashRegisterPage.closing.otherTotal")}:{" "}
                                             <span className="text-white font-bold text-base">
                                     {currency(adjustOtherCountedTotal)}
                                 </span>
@@ -5840,21 +6647,21 @@ const CashRegister = () => {
                                 <div className="mt-5 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                                         <div>
-                                            <div className="text-sm text-white/80">Billetes/monedas</div>
+                                            <div className="text-sm text-white/80">{t("cashRegisterPage.closing.billsCoins")}</div>
                                             <div className="text-lg font-bold text-white">
                                                 {currency(adjustBreakdownTotal)}
                                             </div>
                                         </div>
 
                                         <div>
-                                            <div className="text-sm text-white/80">Tickets</div>
+                                            <div className="text-sm text-white/80">{t("cashRegisterPage.paymentMethods.tickets")}</div>
                                             <div className="text-lg font-bold text-white">
                                                 {currency(adjustTicketTotal)}
                                             </div>
                                         </div>
 
                                         <div>
-                                            <div className="text-sm text-white/80">Transferencia + otros</div>
+                                            <div className="text-sm text-white/80">{t("cashRegisterPage.closing.transferAndOther")}</div>
                                             <div className="text-lg font-bold text-white">
                                                 {currency(adjustTransferCountedTotal + adjustOtherCountedTotal)}
                                             </div>
@@ -5862,8 +6669,7 @@ const CashRegister = () => {
 
                                         <div>
                                             <div className="text-sm text-white/90 font-medium">
-                                                Total declarado
-                                            </div>
+                                                {t("cashRegisterPage.closing.totalDeclared")}                                            </div>
                                             <div className="text-xl font-extrabold text-white">
                                                 {currency(adjustTotalDeclaredAtClose)}
                                             </div>
@@ -5874,7 +6680,7 @@ const CashRegister = () => {
                         )}
 
                         <div className="mt-4">
-                            <label className="text-xs text-gray-400">Nota</label>
+                            <label className="text-xs text-gray-400">{t("cashRegisterPage.common.note")}</label>
                             <input
                                 value={adjustNote}
                                 onChange={(e) => setAdjustNote(e.target.value)}
@@ -5889,7 +6695,7 @@ const CashRegister = () => {
                                 onClick={() => setAdjustCloseOpen(false)}
                                 className="w-full px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold"
                             >
-                                Cancelar
+                                {t("cashRegisterPage.actions.cancel")}
                             </button>
 
                             <button
@@ -5965,11 +6771,11 @@ const CashRegister = () => {
                             <div>
                                 <h2 className="text-xl font-bold text-white">
                                     {ecfAdjustmentModal.documentType === "34"
-                                        ? "Crear Nota de Crédito e34"
-                                        : "Crear Nota de Débito e33"}
+                                        ? t("cashRegisterPage.ecf.createCreditNote")
+                                        : t("cashRegisterPage.ecf.createDebitNote")}
                                 </h2>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    Factura afectada:{" "}
+                                    {t("cashRegisterPage.ecf.affectedInvoice")}:{" "}
                                     <span className="text-[#f6b100] font-semibold">
                             {ecfAdjustmentModal.originalEcf?.eNCF || "—"}
                         </span>
@@ -5988,23 +6794,23 @@ const CashRegister = () => {
                         <div className="p-5 space-y-4 max-h-[75vh] overflow-auto">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
-                                    <div className="text-xs text-gray-500">Tipo</div>
+                                    <div className="text-xs text-gray-500">{t("cashRegisterPage.ecf.type")}</div>
                                     <div className="text-white font-semibold mt-1">
                                         {ecfAdjustmentModal.documentType === "34"
-                                            ? "e34 - Nota de Crédito"
-                                            : "e33 - Nota de Débito"}
+                                            ? t("cashRegisterPage.ecf.e34Credit")
+                                            : t("cashRegisterPage.ecf.e33Debit")}
                                     </div>
                                 </div>
 
                                 <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
-                                    <div className="text-xs text-gray-500">Factura original</div>
+                                    <div className="text-xs text-gray-500">{t("cashRegisterPage.ecf.originalInvoice")}</div>
                                     <div className="text-white font-semibold mt-1">
                                         {ecfAdjustmentModal.originalEcf?.eNCF || "—"}
                                     </div>
                                 </div>
 
                                 <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
-                                    <div className="text-xs text-gray-500">Total original</div>
+                                    <div className="text-xs text-gray-500">{t("cashRegisterPage.ecf.originalTotal")}</div>
                                     <div className="text-[#f6b100] font-bold mt-1">
                                         {currency(ecfAdjustmentModal.originalEcf?.totals?.total)}
                                     </div>
@@ -6014,11 +6820,9 @@ const CashRegister = () => {
                                 <div className="rounded-xl border border-[#f6b100]/20 bg-[#f6b100]/10 p-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                         <div>
-                                            <div className="text-sm font-semibold text-white">
-                                                Balance disponible para nota de crédito
-                                            </div>
+                                            <div className="text-sm font-semibold text-white">{t("cashRegisterPage.ecf.availableCreditBalance")}</div>
                                             <div className="text-xs text-gray-400 mt-1">
-                                                Total original: {currency(originalEcfTotal)} · Débito aplicado: {currency(acceptedDebitNotesTotal)} · Crédito aplicado: {currency(acceptedCreditNotesTotal)}
+                                                Original: {currency(originalEcfTotal)} · Créditos emitidos: {currency(acceptedCreditNotesTotal)}
                                             </div>
                                         </div>
 
@@ -6027,6 +6831,11 @@ const CashRegister = () => {
                                         </div>
                                     </div>
 
+                                    {acceptedDebitNotesTotal > 0 && (
+                                        <div className="mt-2 text-xs text-amber-200">
+                                            Las notas de débito ({currency(acceptedDebitNotesTotal)}) no aumentan el límite de notas de crédito contra el comprobante original.
+                                        </div>
+                                    )}
                                     {availableCreditTotal <= 0 && (
                                         <div className="mt-3 text-xs text-red-300">
                                             Esta factura ya fue cubierta por notas de crédito aceptadas. No se puede emitir otra E34.
@@ -6040,42 +6849,60 @@ const CashRegister = () => {
                                 <div className="grid grid-cols-2 gap-2 mt-2">
                                     <button
                                         type="button"
-                                        onClick={() =>
+                                        onClick={() => {
                                             setEcfAdjustmentForm((f) => ({
                                                 ...f,
                                                 adjustmentMode: "partial",
-                                            }))
-                                        }
+                                                modificationCode: getAdjustmentCode(ecfAdjustmentModal.documentType, "partial"),
+                                            }));
+                                            setConfirmedFullDebit(false);
+                                            setConfirmedFullCredit(false);
+                                            setLastEcfAdjustmentResult(null);
+                                        }}
                                         className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
                                             ecfAdjustmentForm.adjustmentMode === "partial"
                                                 ? "bg-[#f6b100] text-black border-[#f6b100]"
                                                 : "bg-[#111] text-white border-gray-800/50"
                                         }`}
                                     >
-                                        Parcial
+                                        {ecfAdjustmentModal.documentType === "33" ? "Aumento parcial" : "Crédito parcial"}
                                     </button>
 
                                     <button
                                         type="button"
-                                        onClick={() =>
+                                        onClick={() => {
                                             setEcfAdjustmentForm((f) => ({
                                                 ...f,
                                                 adjustmentMode: "total",
                                                 amount: "",
                                                 tax: "",
-                                            }))
-                                        }
+                                                modificationCode: getAdjustmentCode(ecfAdjustmentModal.documentType, "total"),
+                                            }));
+                                            setConfirmedFullDebit(false);
+                                            setConfirmedFullCredit(false);
+                                            setLastEcfAdjustmentResult(null);
+                                        }}
                                         className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
                                             ecfAdjustmentForm.adjustmentMode === "total"
                                                 ? "bg-[#f6b100] text-black border-[#f6b100]"
                                                 : "bg-[#111] text-white border-gray-800/50"
                                         }`}
                                     >
-                                        Total
+                                        {ecfAdjustmentModal.documentType === "33" ? "Importe igual al original" : "Anulación total"}
                                     </button>
                                 </div>
                             </div>
 
+                            {ecfAdjustmentModal.documentType === "33" && ecfAdjustmentForm.adjustmentMode === "total" && (
+                                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                                    <p className="font-semibold">Atención: nota de débito por el total original</p>
+                                    <p className="mt-1">Esto <strong>aumentará</strong> el importe de la factura en {currency(originalEcfTotal)}. No cancela ni sustituye el comprobante original.</p>
+                                    <label className="mt-3 flex items-start gap-3 cursor-pointer rounded-lg border border-white/10 px-3 py-2">
+                                        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#f6b100]" checked={confirmedFullDebit} onChange={(e) => setConfirmedFullDebit(e.target.checked)} />
+                                        <span>Confirmo que el aumento por ese importe es intencional.</span>
+                                    </label>
+                                </div>
+                            )}
                             {ecfAdjustmentForm.adjustmentMode !== "total" && (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
@@ -6087,49 +6914,51 @@ const CashRegister = () => {
                                                 setEcfAdjustmentForm((f) => ({
                                                     ...f,
                                                     amount: value,
-                                                    tax: f.tax ? f.tax : calculateSuggestedTax(value),
                                                 }));
                                             }}
                                             className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
-                                            placeholder="Ej: 50.00"
+                                            placeholder=" 50.00"
                                             inputMode="decimal"
                                         />
                                     </div>
 
                                     <div>
-                                        <label className="text-xs text-gray-400">ITBIS</label>
-                                        <input
-                                            value={ecfAdjustmentForm.tax}
-                                            onChange={(e) =>
-                                                setEcfAdjustmentForm((f) => ({
-                                                    ...f,
-                                                    tax: formatThousands(e.target.value),
-                                                }))
-                                            }
-                                            className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
-                                            placeholder="Ej: 9.00"
-                                            inputMode="decimal"
-                                        />
+                                        <label className="text-xs text-gray-400">ITBIS estimado (según factura original)</label>
+                                        <div className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white/90 text-sm min-h-[46px]">
+                                            {previewTaxAmount === null ? "Se validará al emitir" : currency(previewTaxAmount)}
+                                        </div>
+                                        <p className="text-[11px] text-gray-400 mt-1">
+                                            {previewTaxRate === null
+                                                ? "No se puede confirmar la tasa desde esta vista. El servidor rechazará originales sin desglose fiscal verificable."
+                                                : `Tasa registrada: ${previewTaxRate} %. El cálculo final siempre se verifica en el servidor.`}
+                                        </p>
                                     </div>
                                 </div>
                             )}
 
+                            {ecfAdjustmentModal.documentType === "34" && ecfAdjustmentForm.adjustmentMode === "total" && (
+                                <p className="text-xs text-amber-200 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                                    {acceptedCreditNotesTotal > 0
+                                        ? `La anulación aplicará un crédito por ${currency(availableCreditTotal)}, que es el saldo original aún no acreditado. Las notas de débito se concilian por separado.`
+                                        : `Se intentará anular el saldo original de ${currency(availableCreditTotal)}. Confirma que esta operación corresponde a una anulación.`}
+                                </p>
+                            )}
+                            {ecfAdjustmentModal.documentType === "34" && ecfAdjustmentForm.adjustmentMode === "total" && (
+                                <label className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-white cursor-pointer">
+                                    <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#f6b100]" checked={confirmedFullCredit} onChange={(e) => setConfirmedFullCredit(e.target.checked)} />
+                                    <span>Confirmo la anulación del saldo original pendiente de {currency(availableCreditTotal)}. He comprobado las notas emitidas anteriormente.</span>
+                                </label>
+                            )}
                             <div>
                                 <label className="text-xs text-gray-400">Código de modificación</label>
-                                <select
-                                    value={ecfAdjustmentForm.modificationCode}
-                                    onChange={(e) =>
-                                        setEcfAdjustmentForm((f) => ({
-                                            ...f,
-                                            modificationCode: e.target.value,
-                                        }))
-                                    }
-                                    className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
-                                >
-                                    <option value="1">1 - Anula o modifica comprobante</option>
-                                    <option value="2">2 - Corrige texto</option>
-                                    <option value="3">3 - Corrige monto</option>
-                                </select>
+                                <div className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white text-sm">
+                                    {getAdjustmentCode(ecfAdjustmentModal.documentType, ecfAdjustmentForm.adjustmentMode) === "1"
+                                        ? "1 — Anula el comprobante modificado"
+                                        : "3 — Corrige montos del comprobante modificado"}
+                                </div>
+                                <p className="mt-1 text-[11px] text-gray-400">
+                                    Seleccionado automáticamente según la nota y el tipo de operación. La corrección de texto (código 2) aún no está implementada.
+                                </p>
                             </div>
 
                             <div>
@@ -6228,7 +7057,7 @@ const CashRegister = () => {
                                 onClick={closeEcfAdjustmentModal}
                                 className="px-4 py-3 rounded-xl bg-[#1a1a1a] border border-gray-800/50 text-white font-semibold hover:bg-[#262626]"
                             >
-                                Cerrar
+                                {t("cashRegisterPage.actions.close")}
                             </button>
 
                             <button
@@ -6236,6 +7065,9 @@ const CashRegister = () => {
                                 onClick={() => issueEcfAdjustmentMutation.mutate()}
                                 disabled={
                                     issueEcfAdjustmentMutation.isPending ||
+                                    ecfAdjustmentsLoading || ecfAdjustmentsFailed ||
+                                    (ecfAdjustmentModal.documentType === "34" && ecfAdjustmentForm.adjustmentMode === "total" && !confirmedFullCredit) ||
+                                    (ecfAdjustmentModal.documentType === "33" && ecfAdjustmentForm.adjustmentMode === "total" && !confirmedFullDebit) ||
                                     (
                                         ecfAdjustmentModal.documentType === "34" &&
                                         availableCreditTotal <= 0
@@ -6277,7 +7109,7 @@ const CashRegister = () => {
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
                     <div className="w-full max-w-md rounded-2xl bg-[#0b0b0c] border border-white/10 shadow-2xl p-6">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-semibold text-white">Configurar código manager</h2>
+                            <h2 className="text-xl font-semibold text-white">{t("cashRegisterPage.manager.title")}</h2>
                             <button
                                 type="button"
                                 onClick={() => {
@@ -6291,7 +7123,7 @@ const CashRegister = () => {
                         </div>
 
                         <div className="mt-3 rounded-lg bg-[#111] border border-gray-800/40 p-3">
-                            <div className="text-xs text-gray-400">Estado</div>
+                            <div className="text-xs text-gray-400">{t("cashRegisterPage.common.status")}</div>
 
                             <div className="text-sm text-white mt-1">
                                 {managerCodeStatus?.data?.enabled ? "Activado" : "Desactivado"}
@@ -6300,24 +7132,32 @@ const CashRegister = () => {
 
                             {managerCodeStatus?.data?.updatedAt && (
                                 <div className="text-[11px] text-gray-500 mt-1">
-                                    Última actualización: {new Date(managerCodeStatus.data.updatedAt).toLocaleString()}
+                                    {t("cashRegisterPage.manager.lastUpdated")}:{" "} {
+                                    formatDateTime(
+                                        managerCodeStatus.data.updatedAt,
+                                        localization
+                                    )
+                                }
                                 </div>
                             )}
                         </div>
 
                         <div className="mt-4">
                             <label className="text-xs text-gray-400">
-                                Nuevo código (4–8 dígitos)
+                                {t("cashRegisterPage.manager.newCode")}
                             </label>
                             <input
                                 value={managerCodeInput}
                                 onChange={(e) => setManagerCodeInput(e.target.value.replace(/\D/g, "").slice(0, 8))}
                                 className="mt-1 w-full px-3 py-2 bg-[#0f0f0f] border border-gray-800/50 rounded-lg text-white"
-                                placeholder="Ej: 1234"
+                                placeholder={t(
+                                    "cashRegisterPage.manager.codePlaceholder"
+                                )}
+
                                 inputMode="numeric"
                             />
                             <div className="text-[11px] text-gray-500 mt-1">
-                                Solo se guarda el hash en el servidor. El sistema muestra un hint tipo ***12.
+                                {t("cashRegisterPage.manager.securityHint")}
                             </div>
                         </div>
 
@@ -6326,7 +7166,11 @@ const CashRegister = () => {
                             onClick={() => {
                                 const code = managerCodeInput.trim();
                                 if (!/^\d{4,8}$/.test(code)) {
-                                    showToast("Código inválido. Debe tener 4 a 8 dígitos.");
+                                    showToast(
+                                        t(
+                                            "cashRegisterPage.messages.managerCodeInvalidFormat"
+                                        )
+                                    );
                                     return;
                                 }
                                 setManagerCodeMutation.mutate({ managerCode: code });
@@ -6334,7 +7178,7 @@ const CashRegister = () => {
                             disabled={setManagerCodeMutation.isPending}
                             className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
                         >
-                            Guardar / Actualizar
+                            {t("cashRegisterPage.manager.saveUpdate")}
                         </button>
 
                         <button
@@ -6346,172 +7190,52 @@ const CashRegister = () => {
                             disabled={setManagerCodeMutation.isPending}
                             className="mt-2 w-full px-3 py-2 bg-[#262626] border border-gray-800/50 text-white rounded-lg font-semibold disabled:opacity-60"
                         >
-                            Desactivar código
+                            {t("cashRegisterPage.manager.disableCode")}
                         </button>
                     </div>
                 </div>
             )}
 
 
-            {batchesModalOpen && (
-                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
-                    <div className="w-full max-w-2xl rounded-2xl bg-[#0b0b0b] border border-gray-800/50 shadow-2xl">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800/50">
-                            <div className="text-white font-bold text-lg">Lotes del día</div>
-                            <button
-                                onClick={() => setBatchesModalOpen(false)}
-                                className="p-2 rounded-lg hover:bg-white/5"
-                            >
-                                <X className="w-5 h-5 text-gray-300" />
-                            </button>
-                        </div>
-
-                        {/* Tabs */}
-                        <div className="px-5 pt-4">
-                            <div className="inline-flex rounded-xl overflow-hidden border border-gray-800/60">
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchesTab("open")}
-                                    className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "open" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
-                                    }`}
-                                >
-                                    Abiertos ({openBatches.length})
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchesTab("closed")}
-                                    className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "closed" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
-                                    }`}
-                                >
-                                    Cerrados ({closedBatches.length})
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setBatchesTab("all")}
-                                    className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "all" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
-                                    }`}
-                                >
-                                    Todos ({mermaBatches.length})
-                                </button>
-                            </div>
-
-                            <div className="text-xs text-gray-500 mt-2">
-                                Fecha: <span className="text-gray-300 font-semibold">{selectedYMD}</span>
-                            </div>
-                        </div>
-
-                        <div className="p-4 max-h-[70vh] overflow-auto">
-                            {(() => {
-                                const list =
-                                    batchesTab === "open"
-                                        ? openBatches
-                                        : batchesTab === "closed"
-                                            ? closedBatches
-                                            : mermaBatches;
-
-                                if (!list || list.length === 0) {
-                                    return <div className="text-sm text-gray-400">No hay lotes en esta vista.</div>;
-                                }
-
-                                return (
-                                    <div className="space-y-2">
-                                        {list.map((b) => {
-                                            const isClosed = (b?.status || "") === "closed";
-                                            return (
-                                                <div
-                                                    key={b?._id}
-                                                    className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#0f0f0f] border border-gray-800/40"
-                                                >
-                                                    <div className="min-w-0">
-                                                        <div className="text-white font-semibold truncate">
-                                                            {getBatchProductName(b)}
-                                                        </div>
 
 
-                                                        <div className="text-xs text-gray-400 mt-1">
-                                                            Entrada: {b?.rawQty} {b?.unit || ""} · Costo: {currency(b?.unitCost || 0)}
-                                                        </div>
 
-                                                        <div className="text-xs text-gray-500 mt-1">
-                                                            Estado:{" "}
-                                                            <span className={isClosed ? "text-green-400" : "text-yellow-300"}>
-                                                              {isClosed ? "Cerrado" : "Abierto"}
-                                                            </span>
-                                                            {isClosed ? (
-                                                                <>
-                                                                    {" "}
-                                                                    · Final: <span className="text-gray-300">{b?.finalQty ?? 0}</span>
-                                                                    {" "}
-                                                                    · Merma:{" "}
-                                                                    <span className="text-gray-300">
-                                                                      {safeNumber(b?.rawQty) - safeNumber(b?.finalQty)}
-                                                                    </span>
-                                                                </>
-                                                            ) : null}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Acciones */}
-                                                    {!isClosed ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setBatchesModalOpen(false);
-                                                                setMermaMode("close");
-                                                                setBatchToClose(b);
-                                                                setFinalQtyInput("");
-                                                                setMermaNote(b?.note || "");
-                                                                setMermaModalOpen(true);
-                                                            }}
-                                                            className="px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold hover:bg-[#262626]"
-                                                        >
-                                                            Registrar salida
-                                                        </button>
-                                                    ) : (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                // Editar un lote cerrado reutilizando el mismo modal de cierre
-                                                                setBatchesModalOpen(false);
-                                                                setMermaMode("close");
-                                                                setBatchToClose(b);
-                                                                setFinalQtyInput(String(b?.finalQty ?? ""));
-                                                                setUnitCostInput(String(b?.unitCost ?? ""));
-                                                                setMermaNote(b?.note || "");
-                                                                setMermaModalOpen(true);
-                                                            }}
-                                                            className="px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white font-semibold hover:bg-[#262626]"
-                                                        >
-                                                            Editar cierre
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            })()}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-800/50">
-                            <button
-                                onClick={() => setBatchesModalOpen(false)}
-                                className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gray-800/50 text-white font-semibold"
-                            >
-                                Cerrar
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {showEcfIncidents && canManageFiscalIncidents && (
+                <EcfIncidentsModal
+                    key={`${currentTenantId || "NO_TENANT"}:${currentClientId || "default"}`}
+                    tenantId={currentTenantId}
+                    clientId={currentClientId}
+                    onClose={() => setShowEcfIncidents(false)}
+                />
             )}
-
-
-
-
-
+            {showClosingDocuments && (
+                <CashCloseDocumentsModal
+                    key={`${currentTenantId || "NO_TENANT"}:${currentClientId || "default"}`}
+                    tenantId={currentTenantId}
+                    clientId={currentClientId}
+                    onClose={() => setShowClosingDocuments(false)}
+                    dateYMD={selectedYMD}
+                    registerId={activeRegisterId}
+                    orders={dayVisibleReports}
+                    money={currency}
+                    supportsDominicanFiscal={supportsDominicanFiscal && Boolean(planFeatures.fiscal)}
+                    onOpenOrder={(orderId) => { setShowClosingDocuments(false); verFactura(orderId); }}
+                    onOpenFiscal={(doc) => {
+                        setShowClosingDocuments(false);
+                        if (doc.documentType === "33" || doc.documentType === "34") {
+                            openAdjustmentInvoicePreview(doc);
+                        } else if (doc.orderId) {
+                            verFactura(doc.orderId);
+                        }
+                    }}
+                />
+            )}
+            {selectedOrderInvoice?._id && (
+                <Invoice
+                    order={selectedOrderInvoice}
+                    onClose={() => setSelectedOrderInvoice(null)}
+                />
+            )}
             {selectedAdjustmentInvoice?.order && (
                 <Invoice
                     order={selectedAdjustmentInvoice.order}

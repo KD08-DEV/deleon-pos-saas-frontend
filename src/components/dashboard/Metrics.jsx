@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getOrders, getDishes, getTables } from "../../https";
+import useTenant from "../../hooks/useTenant";
 
+import {
+    formatMoney,
+    getTenantLocalization,
+} from "../../lib/localization";
 // ---- Utilidades de fechas -------------------------------------------------
 const startOfDay = (d) => {
     const x = new Date(d);
@@ -90,6 +95,19 @@ const pctDelta = (curr, prev) => {
 
 // ----------------------------------------------------------------------------
 const Metrics = () => {
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const money = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
     // 1) Datos
     const { data: ordersData } = useQuery({ queryKey: ["orders"], queryFn: getOrders });
     const { data: dishesData } = useQuery({ queryKey: ["dishes"], queryFn: getDishes });
@@ -179,7 +197,9 @@ const Metrics = () => {
     const metricsData = [
         {
             title: "Ganancia",
-            value: `$${revenueNow.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            value: money(
+                revenueNow
+            ),
             color: "#3B82F6",
             isIncrease: revenueDelta.up,
             percentage: revenueDelta.text,

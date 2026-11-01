@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +16,15 @@ import Invoice from "../invoice/Invoice";
 import Ticket from "../ticket/Ticket";
 
 import useTenant from "../../hooks/useTenant";
-import api from "../../lib/api";
+import {
+    formatMoney,
+    getCurrencySymbol,
+    getTenantLocalization,
+} from "../../lib/localization";
+import api, { getScope } from "../../lib/api";
+import {
+    useTranslation,
+} from "react-i18next";
 
 import {
     buildDisplayItems,
@@ -224,10 +233,12 @@ const getRegisterStorageKey = () => {
         "noTenant";
 
     const clientId =
+        // Same source the API interceptor uses, not stale user data.
+        getScope()?.clientId ||
+        localStorage.getItem("clientId") ||
         u?.clientId ||
         u?.client?.clientId ||
         u?.client?._id ||
-        localStorage.getItem("clientId") ||
         "default";
 
     const userId =
@@ -276,6 +287,10 @@ const getTableIdFromAny = (value) => {
 };
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
+    const {
+        t,
+    } =
+        useTranslation();
     const dispatch = useDispatch();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
@@ -296,9 +311,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         dispatch(removeAllItems());
         dispatch(clearDraftContext());
         dispatch(removeCustomer());
-        enqueueSnackbar("La orden ya estaba cerrada. Se limpió el carrito para iniciar una nueva venta.", {
-            variant: "info",
-        });
+        enqueueSnackbar(
+            t("bill.messages.orderAlreadyClosed"),
+            {
+                variant: "info",
+            }
+        );
 
         navigate("/menu", { replace: true });
     }, [
@@ -330,7 +348,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     const cart = useSelector((state) => state.cart);
     const subtotalFromStore = useSelector(getTotalPrice);
-    const orderSource = String(order?.orderSource || "").toUpperCase();
+    const orderSource =
+        effectiveOrderSource;
 
     const isAppDelivery = orderSource === "PEDIDOSYA" || orderSource === "UBEREATS";
     const isInternalDelivery = orderSource === "DELIVERY";
@@ -343,15 +362,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         if (orderSource === "UBEREATS") setPaymentMethod("Uber Eats");
     }, [isAppDelivery, orderSource]);
 
-    const commissionRate = num(order?.commissionRate);
-    const commissionAmountFromServer = num(order?.commissionAmount);
-    const netTotalFromServer = num(order?.netTotal);
 
-// Comisión calculada en front como fallback (SIN TIP)
-// Base para comisión: base + tax (sin propina)
-
-
-    const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
 
 
     // Total del carrito (tu helper)
@@ -374,7 +385,69 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     // Tenant Info
     const { tenantInfo } = useTenant();
-    const tenantFeatures = tenantInfo?.features || {};
+
+    const tenantFeatures =
+        tenantInfo?.features ||
+        {};
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+    const isDominicanTenant =
+        String(
+            localization
+                ?.countryCode ||
+            tenantInfo
+                ?.localization
+                ?.countryCode ||
+            "DO"
+        )
+            .trim()
+            .toUpperCase() ===
+        "DO";
+
+    const money = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
+
+    const currencySymbol =
+        getCurrencySymbol(
+            localization
+        );
+
+    const configuredCommissionRate =
+        orderSource === "PEDIDOSYA"
+            ? num(
+                tenantFeatures
+                    ?.orderSources
+                    ?.pedidosYa
+                    ?.commissionRate ??
+                0
+            )
+            : orderSource === "UBEREATS"
+                ? num(
+                    tenantFeatures
+                        ?.orderSources
+                        ?.uberEats
+                        ?.commissionRate ??
+                    0
+                )
+                : 0;
+
+    const commissionRate =
+        num(
+            order?.commissionRate ??
+            configuredCommissionRate
+        );
+    const commissionAmountFromServer = num(order?.commissionAmount);
+    const netTotalFromServer = num(order?.netTotal);
+
+
+
+    const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
     const { data: usageSummary } = useQuery({
         queryKey: ["checkout-plan-usage"],
         queryFn: async () => {
@@ -397,27 +470,47 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const canUseCreditSales = rawPlan ? rawPlan !== "emprendedor" : false;
 
     const discountEnabledByTenant = tenantFeatures?.discount?.enabled === true;
-    const taxEnabledByTenant = tenantFeatures?.tax?.enabled === true;
-    const tipEnabledByTenant = tenantFeatures?.tip?.enabled === true;
-    const fiscalEnabledByTenant = !!tenantInfo?.fiscal?.enabled;
+    const tipEnabledByTenant =
+        tenantFeatures
+            ?.tip
+            ?.enabled !==
+        false;
+    const taxEnabledByTenant =
+        typeof tenantInfo
+            ?.taxConfig
+            ?.enabled ===
+        "boolean"
+            ? tenantInfo
+                .taxConfig
+                .enabled
+            : tenantFeatures
+                ?.tax
+                ?.enabled ===
+            true;
+
+    const fiscalEnabledByTenant =
+        isDominicanTenant &&
+        tenantInfo
+            ?.fiscal
+            ?.enabled === true;
+
     const chargeMode = tenantInfo?.features?.checkout?.chargeMode || "AT_COMPLETE";
 
     useEffect(() => {
 
-    }, [tenantInfo, tipEnabledByTenant, discountEnabledByTenant, taxEnabledByTenant]);
+    }, [tenantInfo, discountEnabledByTenant, taxEnabledByTenant]);
 
     useEffect(() => {
 
     }, [tenantInfo]);
     // Fiscal capability (nuevo modelo)
-    useEffect(() => {
-        if (!tipEnabledByTenant) {
-            setTipEnabled(false);
-            setTipPercent(0);
-        }
-    }, [tipEnabledByTenant]);
 
-    const fiscalEnabled = !!tenantInfo?.fiscal?.enabled;
+
+    const fiscalEnabled =
+        isDominicanTenant &&
+        tenantInfo
+            ?.fiscal
+            ?.enabled === true;
 
     const fiscalCapable = useMemo(() => {
         if (!fiscalEnabledByTenant) return false;
@@ -429,7 +522,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         return b01 || b02;
     }, [tenantInfo, fiscalEnabled, fiscalEnabledByTenant]);
 
-    const allowedNcfTypes = useMemo(() => {
+    const tenantAllowedNcfTypes = useMemo(() => {
         const list = [
             tenantInfo?.fiscal?.ncfConfig?.B01?.active ? "B01" : null,
             tenantInfo?.fiscal?.ncfConfig?.B02?.active ? "B02" : null,
@@ -451,6 +544,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     const submitActionRef = useRef("invoice");
     const printTargetRef = useRef("invoice");
+    const ecfRecoveryOrderIdRef = useRef(null); // Previene refacturación por un intento sin confirmar.
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     useEffect(() => {
@@ -497,6 +591,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [showInvoice, setShowInvoice] = useState(false);
     const [orderInfo, setOrderInfo] = useState(null);
     const [releaseFromInvoiceLoading, setReleaseFromInvoiceLoading] = useState(false);
+    const [confirmReleaseInvoice, setConfirmReleaseInvoice] = useState(false);
 
     const [itemsToPrint, setItemsToPrint] = useState([]);
     const [lastPayloadItems, setLastPayloadItems] = useState([]);
@@ -510,6 +605,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         setCustomerName("");
         setCustomerPhone("");
         setCustomerAddress("");
+        setManualTip("");
         setCustomerRnc("");
         setGuests(0);
 
@@ -571,49 +667,97 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [dgiiStatus, setDgiiStatus] = useState(""); // "", "FOUND", "NOT_FOUND", "ERROR"
     const [dgiiFound, setDgiiFound] = useState(null);
 
-    // Propina + ITBIS
-    const [tipEnabled, setTipEnabled] = useState(true);
-    const [tipPercent, setTipPercent] = useState(10);
-    const [taxEnabled, setTaxEnabled] = useState(true);
-    const effectiveOrderId = orderId || order?._id || null;
 
+
+// ======================================================
+// TIP MANUAL + IMPUESTOS
+// ======================================================
+
+    const [manualTip, setManualTip] =
+        useState("");
+
+    const [taxEnabled, setTaxEnabled] =
+        useState(true);
+
+    const effectiveOrderId =
+        orderId ||
+        order?._id ||
+        null;
     const {
         data: ecfTenantStatus,
         isLoading: isLoadingEcfTenantStatus,
     } = useQuery({
-        queryKey: ["tenant-ecf-status"],
+        // Avoid serving the cached e-CF status of a different branch/user.
+        queryKey: ["tenant-ecf-status", getRegisterStorageKey()],
         queryFn: async () => {
             const res = await api.get("/api/order/ecf/status");
             return res.data?.data || null;
         },
+        enabled:
+        isDominicanTenant,
         staleTime: 30_000,
         refetchOnMount: true,
     });
 
-    const ecfFeatureEnabled = ecfTenantStatus?.enabled === true;
-    const ecfCanIssueByTenant = ecfTenantStatus?.canIssue === true;
-    const isEcfMode = ecfFeatureEnabled === true;
+    const { data: ecfPermissionsResponse } = useQuery({
+        queryKey: ["order-ecf-permissions", getRegisterStorageKey()],
+        queryFn: async () => (await api.get("/api/order/ecf/permissions")).data,
+        enabled: isDominicanTenant && ecfTenantStatus?.enabled === true &&
+            ecfTenantStatus?.branch?.prepared === true,
+        retry: 0,
+        staleTime: 30_000,
+    });
+    const canIssueEcf = ecfPermissionsResponse?.data?.issue === true;
+
+    // NCF B01/B02: la sede consume los rangos del RNC compartido, pero el
+    // backend devuelve solo flags de disponibilidad. Es necesario para Cajera,
+    // a quien /api/tenant no expone por diseño los detalles fiscales privados.
+    const readonlyNcf = ecfTenantStatus?.legacyNcf;
+    const allowedNcfTypes = Array.isArray(readonlyNcf?.availableTypes)
+        ? readonlyNcf.availableTypes.filter((t) => t === "B01" || t === "B02")
+        : tenantAllowedNcfTypes;
+    const effectiveLegacyNcfCapable = readonlyNcf
+        ? readonlyNcf.available === true && readonlyNcf.enabled === true && allowedNcfTypes.length > 0
+        : fiscalCapable;
+
+    const ecfFeatureEnabled =
+        isDominicanTenant && ecfTenantStatus?.enabled === true;
+    const ecfCanIssueByTenant =
+        isDominicanTenant &&
+        ecfTenantStatus
+            ?.canIssue === true;
+    // El perfil es global pero la ELECCIÓN de usar e-CF pertenece a cada sede.
+    // Si la sede lo desactiva, el POS vuelve a NCF B01/B02 configurados.
+    const isEcfMode = isDominicanTenant &&
+        ecfTenantStatus?.sharedProfileEnabled === true &&
+        ecfTenantStatus?.branch?.prepared === true;
 
     const e31Enabled = ecfTenantStatus?.documentTypes?.e31?.enabled === true;
     const e32Enabled = ecfTenantStatus?.documentTypes?.e32?.enabled === true;
 
     const electronicFiscalCapable =
-        isEcfMode && ecfCanIssueByTenant && (e31Enabled || e32Enabled);
+        isEcfMode && ecfCanIssueByTenant && canIssueEcf && (e31Enabled || e32Enabled);
 
-    const fiscalUiEnabled = isEcfMode
-        ? electronicFiscalCapable
-        : fiscalEnabledByTenant;
+    const fiscalUiEnabled = isDominicanTenant && (isLoadingEcfTenantStatus ||
+        (isEcfMode ? true : (readonlyNcf ? readonlyNcf.enabled : fiscalEnabledByTenant)));
 
-    const fiscalUiCapable = isEcfMode
-        ? electronicFiscalCapable
-        : fiscalCapable;
+    const fiscalUiCapable = !isLoadingEcfTenantStatus && ecfTenantStatus != null &&
+        (isEcfMode ? electronicFiscalCapable : effectiveLegacyNcfCapable);
+    const ecfBlockers = isEcfMode
+        ? [
+            ...((ecfTenantStatus?.errors || []).map(String)),
+            ...(ecfTenantStatus?.branch?.prepared === false ? ["Esta sucursal tiene e-CF desactivado"] : []),
+            ...(!canIssueEcf && ecfTenantStatus?.canIssue === true ? ["Tu usuario no tiene permiso para emitir e-CF"] : []),
+        ]
+        : [];
+
 
     const {
         data: orderEcfStatus,
         isLoading: isLoadingOrderEcfStatus,
         refetch: refetchOrderEcfStatus,
     } = useQuery({
-        queryKey: ["order-ecf-status", effectiveOrderId],
+        queryKey: ["order-ecf-status", getRegisterStorageKey(), effectiveOrderId],
         enabled: Boolean(effectiveOrderId && ecfFeatureEnabled),
         queryFn: async () => {
             const res = await api.get(`/api/order/${effectiveOrderId}/ecf`);
@@ -626,39 +770,62 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const existingEcf = orderEcfStatus?.exists === true ? orderEcfStatus?.data : null;
     const hasExistingEcf = Boolean(existingEcf?.eNCF);
     const [ecfDocType, setEcfDocType] = useState("e32");
+    const fiscalBranchContext = getRegisterStorageKey();
+    useEffect(() => {
+        // Never carry a checked e-CF/NCF toggle into a different branch.
+        setWantsFiscal(false);
+        ecfRecoveryOrderIdRef.current = null;
+    }, [fiscalBranchContext]);
+
 
     useEffect(() => {
-        if (!order?._id) return;
-
-        const bills = order?.bills || {};
-        const savedTax = bills?.taxEnabled;
-        const savedTipAmount = num(bills?.tipAmount ?? bills?.tip ?? 0);
-        const savedTipEnabled =
-            typeof bills?.tipEnabled === "boolean"
-                ? bills.tipEnabled
-                : savedTipAmount > 0;
-
-        if (typeof savedTax === "boolean") {
-            setTaxEnabled(savedTax);
-        } else {
-            setTaxEnabled(taxEnabledByTenant);
+        if (!order?._id) {
+            setManualTip("");
+            return;
         }
 
-        setTipEnabled(savedTipEnabled);
+        const bills =
+            order?.bills ||
+            {};
 
-        if (savedTipAmount > 0 && subtotal > 0) {
-            const discountAmt = num(bills?.discount ?? 0);
-            const base = Math.max(subtotal - discountAmt, 0);
-            const pct = base > 0 ? (savedTipAmount / base) * 100 : 0;
-            setTipPercent(Number(pct.toFixed(2)));
+        const savedTax =
+            bills?.taxEnabled;
+
+        const savedTipAmount =
+            num(
+                bills?.tipAmount ??
+                bills?.tip ??
+                0
+            );
+
+        if (
+            typeof savedTax ===
+            "boolean"
+        ) {
+            setTaxEnabled(
+                savedTax
+            );
         } else {
-            setTipPercent(0);
+            setTaxEnabled(
+                taxEnabledByTenant
+            );
         }
-    }, [order?._id, order?.bills, subtotal, taxEnabledByTenant]);
+
+        setManualTip(
+            savedTipAmount > 0
+                ? String(
+                    savedTipAmount
+                )
+                : ""
+        );
+    }, [
+        order?._id,
+        order?.bills,
+        taxEnabledByTenant,
+    ]);
 
 
-    const TAX_RATE = 18;
-    const LEGAL_TIP_RATE = 10;
+
     useEffect(() => {
         if (!order?._id) return;
 
@@ -710,6 +877,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     useEffect(() => {
         if (!discountEnabledByTenant) setDiscountValue(0);
     }, [discountEnabledByTenant]);
+    useEffect(() => {
+        if (
+            !tipEnabledByTenant
+        ) {
+            setManualTip("");
+        }
+    }, [
+        tipEnabledByTenant,
+    ]);
 
     useEffect(() => {
         if (!taxEnabledByTenant) setTaxEnabled(false);
@@ -719,65 +895,396 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         if (!fiscalUiEnabled) setWantsFiscal(false);
     }, [fiscalUiEnabled]);
     // Totales
-    const { discount, base, deliveryFeeCalc, tax, tip, total } = useMemo(() => {
-        const discountCalc =
-            discountType === "percent"
-                ? (subtotal * num(discountValue || 0)) / 100
-                : num(discountValue || 0);
+    const discountPreview =
+        useMemo(() => {
+            const value =
+                discountType ===
+                "percent"
+                    ? (
+                        subtotal *
+                        num(
+                            discountValue ||
+                            0
+                        )
+                    ) /
+                    100
+                    : num(
+                        discountValue ||
+                        0
+                    );
 
-        const baseCalc = Math.max(subtotal - discountCalc, 0);
+            return Number(
+                Math.min(
+                    Math.max(
+                        value,
+                        0
+                    ),
+                    subtotal
+                ).toFixed(2)
+            );
+        }, [
+            subtotal,
+            discountType,
+            discountValue,
+        ]);
 
-        const ship = isInternalDelivery ? Math.max(num(deliveryFee || 0), 0) : 0;
+    const deliveryFeePreview =
+        useMemo(
+            () =>
+                isInternalDelivery
+                    ? Number(
+                        Math.max(
+                            num(
+                                deliveryFee ||
+                                0
+                            ),
+                            0
+                        ).toFixed(2)
+                    )
+                    : 0,
+            [
+                isInternalDelivery,
+                deliveryFee,
+            ]
+        );
+    const taxPreviewItems =
+        useMemo(
+            () =>
+                itemsArray.map(
+                    (item) => {
+                        const quantity =
+                            num(
+                                item
+                                    .quantity ??
+                                1
+                            );
 
-        const effectiveTaxRate = taxEnabled ? TAX_RATE : 0;
+                        const dishId =
+                            item.dishId ??
+                            item.id ??
+                            item.dish ??
+                            item._id;
 
-        const taxableBase = baseCalc + ship;
-        const taxCalc = (taxableBase * effectiveTaxRate) / 100;
+                        const qtyType =
+                            item.qtyType ||
+                            "unit";
 
-        const tipCalc =
-            tipEnabledByTenant && tipEnabled
-                ? (baseCalc * LEGAL_TIP_RATE) / 100
-                : 0;
+                        const weightUnit =
+                            qtyType ===
+                            "weight"
+                                ? (
+                                    item
+                                        .weightUnit ||
+                                    "lb"
+                                )
+                                : "";
 
-        return {
-            discount: discountCalc,
-            base: baseCalc,
-            deliveryFeeCalc: ship,
-            tax: taxCalc,
-            tip: tipCalc,
-            total: taxableBase + taxCalc + tipCalc,
-        };
-    }, [
-        subtotal,
-        discountType,
-        discountValue,
-        taxEnabled,
-        tipEnabled,
-        tipEnabledByTenant,
-        isInternalDelivery,
-        deliveryFee,
-    ]);
+                        const unitPrice =
+                            qtyType ===
+                            "weight"
+                                ? num(
+                                    item
+                                        .unitPrice ??
+                                    item
+                                        .pricePerQuantity ??
+                                    0
+                                )
+                                : num(
+                                    item
+                                        .unitPrice ??
+                                    item
+                                        .pricePerQuantity ??
+                                    item.price ??
+                                    0
+                                );
 
-    const computedCommission = useMemo(() => {
-        if (!isAppDelivery) return 0;
-        const rate = num(commissionRate);
-        if (!rate) return 0;
+                        const lineTotal =
+                            qtyType ===
+                            "weight"
+                                ? num(
+                                    item.price ??
+                                    (
+                                        unitPrice *
+                                        quantity
+                                    )
+                                )
+                                : Number(
+                                    (
+                                        unitPrice *
+                                        quantity
+                                    ).toFixed(
+                                        2
+                                    )
+                                );
 
-        // comisión SIN tip: (base + tax) * rate
-        const baseNoTip = num(base) + num(tax);
-        const val = baseNoTip * rate;
+                        return {
+                            dishId,
 
-        return Number(val.toFixed(2));
-    }, [isAppDelivery, commissionRate, base, tax]);
+                            dish:
+                            dishId,
+
+                            name:
+                                item.name ||
+                                "Producto",
+
+                            qtyType,
+
+                            weightUnit,
+
+                            quantity,
+
+                            unitPrice,
+
+                            price:
+                                Number(
+                                    lineTotal.toFixed(
+                                        2
+                                    )
+                                ),
+
+                            productionArea:
+                                item
+                                    .productionArea ||
+                                "kitchen",
+
+                            note:
+                                String(
+                                    item?.note ||
+                                    ""
+                                ).trim(),
+
+                            addons:
+                                Array.isArray(
+                                    item
+                                        ?.addons
+                                )
+                                    ? item.addons
+                                    : [],
+
+                            modifiers:
+                                Array.isArray(
+                                    item
+                                        ?.modifiers
+                                )
+                                    ? item.modifiers
+                                    : [],
+                        };
+                    }
+                ),
+            [
+                itemsArray,
+            ]
+        );
+    const taxPreviewPayload =
+        useMemo(
+            () => ({
+                items:
+                taxPreviewItems,
+
+                discountAmount:
+                discountPreview,
+
+                deliveryFee:
+                deliveryFeePreview,
+
+                taxEnabled:
+                taxEnabled,
+
+                orderSource:
+                orderSource,
+            }),
+            [
+                taxPreviewItems,
+                discountPreview,
+                deliveryFeePreview,
+                taxEnabled,
+                orderSource,
+            ]
+        );
+    const {
+        data: taxPreview,
+        isFetching:
+            taxPreviewLoading,
+    } = useQuery({
+        queryKey: [
+            "order-tax-preview",
+            effectiveOrderId ||
+            "draft",
+            taxPreviewPayload,
+        ],
+
+        queryFn: async () => {
+            const res =
+                await api.post(
+                    "/api/order/tax-preview",
+                    taxPreviewPayload
+                );
+
+            return (
+                res.data?.data ||
+                null
+            );
+        },
+
+        enabled:
+            itemsArray.length >
+            0,
+
+        staleTime:
+            0,
+
+        retry:
+            false,
+    });
+    const discount =
+        discountPreview;
+
+    const deliveryFeeCalc =
+        deliveryFeePreview;
+
+    const base =
+        Number(
+            (
+                taxPreview
+                    ?.subtotalAfterDiscount ??
+                Math.max(
+                    subtotal -
+                    discount,
+                    0
+                )
+            ).toFixed(2)
+        );
+
+    const tax =
+        Number(
+            (
+                taxPreview
+                    ?.taxTotal ??
+                0
+            ).toFixed(2)
+        );
+
+    const taxBreakdown =
+        Array.isArray(
+            taxPreview
+                ?.taxBreakdown
+        )
+            ? taxPreview.taxBreakdown
+            : [];
+
+    const serviceChargeBreakdown =
+        Array.isArray(
+            taxPreview
+                ?.serviceChargeBreakdown
+        )
+            ? taxPreview
+                .serviceChargeBreakdown
+            : [];
+
+    const serviceChargeTotal =
+        num(
+            taxPreview
+                ?.serviceChargeTotal
+        );
+    const totalBeforeTip =
+        Number(
+            (
+                taxPreview
+                    ?.totalBeforeTip ??
+                (
+                    base +
+                    deliveryFeeCalc
+                )
+            ).toFixed(2)
+        );
+
+// Propina RD temporal.
+// La sacaremos de aquí en Fase 2C.
+// ======================================================
+// TIP MANUAL
+// ======================================================
+
+    const tip =
+        tipEnabledByTenant
+            ? Number(
+                Math.max(
+                    num(
+                        manualTip
+                    ),
+                    0
+                ).toFixed(2)
+            )
+            : 0;
+    const total =
+        Number(
+            (
+                totalBeforeTip +
+                tip
+            ).toFixed(2)
+        );
+    // ======================================================
+// BASE REAL PARA COMISION
+// ======================================================
+//
+// Debe coincidir con backend:
+//
+// taxResult.itemsTotalWithTax
+//
+// No incluye propina.
+// No incluye delivery.
+// Funciona con impuestos incluidos y no incluidos.
+// ======================================================
+
+    const commissionBasePreview =
+        num(
+            taxPreview
+                ?.itemsTotalWithTax ??
+            Math.max(
+                totalBeforeTip -
+                deliveryFeeCalc,
+                0
+            )
+        );
+
+    const computedCommission =
+        useMemo(() => {
+            if (!isAppDelivery) {
+                return 0;
+            }
+
+            const rate =
+                num(
+                    commissionRate
+                );
+
+            if (!rate) {
+                return 0;
+            }
+
+            const val =
+                commissionBasePreview *
+                rate;
+
+            return Number(
+                val.toFixed(2)
+            );
+        }, [
+            isAppDelivery,
+            commissionRate,
+            commissionBasePreview,
+        ]);
 
     const commissionAmountEffective = useMemo(() => {
         const serverVal = num(commissionAmountFromServer);
         return serverVal > 0 ? serverVal : computedCommission;
     }, [commissionAmountFromServer, computedCommission]);
 
-    const totalToPay = useMemo(() => {
-        return isAppDelivery ? num(total) + num(commissionAmountEffective) : num(total);
-    }, [isAppDelivery, total, commissionAmountEffective]);
+    const totalToPay =
+        useMemo(
+            () =>
+                num(total),
+            [total]
+        );
     const cashReceivedAmount = useMemo(() => num(cashReceived), [cashReceived]);
 
     const cashChange = useMemo(() => {
@@ -813,8 +1320,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ? Number(num(cashMissing).toFixed(2))
                 : 0,
             message: itemsArray.length
-                ? "Revise su pedido antes de pagar."
-                : "Su orden aparecerá aquí.",
+                ? t("bill.customerDisplay.review")
+                : t("bill.customerDisplay.empty"),
         });
     }, [
         itemsArray,
@@ -838,7 +1345,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             setWantsFiscal(false);
             enqueueSnackbar(
                 isEcfMode
-                    ? "Este tenant no tiene e-CF listo para emitir."
+                    ? "Esta sucursal no tiene e-CF habilitado o el perfil fiscal aún no está listo."
                     : "Este tenant no tiene NCF habilitado/configurado.",
                 { variant: "warning" }
             );
@@ -865,6 +1372,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
     // DGII lookup (solo si el cliente pide fiscal y escribe RNC/Cédula)
     const lookupDgii = async (doc) => {
+        if (
+            !isDominicanTenant
+        ) {
+            setDgiiStatus("");
+            setDgiiFound(null);
+
+            return;
+        }
         const cleaned = String(doc || "").replace(/[^\d]/g, "");
 
         // solo buscar si parece RNC/Cédula
@@ -908,7 +1423,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 setDgiiFound(null);
 
                 // ✅ Aviso claro si no se autocompleta
-                if (wantsFiscal && fiscalCapable && !String(customerName || "").trim()) {
+                if (wantsFiscal && effectiveLegacyNcfCapable && !String(customerName || "").trim()) {
                     enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
                         variant: "warning",
                     });
@@ -918,7 +1433,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             setDgiiStatus("ERROR");
             setDgiiFound(null);
 
-            if (wantsFiscal && fiscalCapable && !String(customerName || "").trim()) {
+            if (wantsFiscal && effectiveLegacyNcfCapable && !String(customerName || "").trim()) {
                 enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
                     variant: "warning",
                 });
@@ -994,18 +1509,75 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         // Bills consistentes
         const bills = {
-            subtotal: num(subtotal),
-            discount: num(discount),
-            tax: num(tax),
-            tip: num(tip),
+            subtotal:
+                num(
+                    subtotal
+                ),
 
-            totalWithTax: num(total),
+            discount:
+                num(
+                    discount
+                ),
+
+            tax:
+                num(
+                    tax
+                ),
+
+            serviceChargeTotal:
+                num(
+                    serviceChargeTotal
+                ),
+
+            serviceChargeBreakdown:
+            serviceChargeBreakdown,
+            // ==========================================
+            // TIP MANUAL
+            // ==========================================
+
+            tipEnabled:
+                tip > 0,
+
+            tip:
+                num(
+                    tip
+                ),
+
+            tipAmount:
+                num(
+                    tip
+                ),
+
+
+            // ==========================================
+
+            totalWithTax:
+                num(
+                    total
+                ),
+
             taxEnabled,
-            tipEnabled,
-            deliveryFee: num(deliveryFeeCalc),
 
-            cashReceived: paymentMethod === "Efectivo" ? num(cashReceivedAmount) : 0,
-            cashChange: paymentMethod === "Efectivo" ? num(cashChange) : 0,
+            deliveryFee:
+                num(
+                    deliveryFeeCalc
+                ),
+
+            cashReceived:
+                paymentMethod ===
+                "Efectivo"
+                    ? num(
+                        cashReceivedAmount
+                    )
+                    : 0,
+
+            cashChange:
+                paymentMethod ===
+                "Efectivo"
+                    ? num(
+                        cashChange
+                    )
+                    : 0,
         };
 
         const action = String(target || "").trim().toLowerCase();
@@ -1065,28 +1637,177 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         const finalGuests =
             Number(guests || draft?.guests || order?.customerDetails?.guests || 0);
+        const rawCustomerTaxIdentity =
+            draft
+                ?.customerTaxIdentity ||
+            draft
+                ?.taxIdentity ||
+            order
+                ?.customerDetails
+                ?.taxIdentity ||
+            null;
 
+
+        const finalCustomerTaxIdentity =
+            rawCustomerTaxIdentity &&
+            String(
+                rawCustomerTaxIdentity
+                    ?.value ||
+                ""
+            ).trim()
+                ? {
+                    countryCode:
+                        String(
+                            rawCustomerTaxIdentity
+                                ?.countryCode ||
+                            localization
+                                ?.countryCode ||
+                            ""
+                        )
+                            .trim()
+                            .toUpperCase(),
+
+                    type:
+                        String(
+                            rawCustomerTaxIdentity
+                                ?.type ||
+                            "TAX_ID"
+                        )
+                            .trim()
+                            .toUpperCase(),
+
+                    label:
+                        String(
+                            rawCustomerTaxIdentity
+                                ?.label ||
+                            rawCustomerTaxIdentity
+                                ?.type ||
+                            "Tax ID"
+                        ).trim(),
+
+                    value:
+                        String(
+                            rawCustomerTaxIdentity
+                                ?.value ||
+                            ""
+                        ).trim(),
+                }
+                : (
+                    isDominicanTenant &&
+                    String(
+                        customerRnc ||
+                        ""
+                    ).trim()
+                        ? {
+                            countryCode:
+                                "DO",
+
+                            type:
+                                String(
+                                    customerRnc ||
+                                    ""
+                                )
+                                    .replace(
+                                        /\D/g,
+                                        ""
+                                    )
+                                    .length ===
+                                11
+                                    ? "CEDULA"
+                                    : "RNC",
+
+                            label:
+                                String(
+                                    customerRnc ||
+                                    ""
+                                )
+                                    .replace(
+                                        /\D/g,
+                                        ""
+                                    )
+                                    .length ===
+                                11
+                                    ? "Cédula"
+                                    : "RNC",
+
+                            value:
+                                String(
+                                    customerRnc ||
+                                    ""
+                                ).trim(),
+                        }
+                        : null
+                );
+
+
+        const legacyCustomerTaxValue =
+            finalCustomerTaxIdentity
+                ?.countryCode === "DO"
+                ? String(
+                    finalCustomerTaxIdentity
+                        ?.value ||
+                    ""
+                ).trim()
+                : "";
         const hasCustomerData =
             selectedCustomerId ||
             finalCustomerName ||
             finalCustomerPhone ||
             finalCustomerAddress ||
-            String(customerRnc || "").trim() ||
+            finalCustomerTaxIdentity
+                ?.value ||
             finalGuests > 0;
 
-        if (hasCustomerData) {
+
+        if (
+            hasCustomerData
+        ) {
             basePayload.customerDetails = {
-                name: finalCustomerName || "Consumidor Final",
-                rnc: String(customerRnc || order?.customerDetails?.rnc || "").trim(),
-                rncCedula: String(order?.customerDetails?.rncCedula || customerRnc || "").trim(),
-                guests: finalGuests,
-                phone: finalCustomerPhone,
-                address: finalCustomerAddress,
+                name:
+                    finalCustomerName ||
+                    "Consumidor Final",
+
+                phone:
+                finalCustomerPhone,
+
+                address:
+                finalCustomerAddress,
+
+                guests:
+                finalGuests,
+
+
+                // ==========================================
+                // IDENTIFICACIÓN INTERNACIONAL
+                // ==========================================
+
+                taxIdentity:
+                finalCustomerTaxIdentity,
+
+
+                // ==========================================
+                // DGII LEGACY - SOLO RD
+                // ==========================================
+
+                rnc:
+                legacyCustomerTaxValue,
+
+                rncCedula:
+                legacyCustomerTaxValue,
             };
         }
 
+        // Explicitly tell backend the cashier did NOT request a fiscal NCF
+        // (or an e-CF) for this invoice; don't inherit an old draft toggle.
+        if (isInvoiceSubmit && isDominicanTenant) {
+            basePayload.fiscal = { requested: false, ecfDocumentType: null, ncfType: null };
+        }
         // fiscal (si aplica)
-        if (wantsFiscal && fiscalUiCapable) {
+        if (
+            isDominicanTenant &&
+            target === "invoice" &&
+            (isEcfMode || (wantsFiscal && fiscalUiCapable))
+        ) {
             if (isEcfMode) {
                 const selectedEcfType = String(ecfDocType || "e32").toLowerCase();
 
@@ -1304,16 +2025,153 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             });
 
             const bills = {
-                subtotal: server.bills?.subtotal ?? server.bills?.total ?? fallback.bills?.subtotal ?? 0,
-                discount: server.bills?.discount ?? fallback.bills?.discount ?? 0,
-                tax: server.bills?.tax ?? fallback.bills?.tax ?? 0,
-                tip: server.bills?.tip ?? server.bills?.tipAmount ?? fallback.bills?.tip ?? 0,
-                totalWithTax: server.bills?.totalWithTax ?? fallback.bills?.totalWithTax ?? 0,
-                taxEnabled: server.bills?.taxEnabled ?? fallback.bills?.taxEnabled ?? true,
-                tipEnabled: server.bills?.tipEnabled ?? fallback.bills?.tipEnabled ?? true,
-                deliveryFee: server.bills?.deliveryFee ?? fallback.bills?.deliveryFee ?? 0,
-                cashReceived: server.bills?.cashReceived ?? fallback.bills?.cashReceived ?? 0,
-                cashChange: server.bills?.cashChange ?? fallback.bills?.cashChange ?? 0,
+                // ==========================================
+                // CAMPOS LEGACY / COMPATIBILIDAD
+                // ==========================================
+
+                subtotal:
+                    server.bills?.subtotal ??
+                    server.bills?.total ??
+                    fallback.bills?.subtotal ??
+                    0,
+
+                discount:
+                    server.bills?.discount ??
+                    fallback.bills?.discount ??
+                    0,
+
+                tax:
+                    server.bills?.tax ??
+                    fallback.bills?.tax ??
+                    0,
+
+                tip:
+                    server.bills?.tip ??
+                    server.bills?.tipAmount ??
+                    fallback.bills?.tip ??
+                    0,
+
+                totalWithTax:
+                    server.bills?.totalWithTax ??
+                    fallback.bills?.totalWithTax ??
+                    0,
+
+                taxEnabled:
+                    server.bills?.taxEnabled ??
+                    fallback.bills?.taxEnabled ??
+                    true,
+
+                tipEnabled:
+                    server.bills
+                        ?.tipEnabled ??
+                    fallback.bills
+                        ?.tipEnabled ??
+                    false,
+
+                tipAmount:
+                    server.bills
+                        ?.tipAmount ??
+                    server.bills
+                        ?.tip ??
+                    fallback.bills
+                        ?.tipAmount ??
+                    fallback.bills
+                        ?.tip ??
+                    0,
+
+                deliveryFee:
+                    server.bills?.deliveryFee ??
+                    fallback.bills?.deliveryFee ??
+                    0,
+
+                cashReceived:
+                    server.bills?.cashReceived ??
+                    fallback.bills?.cashReceived ??
+                    0,
+
+                cashChange:
+                    server.bills?.cashChange ??
+                    fallback.bills?.cashChange ??
+                    0,
+
+
+                // ==========================================
+                // MOTOR DE IMPUESTOS NUEVO
+                // ==========================================
+
+                taxEngineVersion:
+                    server.bills
+                        ?.taxEngineVersion ??
+                    taxPreview
+                        ?.engineVersion ??
+                    1,
+
+                subtotalAfterDiscount:
+                    server.bills
+                        ?.subtotalAfterDiscount ??
+                    taxPreview
+                        ?.subtotalAfterDiscount ??
+                    0,
+
+                netAmount:
+                    server.bills
+                        ?.netAmount ??
+                    taxPreview
+                        ?.netAmount ??
+                    0,
+
+                deliveryTaxAmount:
+                    server.bills
+                        ?.deliveryTaxAmount ??
+                    taxPreview
+                        ?.deliveryTaxAmount ??
+                    0,
+
+                taxBreakdown:
+                    Array.isArray(
+                        server.bills
+                            ?.taxBreakdown
+                    )
+                        ? server.bills
+                            .taxBreakdown
+                        : (
+                            Array.isArray(
+                                taxPreview
+                                    ?.taxBreakdown
+                            )
+                                ? taxPreview
+                                    .taxBreakdown
+                                : []
+                        ),
+                serviceChargeTotal:
+                    server.bills
+                        ?.serviceChargeTotal ??
+                    taxPreview
+                        ?.serviceChargeTotal ??
+                    fallback.bills
+                        ?.serviceChargeTotal ??
+                    0,
+
+                serviceChargeBreakdown:
+                    Array.isArray(
+                        server.bills
+                            ?.serviceChargeBreakdown
+                    )
+                        ? server.bills
+                            .serviceChargeBreakdown
+                        : (
+                            Array.isArray(
+                                taxPreview
+                                    ?.serviceChargeBreakdown
+                            )
+                                ? taxPreview
+                                    .serviceChargeBreakdown
+                                : (
+                                    fallback.bills
+                                        ?.serviceChargeBreakdown ||
+                                    []
+                                )
+                        ),
             };
 
             const fallbackFiscal = fallback?.fiscal ?? null;
@@ -1396,7 +2254,28 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     qty: q,
                     unitPrice: unit,
                     price: line,
-                    tax: Number((line * 0.18).toFixed(2)),
+                    tax:
+                        num(
+                            it?.taxAmount ??
+                            it
+                                ?.taxSnapshot
+                                ?.amount ??
+                            0
+                        ),
+
+                    taxAmount:
+                        num(
+                            it?.taxAmount ??
+                            it
+                                ?.taxSnapshot
+                                ?.amount ??
+                            0
+                        ),
+
+                    taxSnapshot:
+                        it
+                            ?.taxSnapshot ||
+                        null,
                 };
             });
 
@@ -1448,11 +2327,70 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 commissionAmount: server.commissionAmount,
                 netTotal: server.netTotal,
                 customerDetails: {
-                    name: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
-                    rnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
-                    guests: server.customerDetails?.guests ?? fallback.customerDetails?.guests ?? 0,
-                    phone: server.customerDetails?.phone ?? fallback.customerDetails?.phone ?? "",
-                    address: server.customerDetails?.address ?? fallback.customerDetails?.address ?? "",
+                    name:
+                        server
+                            ?.customerDetails
+                            ?.name ??
+                        fallback
+                            ?.customerDetails
+                            ?.name ??
+                        "",
+
+                    phone:
+                        server
+                            ?.customerDetails
+                            ?.phone ??
+                        fallback
+                            ?.customerDetails
+                            ?.phone ??
+                        "",
+
+                    address:
+                        server
+                            ?.customerDetails
+                            ?.address ??
+                        fallback
+                            ?.customerDetails
+                            ?.address ??
+                        "",
+
+                    guests:
+                        server
+                            ?.customerDetails
+                            ?.guests ??
+                        fallback
+                            ?.customerDetails
+                            ?.guests ??
+                        0,
+
+
+                    taxIdentity:
+                        server
+                            ?.customerDetails
+                            ?.taxIdentity ??
+                        fallback
+                            ?.customerDetails
+                            ?.taxIdentity ??
+                        null,
+
+
+                    rnc:
+                        server
+                            ?.customerDetails
+                            ?.rnc ??
+                        fallback
+                            ?.customerDetails
+                            ?.rnc ??
+                        "",
+
+                    rncCedula:
+                        server
+                            ?.customerDetails
+                            ?.rncCedula ??
+                        fallback
+                            ?.customerDetails
+                            ?.rncCedula ??
+                        "",
                 },
                 customerName: server.customerDetails?.name ?? fallback.customerDetails?.name ?? "",
                 customerRnc: server.customerDetails?.rnc ?? fallback.customerDetails?.rnc ?? "",
@@ -1475,12 +2413,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 expirationDate: resolvedExpirationDate,
             };
 
-            console.log("[BILL][invoice payload final]", invoice);
-            console.log("[BILL][server order final]", server);
-            console.log("[BILL][fallbackFiscal]", fallbackFiscal);
-            console.log("[BILL][fiscal armado]", fiscal);
-            console.log("[BILL][resolvedNcfType]", resolvedNcfType);
-            console.log("[BILL][resolvedNcfNumber]", resolvedNcfNumber);
 
 
             if (currentPrintTarget !== "ticket") {
@@ -1529,10 +2461,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     area,
                     title:
                         area === "bar"
-                            ? "BAR"
+                            ? t("bill.production.bar")
                             : area === "kitchen"
-                                ? "COCINA"
-                                : "PRODUCCION",
+                                ? t("bill.production.kitchen")
+                                : t("bill.production.production"),
                     printerCategory: area,
                     order: {
                         ...invoice,
@@ -1545,7 +2477,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     setProductionFallbackTickets(fallbackTickets);
                     setShowProductionFallback(true);
                 } else {
-                    enqueueSnackbar("No hay platos nuevos para imprimir.", {
+                    enqueueSnackbar(t("bill.messages.noNewItems"), {
                         variant: "info",
                     });
                 }
@@ -1558,8 +2490,28 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                 return;
             }
-            const ecfFromBackend = server?.ecf || res?.data?.data?.ecf || null;
-
+            const checkoutRequestedEcf = currentPrintTarget === "invoice" &&
+                ["31", "32"].includes(String(fallback?.fiscal?.ecfDocumentType || "").replace(/^e/i, ""));
+            // A fresh GET of the order does not populate the separate ECF document.
+            // Resolve the authoritative order ECF record before printing a QR.
+            let ecfFromBackend = res?.data?.data?.ecf || server?.ecf || null;
+            if (checkoutRequestedEcf && effectiveId) {
+                try {
+                    const status = (await api.get(`/api/order/${encodeURIComponent(String(effectiveId))}/ecf`)).data;
+                    if (status?.exists === true && status?.data?.eNCF) {
+                        ecfFromBackend = { exists:true, ...status.data };
+                    }
+                } catch (statusError) {
+                    // Never fabricate an ECF. The original issue response may still
+                    // contain a complete document; otherwise the guard below blocks it.
+                    console.warn("[BILL] No fue posible consultar el e-CF emitido:", statusError?.message);
+                }
+            }
+            if (checkoutRequestedEcf && (!ecfFromBackend?.exists || !ecfFromBackend?.eNCF || !ecfFromBackend?.qrUrl)) {
+                ecfRecoveryOrderIdRef.current = effectiveId || "revisar orden";
+                enqueueSnackbar(`No se confirmó el e-CF de la orden ${ecfRecoveryOrderIdRef.current}. Consulta su estado antes de reintentar; NO factures nuevamente.`, { variant: "error", autoHideDuration: 12000 });
+                return;
+            }
             if (ecfFromBackend?.error) {
                 enqueueSnackbar(
                     ecfFromBackend.message === "E32_OVER_250K_REQUIRES_BUYER_DOCUMENT"
@@ -1571,7 +2523,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return;
             }
 
-            enqueueSnackbar("Factura generada correctamente.", { variant: "success" });
+            enqueueSnackbar(t("bill.messages.invoiceGenerated"), { variant: "success" });
 
             if (ecfFromBackend?.exists) {
                 invoice.ecf = {
@@ -1619,7 +2571,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 cashReceived: Number(num(bills.cashReceived).toFixed(2)),
                 cashChange: Number(num(bills.cashChange).toFixed(2)),
                 cashMissing: 0,
-                message: "Factura generada. Gracias por su compra.",
+                message: t(
+                    "bill.customerDisplay.paid"
+                ),
             });
 
 // La factura ya cerró la orden. Limpiamos el contexto local para que
@@ -1632,6 +2586,19 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             queryClient.invalidateQueries({ queryKey: ["orders"] });
             queryClient.invalidateQueries({ queryKey: ["tables"] });
             queryClient.invalidateQueries({ queryKey: ["cash-session"] });
+        },
+        onError: (error) => {
+            const detail = error?.response?.data || {};
+            if (detail.code === "ECF_DOCUMENT_EXISTS" && isEcfMode) {
+                void openIssuedEcfForPrint();
+                return;
+            }
+            if (detail.code === "ECF_ISSUE_REQUIRES_RECOVERY") {
+                ecfRecoveryOrderIdRef.current = detail.orderId || "pendiente";
+                enqueueSnackbar(`Orden ${detail.orderId || "pendiente"}: el e-CF requiere recuperación. Consulta su estado; NO vuelvas a cobrar ni facturar. ${detail.message || ""}`, {variant:"error",autoHideDuration:16000});
+                return;
+            }
+            enqueueSnackbar(detail.code || detail.message || error?.message || "No fue posible procesar la factura", {variant:"error"});
         },
     });
     const paymentMethodMutation = useMutation({
@@ -1656,25 +2623,83 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 return { ...prev, paymentMethod: method };
             });
 
-            enqueueSnackbar("Método de pago actualizado.", { variant: "success" });
+            enqueueSnackbar(
+                t(
+                    "bill.messages.paymentUpdated"
+                ),
+                {
+                    variant: "success",
+                }
+            );
         },
 
     });
 
 
 
+
+    // 12.8.4.1: reimpresión NO realiza POST/PUT, no cambia pago ni consume e-NCF.
+    const openIssuedEcfForPrint = async () => {
+        const id = effectiveOrderId;
+        if (!id) { enqueueSnackbar("No se encontró la orden original.", {variant:"warning"}); return; }
+        try {
+            const [orderResponse, statusResponse] = await Promise.all([
+                api.get(`/api/order/${encodeURIComponent(String(id))}`),
+                api.get(`/api/order/${encodeURIComponent(String(id))}/ecf`),
+            ]);
+            const original = orderResponse?.data?.data;
+            const result = statusResponse?.data;
+            const ecf = result?.data;
+            if (!original || result?.exists !== true || !ecf?.eNCF ||
+                !["accepted", "accepted_with_observation"].includes(String(ecf.status||"").toLowerCase())) {
+                enqueueSnackbar("El e-CF todavía no está aceptado. Revisa su estado antes de imprimir.", {variant:"warning"});return;
+            }
+            setOrderInfo({ ...original,
+                ecf:{...(original?.ecf||{}),...ecf,exists:true},
+                subTotal:original?.bills?.subtotal, taxAmount:original?.bills?.tax,
+                discountAmount:original?.bills?.discount,tipAmount:original?.bills?.tipAmount,
+                totalAmount:original?.bills?.totalWithTax,
+                facturaNo:original?.fiscal?.invoiceNumber||original?.invoiceNumber||original?.facturaNo,
+            });
+            setShowInvoice(true);
+        } catch(e) {enqueueSnackbar(e?.response?.data?.code||e?.message||"No se pudo recuperar la factura original", {variant:"error"});}
+    };
+
     const handlePlaceOrder = (target = "invoice") => {
+        if (target === "invoice" && isEcfMode && hasExistingEcf) {
+            void openIssuedEcfForPrint(); // mismo e-NCF + mismo QR, nunca emisión nueva
+            return;
+        }
+        // Every Invoice from an e-CF enabled branch MUST be electronic. Do not
+        // send an ordinary invoice if the profile/permissions are incomplete.
+        if (target === "invoice" && isEcfMode && !fiscalUiCapable) {
+            enqueueSnackbar(`No se puede generar e-CF en esta sucursal: ${ecfBlockers.join("; ") || "emisor, tipos e-CF o permiso sin configurar"}. Revisa Configuración fiscal en la sucursal principal.`,
+                {variant:"error",autoHideDuration:12000});
+            return;
+        }
+        if (target === "invoice" && isLoadingEcfTenantStatus) {
+            enqueueSnackbar("Consultando el estado fiscal de la sucursal. Intenta de nuevo después de cargarlo.", {variant:"warning"});
+            return;
+        }
+        if (target === "invoice" && ecfRecoveryOrderIdRef.current) {
+            enqueueSnackbar(`La orden ${ecfRecoveryOrderIdRef.current} necesita revisión de e-CF. No repitas el cobro: consulta la orden original.`, {variant:"error",autoHideDuration:12000});
+            return;
+        }
         if (!canUseCreditSales && paymentMethod === "Credito") {
             setPaymentMethod("Efectivo");
 
-            enqueueSnackbar("Tu plan actual no permite ventas a crédito.", {
+            enqueueSnackbar(t(
+                "bill.messages.creditNotAllowed"
+            ), {
                 variant: "warning",
             });
 
             return;
         }
         if (paymentMethod === "Credito" && !selectedCustomerId) {
-            enqueueSnackbar("Para vender fiado debes seleccionar o crear un cliente guardado.", {
+            enqueueSnackbar(t(
+                "bill.messages.creditNotAllowed"
+            ), {
                 variant: "warning",
             });
             return;
@@ -1688,18 +2713,35 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         ).replace(/[^\d]/g, "");
 
         if (
-            targetAction === "invoice" &&
+            isDominicanTenant &&
+            targetAction ===
+            "invoice" &&
             isEcfMode &&
-            num(total) >= 250000 &&
-            ![9, 11].includes(buyerDocForEcf.length)
+            num(total) >=
+            250000 &&
+            ![
+                9,
+                11,
+            ].includes(
+                buyerDocForEcf
+                    .length
+            )
         ) {
             enqueueSnackbar(
                 "Para facturar e32 por RD$250,000 o más debes agregar RNC/Cédula válido del comprador.",
-                { variant: "warning" }
+                {
+                    variant:
+                        "warning",
+                }
             );
+
             return;
         }
-        if (wantsFiscal && fiscalUiCapable) {
+        if (
+            isDominicanTenant &&
+            (isEcfMode || wantsFiscal) &&
+            fiscalUiCapable
+        ) {
             const doc = String(customerRnc || "").replace(/[^\d]/g, "");
 
             if (isEcfMode && ecfDocType === "e31") {
@@ -1728,9 +2770,14 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         payload.submitAction = target;
 
         if (!payload.items?.length) {
-            enqueueSnackbar("No hay items en el carrito para guardar la orden.", {
-                variant: "warning",
-            });
+            enqueueSnackbar(
+                t(
+                    "bill.messages.noItems"
+                ),
+                {
+                    variant: "warning",
+                }
+            );
             return;
         }
 
@@ -1766,6 +2813,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const handleInvoiceClose = () => {
+        setConfirmReleaseInvoice(false);
         setShowInvoice(false);
         setIsOrderModalOpen(false);
 
@@ -1784,66 +2832,44 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         navigate("/mesas", { replace: true });
     };
 
-    const handleFinishAndReleaseTable = async () => {
+    const handleFinishAndReleaseTable = () => {
         if (releaseFromInvoiceLoading) return;
+        setConfirmReleaseInvoice(true);
+    };
 
-        const invoiceOrderId =
-            orderInfo?._id ||
-            orderId ||
-            order?._id ||
-            null;
-
-        const tableIdToRelease =
-            getTableIdFromAny(orderInfo?.table) ||
-            getTableIdFromAny(draftTable) ||
-            getTableIdFromAny(order?.table);
-
-        if (!tableIdToRelease) {
-            handleInvoiceClose();
+    const confirmFinishAndReleaseTable = async () => {
+        if (releaseFromInvoiceLoading) return;
+        const invoiceOrderId = orderInfo?._id || orderId || order?._id || null;
+        if (!invoiceOrderId) {
+            enqueueSnackbar("No se pudo identificar la orden facturada.", { variant: "error" });
             return;
         }
-
         try {
             setReleaseFromInvoiceLoading(true);
-
-            // Marcamos la orden como completada, pero NO volvemos a facturar.
-            // Esto evita duplicar factura, NCF, e-CF o inventario.
-            if (invoiceOrderId) {
-                await updateOrder(invoiceOrderId, {
-                    orderStatus: "Completado",
-                    submitAction: "release_table",
-                });
-            }
-
-            // Liberar mesa
-            await updateTable(tableIdToRelease, {
-                status: "Disponible",
-                orderId: null,
-                currentOrder: null,
-            });
-
-            setShowInvoice(false);
-            setIsOrderModalOpen(false);
-
-            dispatch(removeAllItems());
-            dispatch(removeCustomer());
-            dispatch(clearDraftContext());
-
-            queryClient.invalidateQueries({ queryKey: ["orders"] });
-            queryClient.invalidateQueries({ queryKey: ["tables"] });
-            queryClient.invalidateQueries({ queryKey: ["cash-session"] });
-
-            enqueueSnackbar("Factura cerrada y mesa desocupada correctamente.", {
-                variant: "success",
-            });
-
-            navigate("/mesas", { replace: true });
+            // Endpoint dedicado: NO vuelve a facturar ni modifica XML, NCF,
+            // pagos o detalles. La mesa se libera en servidor con scope.
+            await api.post(`/api/order/${encodeURIComponent(String(invoiceOrderId))}/close-and-vacate`);
+            setConfirmReleaseInvoice(false);
+            handleInvoiceClose();
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["orders"] }),
+                queryClient.invalidateQueries({ queryKey: ["tables"] }),
+                queryClient.invalidateQueries({ queryKey: ["cash-session"] }),
+                queryClient.invalidateQueries({ queryKey: ["home-summary"] }),
+            ]);
+            enqueueSnackbar(t("bill.messages.closeTableSuccess", "Orden cerrada y mesa desocupada."), { variant: "success" });
         } catch (e) {
-            console.error("[BILL] No pude cerrar y desocupar mesa:", e?.response?.data || e);
-
-            enqueueSnackbar("No se pudo cerrar y desocupar la mesa.", {
-                variant: "error",
-            });
+            const code = e?.response?.data?.code;
+            const messages = {
+                ORDER_NOT_INVOICED: "Esta orden aún no está facturada o pagada.",
+                ORDER_NOT_ELIGIBLE_TO_RELEASE: "No se puede desocupar una orden borrador o cancelada.",
+                TABLE_LINKED_TO_ANOTHER_ORDER: "La mesa pertenece a otra orden. Actualiza la lista antes de continuar.",
+                TABLE_RELEASE_CONFLICT: "La mesa cambió durante el cierre. Vuelve a intentarlo.",
+                TABLE_NOT_FOUND: "La mesa de esta orden ya no está disponible.",
+                TABLE_RELEASE_PERMISSION_DENIED: "No tienes autorización para cerrar esta mesa.",
+            };
+            console.error("[BILL] Cerrar y desocupar:", code || e?.response?.data || e);
+            enqueueSnackbar(messages[code] || t("bill.messages.closeTableError", "No se pudo cerrar y desocupar la mesa."), { variant: "error" });
         } finally {
             setReleaseFromInvoiceLoading(false);
         }
@@ -1946,7 +2972,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             }));
 
             enqueueSnackbar(
-                e?.response?.data?.message || "No se pudieron borrar los items de la mesa.",
+                e?.response?.data?.message || t("bill.messages.deleteTableItemsError"),
                 { variant: "error" }
             );
         }
@@ -1957,16 +2983,18 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         <>
             <div className="flex items-center justify-between px-5 mt-2">
                 <p className="text-xs text-[#ababab] font-medium mt-2">
-                    Items({itemsCount})
+                    {t("bill.items")}({itemsCount})
                 </p>
                 <h1 className="text-[#f5f5f5] text-md font-bold">
-                    ${num(subtotal).toFixed(2)}
+                    {money(subtotal)}
                 </h1>
             </div>
             {/* Nota de la orden */}
             <div className="mt-3 rounded-lg border border-gray-800/50 bg-[#111111] p-3">
                 <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-white">Nota</span>
+                    <span className="text-sm font-semibold text-white">
+                        {t("bill.note")}
+                    </span>
 
                     <button
                         type="button"
@@ -1976,14 +3004,19 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         }}
                         className="px-3 py-2 rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab] hover:bg-[#2b2b2b] hover:text-white"
                     >
-                        {orderNote?.trim() ? "Editar" : "Agregar"}
+                        {orderNote?.trim()
+                            ? t("bill.edit")
+                            : t("bill.add")
+                        }
                     </button>
                 </div>
 
                 {orderNote?.trim() ? (
-                    <p className="text-xs text-gray-400 mt-2 line-clamp-2">{orderNote}</p>
+                    <p className="text-xs text-gray-400 mt-2 line-clamp-2">
+                        {orderNote}
+                    </p>
                 ) : (
-                    <p className="text-xs text-gray-500 mt-2">Sin nota</p>
+                    <p className="text-xs text-gray-500 mt-2">{t("bill.noNote")}</p>
                 )}
             </div>
             <AnimatePresence>
@@ -2002,14 +3035,20 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             className="w-full max-w-md rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <h3 className="text-white text-lg font-semibold">Nota de la orden</h3>
+                            <h3 className="text-white text-lg font-semibold">
+                                {t("bill.orderNote")}
+                            </h3>
 
                             <textarea
                                 value={draftOrderNote}
                                 onChange={(e) => setDraftOrderNote(e.target.value)}
                                 rows={4}
                                 className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
-                                placeholder="Ej: Sin cebolla, poco picante, entregar en recepción..."
+                                placeholder={
+                                    t(
+                                        "bill.notePlaceholder"
+                                    )
+                                }
                                 autoFocus
                             />
 
@@ -2019,7 +3058,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     onClick={() => setIsNoteOpen(false)}
                                     className="px-4 py-3 w-full rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab]"
                                 >
-                                    Cancelar
+                                    {t("common.cancel")}
                                 </button>
 
                                 <button
@@ -2030,7 +3069,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     }}
                                     className="px-4 py-3 w-full rounded-lg font-semibold bg-[#2b2b2b] text-white"
                                 >
-                                    Guardar
+                                    {t("common.save")}
                                 </button>
                             </div>
                         </motion.div>
@@ -2044,7 +3083,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 {discountEnabledByTenant && (
                     <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs text-[#ababab]">Descuento</span>
+                            <span className="text-xs text-[#ababab]">{t("bill.discount")}</span>
                             <button
                                 type="button"
                                 className={`text-xs px-2 py-1 rounded ${
@@ -2054,7 +3093,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 }`}
                                 onClick={() => setDiscountType("flat")}
                             >
-                                $
+                                {currencySymbol}
                             </button>
                             <button
                                 type="button"
@@ -2084,47 +3123,89 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 )}
 
 
-
-                {/* ✅ PROPINA LEGAL 10% */}
+                {/* TIP MANUAL */}
                 {tipEnabledByTenant && (
-                    <div className="flex items-center justify-between mt-3">
-                        <div className="flex items-center gap-3">
-                            <span className="text-xs text-[#ababab]">Propina legal</span>
+                <div className="mt-3">
+                    <div className="flex items-center justify-between gap-3">
 
-                            <Switch
-                                checked={tipEnabled}
-                                onChange={setTipEnabled}
+                        <div>
+                    <span className="text-xs text-[#ababab]">
+                        {t("bill.tip")}
+                    </span>
+
+                            <p className="text-[10px] text-[#666] mt-0.5">
+                                {t("bill.tipHelp")}
+                            </p>
+                        </div>
+
+                        <div className="relative w-32">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#777]">
+               {currencySymbol}
+            </span>
+
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={manualTip}
+                                onChange={(e) => {
+                                    const value =
+                                        e.target.value
+                                            .replace(
+                                                /[^\d.]/g,
+                                                ""
+                                            );
+
+                                    setManualTip(
+                                        value
+                                    );
+                                }}
+                                onBlur={() => {
+                                    if (
+                                        !manualTip
+                                    ) {
+                                        return;
+                                    }
+
+                                    setManualTip(
+                                        num(
+                                            manualTip
+                                        ).toFixed(2)
+                                    );
+                                }}
+                                placeholder="0.00"
+                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 pl-7 text-[#f5f5f5] text-right outline-none focus:ring-1 focus:ring-[#facc15]"
                             />
                         </div>
 
-                        <span
-                            className={`text-xs font-semibold ${
-                                tipEnabled ? "text-[#f5f5f5]" : "text-[#777]"
-                            }`}
-                        >
-            {LEGAL_TIP_RATE}%
-        </span>
                     </div>
+                </div>
                 )}
 
-                {/* ✅ ITBIS (solo si el tenant lo permite) */}
+
+                {/* IMPUESTOS */}
                 {taxEnabledByTenant && (
                     <div className="flex items-center justify-between mt-3">
-                        <div className="flex items-center gap-3">
-                            <span className="text-xs text-[#ababab]">Tax (ITBIS)</span>
+                        <div>
+            <span className="text-xs text-[#ababab]">
+                {t("bill.taxes")}
+            </span>
 
-                            <Switch
-                                checked={taxEnabled}
-                                onChange={setTaxEnabled}
-                            />
+                            <p className="text-[10px] text-[#666] mt-0.5">
+                                {t("bill.taxesHelp")}
+                            </p>
                         </div>
 
-                        <span className="text-xs text-[#ababab]">{TAX_RATE}%</span>
+                        <Switch
+                            checked={taxEnabled}
+                            onChange={
+                                setTaxEnabled
+                            }
+                        />
                     </div>
                 )}
                 {isInternalDelivery && (
                     <div className="flex items-center justify-between mt-3">
-                        <span className="text-xs text-[#ababab]">Envío</span>
+                        <span className="text-xs text-[#ababab]">{t("bill.shipping")}</span>
                         <input
                             type="text"
                             inputMode="decimal"
@@ -2140,15 +3221,23 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 )}
 
 
-                {/* ✅ RESUMEN */}
-                {isAppDelivery  && num(commissionAmountEffective) > 0 && (
-                    <div className="mt-3 text-xs text-[#ababab] space-y-1">
+                {isAppDelivery &&
+                    commissionAmountEffective > 0 && (
                         <div className="flex justify-between">
-                            <span>Comisión ({commissionPct}%)</span>
-                            <span>${num(commissionAmountEffective).toFixed(2)}</span>
+            <span>
+                {t("bill.commission")}{" "}
+                {commissionPct > 0
+                    ? `(${commissionPct}%)`
+                    : ""}
+            </span>
+
+                            <span>
+                                {money(
+                                    commissionAmountEffective
+                                )}
+                            </span>
                         </div>
-                    </div>
-                )}
+                    )}
 
 
 
@@ -2156,31 +3245,115 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                     {discountEnabledByTenant && (
                         <div className="flex justify-between">
-                            <span>Descuento</span>
-                            <span>${num(discount).toFixed(2)}</span>
+                            <span>{t("bill.discount")}</span>
+                            <span>{num(discount).toFixed(2)}</span>
                         </div>
                     )}
 
-                    {tipEnabledByTenant && (
+
+                    {taxEnabledByTenant &&
+                        taxEnabled && (
+                            <>
+                                {taxBreakdown.map(
+                                    (
+                                        row,
+                                        index
+                                    ) => (
+                                        <div
+                                            key={
+                                                `${row.taxId || "tax"}-${row.includedInPrice}-${index}`
+                                            }
+                                            className="flex justify-between gap-3"
+                                        >
+                        <span>
+                            {row.name || t("bill.tax")}{" "}
+
+                            {Number(
+                                row.ratePercent ||
+                                0
+                            )}
+                            %
+
+                            {row.includedInPrice
+                                ? ` (${t("bill.included")})`
+                                : ""
+                            }
+                        </span>
+
+                                            <span>
+                                                <span>
+                                                {money(
+                                                    row.amount
+                                                )}
+                                            </span>
+                        </span>
+                                        </div>
+                                    )
+                                )}
+
+
+                                {taxPreviewLoading && (
+                                    <div className="flex justify-between">
+                    <span className="text-[#666]">
+{t("bill.recalculatingTaxes")}
+                    </span>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                    {serviceChargeBreakdown.map(
+                        (
+                            charge,
+                            index
+                        ) => (
+                            <div
+                                key={
+                                    `${charge.chargeId || "charge"}-${index}`
+                                }
+                                className="flex justify-between gap-3"
+                            >
+            <span>
+                {charge.name || t("bill.charge")}
+
+                {Number(
+                    charge.ratePercent ||
+                    0
+                )}
+                %
+            </span>
+
+                                <span>
+                                    {money(
+                                        charge.amount
+                                    )}
+                                </span>
+                            </div>
+                        )
+                    )}
+                    {tip > 0 && (
                         <div className="flex justify-between">
+        <span>
+            {t("bill.tip")}
+        </span>
+
                             <span>
-                                Propina legal 10%
-                                {!tipEnabled ? " (desactivada)" : ""}
+                                {money(tip)}
                             </span>
-                            <span>${num(tip).toFixed(2)}</span>
-                        </div>
-                    )}
-
-                    {taxEnabledByTenant && (
-                        <div className="flex justify-between">
-                            <span>Tax (ITBIS)</span>
-                            <span>${num(tax).toFixed(2)}</span>
                         </div>
                     )}
 
                     <div className="flex justify-between text-[#f5f5f5] font-semibold">
-                        <span>Total</span>
-                        <span>${num(totalToPay).toFixed(2)}</span>
+                        <span>
+                            {t("bill.total")}
+                        </span>
+
+                        <span>
+                            {currencySymbol}
+                            {num(
+                                totalToPay
+                            ).toFixed(2)}
+                        </span>
                     </div>
                 </div>
             </div>
@@ -2201,7 +3374,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         type="button"
                         disabled
                         className="px-4 py-3 w-full rounded-lg font-semibold bg-[#2b2b2b] text-white opacity-90 cursor-not-allowed"
-                        title="El método de pago se asigna automáticamente por el canal"
+                        title={t("bill.automaticPaymentByChannel")}
                     >
                         {orderSource === "PEDIDOSYA" ? "Pedido Ya" : "Uber Eats"}
                     </button>
@@ -2213,9 +3386,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 setPaymentMethod("Efectivo");
 
                                 if (!orderId) {
-                                    enqueueSnackbar("Guarda la orden primero para cambiar el método de pago.", {
-                                        variant: "warning",
-                                    });
+                                    enqueueSnackbar(
+                                        t(
+                                            "bill.messages.saveOrderFirst"
+                                        ),
+                                        {
+                                            variant:
+                                                "warning",
+                                        }
+                                    );
                                     return;
                                 }
 
@@ -2227,7 +3406,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
-                            Efectivo
+                            {t(
+                                "bill.paymentMethods.cash"
+                            )}
                         </button>
 
                         <button
@@ -2247,7 +3428,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
-                            Tarjeta
+                            {t(
+                                "bill.paymentMethods.card"
+                            )}
                         </button>
 
                         <button
@@ -2267,7 +3450,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                             }`}
                         >
-                            Transferencia
+                            {t(
+                                "bill.paymentMethods.transfer"
+                            )}
                         </button>
                         {canUseCreditSales && (
                             <button
@@ -2285,7 +3470,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         : "bg-[#1f1f1f] text-[#ababab] border border-transparent hover:bg-[#252525]"
                                 }`}
                             >
-                                Crédito
+                                {t(
+                                    "bill.paymentMethods.credit"
+                                )}
                             </button>
                         )}
                     </>
@@ -2305,15 +3492,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 </p>
                                 <p className="text-xs text-[#ababab]">
                                     {isEcfMode
-                                        ? "Selecciona si será consumo electrónico o crédito fiscal electrónico."
+                                        ? "e-CF está activo para esta sucursal: Facturar genera E32 por defecto (o E31 si lo seleccionas)."
                                         : "Solo si el cliente lo solicita y tu empresa tiene NCF configurado."}
                                 </p>
                             </div>
 
                             {/* ✅ Switch estilo Uber Eats */}
                             <Switch
-                                checked={wantsFiscal}
-                                disabled={!fiscalUiCapable}
+                                checked={isEcfMode || wantsFiscal}
+                                disabled={isEcfMode || !fiscalUiCapable}
                                 onChange={(v) => setWantsFiscal(v)}
                             />
                         </div>
@@ -2321,13 +3508,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         {!fiscalUiCapable && (
                             <p className="text-xs text-red-400 mt-2">
                                 {isEcfMode
-                                    ? "Este tenant no tiene e-CF listo para emitir."
-                                    : "Este tenant no tiene NCF habilitado/configurado."}
+                                    ? `No se puede emitir e-CF: ${ecfBlockers.join("; ") || "faltan permisos, tipos E31/E32 o configuración del perfil del emisor"}. Configura el emisor desde la principal.`
+                                    : "NCF no disponible: comprueba que el RNC y los rangos B01/B02 estén configurados y habilitados."}
                             </p>
                         )}
 
                         {/* ✅ SOLO mostrar campos cuando el switch está activo */}
-                        {wantsFiscal && fiscalUiCapable && (
+                        {(isEcfMode || wantsFiscal) && fiscalUiCapable && (
                             <>
                                 <div className="mt-3">
                                     <div className="flex items-center gap-2">
@@ -2426,16 +3613,16 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         setSubmitAction("ticket");
                         handlePlaceOrder("ticket");
                     }}
-                    disabled={orderMutation.isPending || (wantsFiscal && fiscalCapable)}
+                    disabled={orderMutation.isPending || (wantsFiscal && effectiveLegacyNcfCapable && !isEcfMode)}
                     className={`px-4 py-3 w-full rounded-lg font-semibold text-lg border border-gray-800/50
       ${
-                        wantsFiscal && fiscalCapable
+                        wantsFiscal && effectiveLegacyNcfCapable
                             ? "bg-[#1f1f1f] text-[#666] cursor-not-allowed"
                             : "bg-[#1f1f1f] text-white hover:bg-[#2b2b2b]"
                     }`}
-                    title={wantsFiscal && fiscalCapable ? "Con NCF se imprime factura, no ticket." : "Imprimir ticket"}
+                    title={wantsFiscal && effectiveLegacyNcfCapable ? "Con NCF se imprime factura, no ticket." : t("bill.ticketTitle")}
                 >
-                    Ticket
+                    {t("bill.ticket")}
                 </button>
 
                 {/* 2) Facturar (abre invoice sí o sí) */}
@@ -2448,7 +3635,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     disabled={orderMutation.isPending}
                     className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
                 >
-                    {ecfFeatureEnabled ? "Facturar" : "Facturar"}
+                    {t("bill.invoice")}
                 </button>
 
                 {/* 3) Actualizar: oculto en canal rápido */}
@@ -2462,7 +3649,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         disabled={orderMutation.isPending}
                         className="px-4 py-3 w-full rounded-lg bg-[#1f1f1f] text-white font-semibold text-lg border border-gray-800/50 hover:bg-[#2b2b2b]"
                     >
-                        Actualizar
+                        {t("bill.update")}
                     </button>
                 )}
             </div>
@@ -2485,27 +3672,26 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         >
                             <div className="p-6 border-b border-white/10">
                                 <h3 className="text-xl font-bold text-white">
-                                    ¿Qué deseas hacer con esta mesa?
+                                    {t("bill.leaveTable.title")}
                                 </h3>
 
                                 <p className="mt-2 text-sm leading-6 text-white/60">
-                                    Tienes productos agregados. Puedes guardarlos en la mesa para continuar luego o borrarlos antes de salir.
-                                </p>
+                                    {t("bill.leaveTable.description")}                                </p>
                             </div>
 
                             <div className="p-6">
                                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 mb-5">
                                     <div className="flex items-center justify-between text-sm">
-                                        <span className="text-white/50">Productos</span>
+                                        <span className="text-white/50">{t("bill.leaveTable.products")}</span>
                                         <span className="font-semibold text-white">
                                 {itemsCount}
                             </span>
                                     </div>
 
                                     <div className="flex items-center justify-between text-sm mt-3">
-                                        <span className="text-white/50">Total actual</span>
+                                        <span className="text-white/50">{t("bill.leaveTable.currentTotal")}</span>
                                         <span className="font-semibold text-[#f6b100]">
-                                RD${num(subtotal).toFixed(2)}
+                             {money(subtotal)}
                             </span>
                                     </div>
                                 </div>
@@ -2517,7 +3703,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         disabled={leaveTableModal.loading || orderMutation.isPending}
                                         className="w-full px-4 py-3 rounded-2xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] transition-all disabled:opacity-50"
                                     >
-                                        {leaveTableModal.loading ? "Guardando..." : "Guardar en la mesa"}
+                                        {leaveTableModal.loading
+                                            ? t("bill.leaveTable.saving")
+                                            : t("bill.leaveTable.save")
+                                        }
                                     </button>
 
                                     <button
@@ -2526,7 +3715,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         disabled={leaveTableModal.loading || orderMutation.isPending}
                                         className="w-full px-4 py-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-red-300 font-bold hover:bg-red-500/20 transition-all disabled:opacity-50"
                                     >
-                                        Borrar y salir
+                                        {t("bill.leaveTable.discard")}
                                     </button>
 
                                     <button
@@ -2535,7 +3724,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         disabled={leaveTableModal.loading || orderMutation.isPending}
                                         className="w-full px-4 py-3 rounded-2xl border border-white/10 bg-[#1a1a1a] text-white font-semibold hover:bg-[#242424] transition-all disabled:opacity-50"
                                     >
-                                        Cancelar
+                                        {t("bill.leaveTable.cancel")}
                                     </button>
                                 </div>
                             </div>
@@ -2548,9 +3737,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     <div className="rounded-2xl border border-[#2b2b2b] bg-gradient-to-br from-[#151515] to-[#0f0f0f] p-4 shadow-lg">
                         <div className="flex items-center justify-between gap-3 mb-3">
                             <div>
-                                <p className="text-sm text-[#f5f5f5] font-semibold">Cambio en efectivo</p>
+                                <p className="text-sm text-[#f5f5f5] font-semibold">{t("bill.cash.title")}</p>
                                 <p className="text-xs text-[#ababab]">
-                                    Ingresa cuánto entregó el cliente para calcular la devolución.
+                                    {t("bill.cash.description")}
                                 </p>
                             </div>
 
@@ -2559,13 +3748,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 onClick={() => setCashReceived(num(totalToPay).toFixed(2))}
                                 className="px-3 py-2 rounded-lg bg-[#f6b100] text-[#111] text-xs font-bold hover:opacity-90"
                             >
-                                Exacto
+                                {t("bill.cash.exact")}
                             </button>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label className="block text-xs text-[#ababab] mb-1">Monto recibido</label>
+                                <label className="block text-xs text-[#ababab] mb-1">{t("bill.cash.received")}</label>
                                 <input
                                     type="text"
                                     inputMode="decimal"
@@ -2575,25 +3764,36 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         setCashReceived(val);
                                     }}
                                     className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#f6b100]"
-                                    placeholder="Ej: 1000"
-                                />
+                                    placeholder={t("bill.cash.placeholder")}                                />
                             </div>
 
                             <div className="rounded-xl bg-[#1f1f1f] border border-[#2b2b2b] px-4 py-3">
-                                <p className="text-xs text-[#ababab]">A devolver</p>
+                                <p className="text-xs text-[#ababab]">
+                                    {t(
+                                        "bill.cash.change"
+                                    )}
+                                </p>
                                 <p className="text-2xl font-bold text-[#f6b100]">
-                                    RD${cashChange.toFixed(2)}
+                                    {money(cashChange)}
                                 </p>
 
                                 {cashReceivedAmount > 0 && cashMissing > 0 && (
                                     <p className="text-xs text-red-400 mt-1">
-                                        Falta RD${cashMissing.toFixed(2)}
+                                        {t(
+                                            "bill.cash.missing",
+                                            {
+                                                amount:
+                                                    money(
+                                                        cashMissing
+                                                    ),
+                                            }
+                                        )}
                                     </p>
                                 )}
 
                                 {cashReceivedAmount > 0 && cashMissing <= 0 && (
                                     <p className="text-xs text-green-400 mt-1">
-                                        Monto suficiente para facturar.
+                                        {t("bill.cash.sufficient")}
                                     </p>
                                 )}
                             </div>
@@ -2633,6 +3833,39 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         });
                     }}
                 />
+            )}
+
+            {confirmReleaseInvoice && createPortal(
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-[4px]"
+                    role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !releaseFromInvoiceLoading) setConfirmReleaseInvoice(false); }}>
+                    <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-release-title"
+                        aria-describedby="confirm-release-description"
+                        className="w-full max-w-md rounded-2xl border border-amber-500/25 bg-[#171719] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.65)] sm:p-6"
+                        style={{ maxHeight: "calc(100dvh - 7rem)", overflowY: "auto" }}>
+                        <div className="flex items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                                <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h2 id="confirm-release-title" className="text-lg font-semibold leading-snug">¿Cerrar y desocupar mesa?</h2>
+                                <p id="confirm-release-description" className="mt-2 text-sm leading-relaxed text-gray-300">Se marcará la orden como completada y la mesa quedará disponible para nuevos clientes.</p>
+                            </div>
+                        </div>
+                        <div className="mt-4 rounded-xl border border-emerald-700/35 bg-emerald-950/25 p-3 text-sm text-emerald-200">
+                            La factura ya emitida se conservará. No se generará otro e-NCF ni se volverá a cobrar.
+                        </div>
+                        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                            <button type="button" disabled={releaseFromInvoiceLoading}
+                                onClick={() => setConfirmReleaseInvoice(false)}
+                                className="rounded-xl border border-gray-600 bg-[#2a2a2d] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#38383d] disabled:opacity-50">Cancelar</button>
+                            <button type="button" disabled={releaseFromInvoiceLoading}
+                                onClick={confirmFinishAndReleaseTable}
+                                className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60">
+                                {releaseFromInvoiceLoading ? "Cerrando mesa…" : "Sí, cerrar y desocupar"}
+                            </button>
+                        </div>
+                    </div>
+                </div>, document.body
             )}
 
             {showInvoice && orderInfo && (

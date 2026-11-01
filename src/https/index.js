@@ -19,8 +19,9 @@ export const verifyPaymentRazorpay = (data) => api.post("/api/payment/verify-pay
 
 // ORDERS
 export const addOrder     = (data) => api.post("/api/order", data);
-export const getOrders = (tenantId) =>
-    api.get(`/api/order?tenantId=${encodeURIComponent(tenantId)}`);
+// La API obtiene el tenant desde el token autenticado y la sucursal desde x-client-id.
+// Nunca tomar tenantId de React Query ni de datos controlados por el cliente.
+export const getOrders = () => api.get("/api/order");
 
 export const getOrderById = (id) => api.get(`/api/order/${encodeURIComponent(id)}`);
 export const updateOrder  = (id, data) => api.put(`/api/order/${encodeURIComponent(id)}`, data);

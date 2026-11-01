@@ -5,8 +5,25 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
 import { useSelector } from "react-redux";
 import { updateDish } from "../../https";
+import useTenant from "../../hooks/useTenant";
 
+import {
+    getDefaultWeightUnit,
+    getTenantLocalization,
+} from "../../lib/localization";
 const EditDishModal = ({ dish, onClose }) => {
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const defaultWeightUnit =
+        getDefaultWeightUnit(
+            localization
+        );
     const userData = useSelector((state) => state.user.userData);
     const tenantId = userData?.tenantId;
     const qc = useQueryClient();
@@ -15,7 +32,8 @@ const EditDishModal = ({ dish, onClose }) => {
         name: "",
         category: "",
         sellMode: "unit", // unit | weight
-        weightUnit: "lb", // lb | kg
+        weightUnit:
+        defaultWeightUnit, // lb | kg
         price: "",
         pricePerLb: "",
         imageFile: null,
@@ -40,7 +58,9 @@ const EditDishModal = ({ dish, onClose }) => {
             name: dish?.name || "",
             category: dish?.category || "",
             sellMode: dish?.sellMode || "unit",
-            weightUnit: dish?.weightUnit || "lb",
+            weightUnit:
+                dish?.weightUnit ||
+                defaultWeightUnit,
             price: dish?.price ?? "",
             pricePerLb: dish?.pricePerLb ?? "",
             imageFile: null,
@@ -71,7 +91,13 @@ const EditDishModal = ({ dish, onClose }) => {
             fd.append("name", String(form.name || "").trim());
             fd.append("category", String(form.category || "").trim());
             fd.append("sellMode", String(form.sellMode || "unit"));
-            fd.append("weightUnit", String(form.weightUnit || "lb"));
+            fd.append(
+                "weightUnit",
+                String(
+                    form.weightUnit ||
+                    defaultWeightUnit
+                )
+            );
 
             // price base siempre va en `price`
             // si weight: guardamos pricePerLb adicional

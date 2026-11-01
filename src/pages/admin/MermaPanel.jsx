@@ -3,15 +3,14 @@ import React, { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../../lib/api.js";
+import useTenant from "../../hooks/useTenant";
+
+import {
+    formatMoney,
+    getTenantLocalization,
+} from "../../lib/localization";
 
 const safeNumber = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-
-const moneyRD = (n) =>
-    new Intl.NumberFormat("es-DO", {
-        style: "currency",
-        currency: "DOP",
-        maximumFractionDigits: 2,
-    }).format(Number(n || 0));
 
 function getLocalYMD(date = new Date()) {
     const d = new Date(date);
@@ -22,6 +21,19 @@ function getLocalYMD(date = new Date()) {
 }
 
 export default function MermaPanel() {
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const money = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
     const queryClient = useQueryClient();
 
     const todayYMD = getLocalYMD();
@@ -380,19 +392,19 @@ export default function MermaPanel() {
 
                     <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
                         <div className="text-xs text-gray-400">Costo compra (total)</div>
-                        <div className="text-lg font-semibold text-white">{moneyRD(kpis.totalCost)}</div>
+                        <div className="text-lg font-semibold text-white">{money(kpis.totalCost)}</div>
                         <div className="text-[11px] text-gray-500 mt-1">Lotes abiertos: {kpis.openCount}</div>
                     </div>
 
                     <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
                         <div className="text-xs text-gray-400">Merma (costo original)</div>
-                        <div className="text-lg font-semibold text-white">{moneyRD(kpis.wasteCostOriginal)}</div>
-                        <div className="text-[11px] text-gray-500 mt-1">De resumen: {moneyRD(mermaCost)}</div>
+                        <div className="text-lg font-semibold text-white">{money(kpis.wasteCostOriginal)}</div>
+                        <div className="text-[11px] text-gray-500 mt-1">De resumen: {money(mermaCost)}</div>
                     </div>
 
                     <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
                         <div className="text-xs text-gray-400">Costo real promedio / unidad</div>
-                        <div className="text-lg font-semibold text-white">{moneyRD(kpis.effectiveUnitCostWeighted)}</div>
+                        <div className="text-lg font-semibold text-white">{money(kpis.effectiveUnitCostWeighted)}</div>
                         <div className="text-[11px] text-gray-500 mt-1">TotalCost / Final usable</div>
                     </div>
                 </div>
@@ -449,8 +461,8 @@ export default function MermaPanel() {
                                                     <span className="text-gray-200">{wasteQty}</span>
                                                 </div>
                                                 <div className="text-xs text-gray-500 mt-1">
-                                                    Total: <span className="text-gray-200">{moneyRD(totalCost)}</span> · Costo real/u:{" "}
-                                                    <span className="text-gray-200">{moneyRD(effectiveUnitCost)}</span>
+                                                    Total: <span className="text-gray-200">{money(totalCost)}</span> · Costo real/u:{" "}
+                                                    <span className="text-gray-200">{money(effectiveUnitCost)}</span>
                                                 </div>
 
                                                 {note ? (
@@ -513,7 +525,7 @@ export default function MermaPanel() {
 
                 <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
                     <div className="text-xs text-gray-400">Merma (costo)</div>
-                    <div className="text-lg font-semibold text-white">{moneyRD(mermaCost)}</div>
+                    <div className="text-lg font-semibold text-white">{money(mermaCost)}</div>
                 </div>
             </div>
 
@@ -599,7 +611,7 @@ export default function MermaPanel() {
                                                         </div>
 
                                                         <div className="text-xs text-gray-400 mt-1">
-                                                            Entrada: {rawQty} · Costo unit: {moneyRD(unitCostOriginal)} · Total: {moneyRD(totalCost)}
+                                                            Entrada: {rawQty} · Costo unit: {money(unitCostOriginal)} · Total: {money(totalCost)}
                                                         </div>
 
                                                         <div className="text-xs text-gray-500 mt-1">
@@ -614,7 +626,7 @@ export default function MermaPanel() {
                                                                     {" "}
                                                                     · Merma: <span className="text-gray-300">{wasteQty}</span>
                                                                     {" "}
-                                                                    · Costo real: <span className="text-gray-300">{moneyRD(effectiveUnitCost)}</span>
+                                                                    · Costo real: <span className="text-gray-300">{money(effectiveUnitCost)}</span>
                                                                 </>
                                                             ) : null}
                                                         </div>
@@ -787,7 +799,7 @@ export default function MermaPanel() {
                                         </div>
 
                                         <div>
-                                            <div className="text-xs text-white/70 mb-1">Costo unitario original (RD$)</div>
+                                            <div className="text-xs text-white/70 mb-1">Costo unitario original ({localization.currency})</div>
                                             <input
                                                 className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
                                                 placeholder="Ej: 600"
@@ -813,7 +825,7 @@ export default function MermaPanel() {
                                         <div className="text-sm text-white font-semibold">{getBatchProductName(batchToClose)}</div>
                                         <div className="text-xs text-white/60 mt-1">
                                             Entrada: {safeNumber(batchToClose?.rawQty)} · Costo unit original:{" "}
-                                            {moneyRD(safeNumber(batchToClose?.unitCostOriginal ?? batchToClose?.unitCost ?? 0))}
+                                            {money(safeNumber(batchToClose?.unitCostOriginal ?? batchToClose?.unitCost ?? 0))}
                                         </div>
                                     </div>
 
@@ -830,7 +842,7 @@ export default function MermaPanel() {
                                     {preview ? (
                                         <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
                                             <div className="text-white/80">
-                                                Total compra: <span className="font-semibold">{moneyRD(preview.totalCost)}</span>
+                                                Total compra: <span className="font-semibold">{money(preview.totalCost)}</span>
                                             </div>
                                             <div className="text-white/80">
                                                 Merma: <span className="font-semibold">{preview.wasteQty}</span> lb
@@ -840,7 +852,7 @@ export default function MermaPanel() {
                                             </div>
                                             <div className="text-white/80">
                                                 Costo real por lb usable:{" "}
-                                                <span className="font-semibold">{moneyRD(preview.effectiveUnitCost)}</span>
+                                                <span className="font-semibold">{money(preview.effectiveUnitCost)}</span>
                                             </div>
                                         </div>
                                     ) : null}

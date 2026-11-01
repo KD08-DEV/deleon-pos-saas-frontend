@@ -1,70 +1,153 @@
 // src/pages/admin/SalesReports.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Calendar, TrendingUp, DollarSign, ShoppingCart, Users, CreditCard } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Download, Calendar, TrendingUp, DollarSign, ShoppingCart, CreditCard } from "lucide-react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import api from "../../lib/api";
+import useTenant from "../../hooks/useTenant";
 
+import {
+    formatDate,
+    formatTime,
+    formatMoney,
+    getTenantLocalization,
+    getTodayYMD,
+    formatWeekday,
+} from "../../lib/localization";
 
-
-const currency = (n) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
-        .format(Number(n || 0));
-
-const normalizePaymentMethodLabel = (value) => {
+const normalizePaymentMethodLabel = (value, t) => {
     const raw = String(value || "").trim();
     const key = raw.toLowerCase();
 
-    if (!key) return "Efectivo";
+    if (!key) return t("salesReportsPage.paymentMethods.cash");
 
-    if (["efectivo", "cash"].includes(key)) return "Efectivo";
-    if (["tarjeta", "card", "credit_card", "debit_card"].includes(key)) return "Tarjeta";
-    if (["transferencia", "transfer", "bank_transfer"].includes(key)) return "Transferencia";
-    if (["otros", "otro", "other"].includes(key)) return "Otros";
-
-    return raw || "Desconocido";
-};
-const getEffectivePaymentMethodLabel = (order = {}) => {
-    const primary = normalizePaymentMethodLabel(order?.paymentMethod);
-
-    if (["Efectivo", "Tarjeta", "Transferencia", "Credito", "Otros"].includes(primary)) {
-        return primary;
+    if (["efectivo", "cash"].includes(key)) {
+        return t("salesReportsPage.paymentMethods.cash");
     }
 
-    return normalizePaymentMethodLabel(
+    if (["tarjeta", "card", "credit_card", "debit_card"].includes(key)) {
+        return t("salesReportsPage.paymentMethods.card");
+    }
+
+    if (["transferencia", "transfer", "bank_transfer"].includes(key)) {
+        return t("salesReportsPage.paymentMethods.transfer");
+    }
+
+    if (["credito", "crédito", "credit"].includes(key)) {
+        return t("salesReportsPage.paymentMethods.credit");
+    }
+
+    if (["otros", "otro", "other"].includes(key)) {
+        return t("salesReportsPage.paymentMethods.other");
+    }
+
+    return raw || t("salesReportsPage.common.unknown");
+};
+
+const getEffectivePaymentMethodLabel = (order = {}, t) =>
+    normalizePaymentMethodLabel(
+        order?.paymentMethod ||
         order?.paymentMethodType ||
         order?.paymentMethodReal ||
         order?.deliveryPaymentMethod ||
         order?.payment?.method ||
         order?.paidWith ||
-        order?.paymentMethod ||
-        "Otros"
+        "Otros",
+        t
     );
-};
-const getLocalYMD = () => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-};
 
 
 const SalesReports = () => {
+    const { t, i18n } = useTranslation();
+
+    const getLocalYMD =
+        () =>
+            getTodayYMD(
+                localization
+            );
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const currency = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
+    const configuredTaxes =
+        Array.isArray(
+            tenantInfo
+                ?.taxConfig
+                ?.taxes
+        )
+            ? tenantInfo
+                .taxConfig
+                .taxes
+            : [];
+
+    const activeTaxes =
+        configuredTaxes.filter(
+            (tax) =>
+                tax?.active !==
+                false
+        );
+
+    const configuredCharges =
+        Array.isArray(
+            tenantInfo
+                ?.features
+                ?.serviceCharges
+                ?.charges
+        )
+            ? tenantInfo
+                .features
+                .serviceCharges
+                .charges
+            : [];
+
+    const activeCharges =
+        configuredCharges.filter(
+            (charge) =>
+                charge?.active !==
+                false &&
+                charge?.addToTotal !==
+                false
+        );
+
+    const taxReportLabel =
+        activeTaxes.length === 1
+            ? String(
+                activeTaxes[0]
+                    ?.name ||
+                activeTaxes[0]
+                    ?.code ||
+                t("salesReportsPage.summary.taxes")
+            )
+            : t("salesReportsPage.summary.taxes");
+
+    const serviceChargeReportLabel =
+        activeCharges.length === 1
+            ? String(
+                activeCharges[0]
+                    ?.name ||
+                activeCharges[0]
+                    ?.code ||
+                t("salesReportsPage.summary.serviceCharge")
+            )
+            : t("salesReportsPage.summary.serviceCharges");
+
     const [filters, setFilters] = useState({
         from: getLocalYMD(),
         to: getLocalYMD(),
         method: "",
     });
-    const [viewMode, setViewMode] = useState("orders"); // "orders" | "products"
-    const [productRows, setProductRows] = useState([]);
-    const [isLoadingProducts, setIsLoadingProducts] = useState(false);
-    const [productError, setProductError] = useState("");
     const [tab, setTab] = useState("category");
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [err, setErr] = useState("");
 
     const [recentPage, setRecentPage] = useState(1);
     const recentPageSize = 10;
@@ -77,7 +160,7 @@ const SalesReports = () => {
     const [pageSize, setPageSize] = useState(10);
     const [page, setPage] = useState(1);
 
-    useEffect(() => setPage(1), [tab, filters.from, filters.to, filters.method]);
+    useEffect(() => setPage(1), [tab, filters.from, filters.to, filters.method, pageSize]);
 
     const showToast = (message, type = "error") => {
         setToast({ open: true, message, type });
@@ -111,37 +194,38 @@ const SalesReports = () => {
             0
         );
 
-    const getBillTip = (bill = {}) =>
+    const getBillTip = (
+        bill = {}
+    ) =>
         safeNumber(
-            bill?.tip ??
-            bill?.legalTip ??
-            bill?.propina ??
-            bill?.propinaLegal ??
+            bill?.serviceChargeTotal ??
             bill?.serviceCharge ??
+            bill?.legalTip ??
+            bill?.propinaLegal ??
+            bill?.tip ??
+            bill?.propina ??
             bill?.tipAmount ??
             0
         );
 
-    const getRowTipTotal = (row = {}) =>
+    const getRowTipTotal = (
+        row = {}
+    ) =>
         safeNumber(
+            row?.serviceChargeTotal ??
             row?.tipTotal ??
-            row?.tip ??
-            row?.legalTip ??
-            row?.propina ??
-            row?.propinaLegal ??
             row?.serviceCharge ??
+            row?.legalTip ??
+            row?.propinaLegal ??
+            row?.tip ??
+            row?.propina ??
             row?.tipAmount ??
             0
         );
 
-    const fmtPct = (v) => (v == null ? "N/A" : `${Number(v).toFixed(2)}%`);
-
-
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
-        const hasFrom = !!obj.from;
-        const hasTo = !!obj.to;
 
         // Si solo selecciona "desde", asumimos "hasta" = mismo día
         // Si solo selecciona "hasta", asumimos "desde" = mismo día
@@ -196,7 +280,7 @@ const SalesReports = () => {
         if (productReportQuery.data?.length) {
             console.log("[sales-by-product][first-row]", productReportQuery.data[0]);
         }
-    }, [productReportQuery.data]);
+    }, [productReportQuery.data, t, i18n.language]);
 
     const detailRows = useMemo(() => {
         return (productReportQuery.data || []).map((r) => {
@@ -215,7 +299,7 @@ const SalesReports = () => {
                 r?.presentation ||
                 r?.variant ||
                 r?.size ||
-                "Regular";
+                t("salesReportsPage.common.regular");
 
             const resolvedProduct =
                 r?.product ||
@@ -223,19 +307,20 @@ const SalesReports = () => {
                 r?.dishName ||
                 r?.itemName ||
                 r?.name ||
-                "Producto";
+                t("salesReportsPage.common.product");
 
             const resolvedPaymentMethod = normalizePaymentMethodLabel(
                 r?.paymentMethod ||
                 r?.method ||
-                "Desconocido"
+                t("salesReportsPage.common.unknown"),
+                t
             );
 
             return {
                 ...r,
-                category: String(resolvedCategory || "").trim() || "Sin categoría",
-                presentation: String(resolvedPresentation || "").trim() || "Regular",
-                product: String(resolvedProduct || "").trim() || "Producto",
+                category: String(resolvedCategory || "").trim() || t("salesReportsPage.common.noCategory"),
+                presentation: String(resolvedPresentation || "").trim() || t("salesReportsPage.common.regular"),
+                product: String(resolvedProduct || "").trim() || t("salesReportsPage.common.product"),
                 paymentMethod: resolvedPaymentMethod,
                 qty: safeNumber(r?.qty ?? r?.quantity ?? 0),
                 revenue: safeNumber(
@@ -264,7 +349,6 @@ const SalesReports = () => {
 
     const orders = data?.data || [];
     const dailySummary = data?.dailySummary || {};
-    const salesByDate = data?.salesByDate || {};
 
     // Análisis de ventas
     const salesAnalysis = useMemo(() => {
@@ -276,7 +360,7 @@ const SalesReports = () => {
 
         const byMethod = {};
         orders.forEach((o) => {
-            const method = getEffectivePaymentMethodLabel(o);
+            const method = getEffectivePaymentMethodLabel(o, t);
 
 
             if (!byMethod[method]) {
@@ -300,8 +384,11 @@ const SalesReports = () => {
         // Agrupar por día de la semana
         const byDayOfWeek = {};
         orders.forEach((o) => {
-            const date = new Date(o.createdAt);
-            const dayName = date.toLocaleDateString("es-ES", { weekday: "long" });
+            const dayName =
+                formatWeekday(
+                    o.createdAt,
+                    localization
+                );
             if (!byDayOfWeek[dayName]) {
                 byDayOfWeek[dayName] = { total: 0, count: 0 };
             }
@@ -319,9 +406,21 @@ const SalesReports = () => {
             bySource,
             byDayOfWeek,
         };
-    }, [orders]);
+    }, [
+        orders,
+        localization.locale,
+        localization.timezone,
+        t,
+        i18n.language,
+    ]);
     const paymentCards = useMemo(() => {
-        const baseMethods = ["Efectivo", "Tarjeta", "Transferencia", "Otros"];
+        const baseMethods = [
+            t("salesReportsPage.paymentMethods.cash"),
+            t("salesReportsPage.paymentMethods.card"),
+            t("salesReportsPage.paymentMethods.transfer"),
+            t("salesReportsPage.paymentMethods.other"),
+        ];
+
         const extraMethods = Object.keys(salesAnalysis.byMethod || {}).filter(
             (method) => !baseMethods.includes(method)
         );
@@ -330,7 +429,7 @@ const SalesReports = () => {
             method,
             salesAnalysis.byMethod?.[method] || { total: 0, count: 0 },
         ]);
-    }, [salesAnalysis.byMethod]);
+    }, [salesAnalysis.byMethod, t, i18n.language]);
     const cashSessionRangeQuery = useQuery({
         queryKey: ["cash-session-range-for-sales-report", filters.from, filters.to],
         queryFn: async () => {
@@ -404,7 +503,7 @@ const SalesReports = () => {
         const map = new Map();
 
         for (const r of detailRows) {
-            const key = (r?.category || "Sin categoría").trim();
+            const key = (r?.category || t("salesReportsPage.common.noCategory")).trim();
             const revenue = safeNumber(r?.revenue);
             const qty = safeNumber(r?.qty);
             const taxTotal = safeNumber(r?.taxTotal);
@@ -475,7 +574,7 @@ const SalesReports = () => {
         const map = new Map();
 
         for (const r of detailRows) {
-            const key = (r?.paymentMethod || "Desconocido").trim();
+            const key = (r?.paymentMethod || t("salesReportsPage.common.unknown")).trim();
             const revenue = safeNumber(r?.revenue);
             const qty = safeNumber(r?.qty);
             const taxTotal = safeNumber(r?.taxTotal);
@@ -540,34 +639,47 @@ const SalesReports = () => {
     const downloadExcel = async () => {
         try {
             const rows = orders.map((o) => ({
-                Fecha: o?.createdAt ? new Date(o.createdAt).toLocaleDateString() : "",
-                Hora: o?.createdAt ? new Date(o.createdAt).toLocaleTimeString() : "",
-                OrdenID: o?._id || "",
-                Cliente: o?.customerDetails?.name || "—",
-                Método: o?.paymentMethod || "Efectivo",
-                Origen: o?.orderSource || "DINE_IN",
-                Subtotal: Number(o.bills?.subtotal || 0),
-                ITBIS: Number(o.bills?.tax || 0),
-                Propina: Number(o.bills?.tip || 0),
-                Total: Number(o.bills?.totalWithTax || 0),
-                Usuario: o?.user?.name || "—",
-                Mesa: o?.table?.tableNumber || "—",
-                Envio: Number(o?.shippingFee ?? o?.deliveryFee ?? o?.bills?.shippingFee ?? o?.bills?.deliveryFee ?? 0),
+                [t("salesReportsPage.excel.columns.date")]: o?.createdAt
+                    ? formatDate(o.createdAt, localization)
+                    : "",
+                [t("salesReportsPage.excel.columns.time")]: o?.createdAt
+                    ? formatTime(o.createdAt, localization)
+                    : "",
+                [t("salesReportsPage.excel.columns.orderId")]: o?._id || "",
+                [t("salesReportsPage.excel.columns.customer")]: o?.customerDetails?.name || "—",
+                [t("salesReportsPage.excel.columns.method")]: getEffectivePaymentMethodLabel(o, t),
+                [t("salesReportsPage.excel.columns.source")]: o?.orderSource || "DINE_IN",
+                [t("salesReportsPage.excel.columns.subtotal")]: Number(o.bills?.subtotal || 0),
+                [taxReportLabel]: getBillTax(o.bills),
+                [serviceChargeReportLabel]: getBillTip(o.bills),
+                [t("salesReportsPage.excel.columns.total")]: Number(o.bills?.totalWithTax || 0),
+                [t("salesReportsPage.excel.columns.user")]: o?.user?.name || "—",
+                [t("salesReportsPage.excel.columns.table")]: o?.table?.tableNumber || "—",
+                [t("salesReportsPage.excel.columns.shipping")]: Number(
+                    o?.shippingFee ??
+                    o?.deliveryFee ??
+                    o?.bills?.shippingFee ??
+                    o?.bills?.deliveryFee ??
+                    0
+                ),
             }));
 
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Reportes de Ventas");
+            XLSX.utils.book_append_sheet(wb, ws, t("salesReportsPage.excel.salesSheet"));
 
             const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
             const blob = new Blob([arrayBuffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
 
-            saveAs(blob, `reportes_ventas_${new Date().toISOString().split("T")[0]}.xlsx`);
+            saveAs(
+                blob,
+                `${t("salesReportsPage.excel.salesFilePrefix")}_${getTodayYMD(localization)}.xlsx`
+            );
         } catch (error) {
             console.error("Error exportando Excel:", error);
-            showToast("Error al exportar el archivo.");
+            showToast(t("salesReportsPage.messages.exportError"));
         }
     };
     const downloadExcelReport = async (exportAll = true) => {
@@ -585,54 +697,54 @@ const SalesReports = () => {
                     const profitPct = hasCost && revenue > 0 ? (profit / revenue) * 100 : null;
 
                     return {
-                        Categoría: r.category || "Sin categoría",
-                        Presentación: r.presentation || "Regular",
-                        Producto: r.product || "",
-                        Método: r.paymentMethod || "Desconocido",
-                        Cantidad: safeNumber(r.qty),
-                        "Precio Unit": safeNumber(r.unitPrice),
-                        "Costo Unit": hasCost ? safeNumber(r.unitCost) : "N/A",
-                        Ingresos: revenue,
-                        Costo: hasCost ? costTotal : "N/A",
-                        Utilidad: profit == null ? "N/A" : Number(profit.toFixed(2)),
-                        "Costo %": costPct == null ? "N/A" : `${costPct.toFixed(2)}%`,
-                        "Utilidad %": profitPct == null ? "N/A" : `${profitPct.toFixed(2)}%`,
-                        ITBIS: safeNumber(r.taxTotal),
-                        "10% Legal": safeNumber(r.tipTotal),
+                        [t("salesReportsPage.excel.columns.category")]: r.category || t("salesReportsPage.common.noCategory"),
+                        [t("salesReportsPage.excel.columns.presentation")]: r.presentation || t("salesReportsPage.common.regular"),
+                        [t("salesReportsPage.excel.columns.product")]: r.product || "",
+                        [t("salesReportsPage.excel.columns.method")]: r.paymentMethod || t("salesReportsPage.common.unknown"),
+                        [t("salesReportsPage.excel.columns.quantity")]: safeNumber(r.qty),
+                        [t("salesReportsPage.excel.columns.unitPrice")]: safeNumber(r.unitPrice),
+                        [t("salesReportsPage.excel.columns.unitCost")]: hasCost ? safeNumber(r.unitCost) : t("salesReportsPage.common.notAvailable"),
+                        [t("salesReportsPage.excel.columns.revenue")]: revenue,
+                        [t("salesReportsPage.excel.columns.cost")]: hasCost ? costTotal : t("salesReportsPage.common.notAvailable"),
+                        [t("salesReportsPage.excel.columns.profit")]: profit == null ? t("salesReportsPage.common.notAvailable") : Number(profit.toFixed(2)),
+                        [t("salesReportsPage.excel.columns.costPercent")]: costPct == null ? t("salesReportsPage.common.notAvailable") : `${costPct.toFixed(2)}%`,
+                        [t("salesReportsPage.excel.columns.profitPercent")]: profitPct == null ? t("salesReportsPage.common.notAvailable") : `${profitPct.toFixed(2)}%`,
+                        [taxReportLabel]: safeNumber(r.taxTotal),
+                        [serviceChargeReportLabel]: safeNumber(r.tipTotal),
                     };
                 }
 
                 // Por categoría
                 if (tab === "category") {
                     return {
-                        Categoría: r.category || "Sin categoría",
-                        Cantidad: safeNumber(r.qty),
-                        Ingresos: safeNumber(r.revenue),
-                        Costo: r.costTotal == null ? "N/A" : safeNumber(r.costTotal),
-                        Utilidad: r.profit == null ? "N/A" : safeNumber(r.profit),
-                        "Costo %": r.costPct == null ? "N/A" : `${Number(r.costPct).toFixed(2)}%`,
-                        "Utilidad %": r.profitPct == null ? "N/A" : `${Number(r.profitPct).toFixed(2)}%`,
-                        ITBIS: safeNumber(r.taxTotal),
-                        "10% Legal": safeNumber(r.tipTotal),
+                        [t("salesReportsPage.excel.columns.category")]: r.category || t("salesReportsPage.common.noCategory"),
+                        [t("salesReportsPage.excel.columns.quantity")]: safeNumber(r.qty),
+                        [t("salesReportsPage.excel.columns.revenue")]: safeNumber(r.revenue),
+                        [t("salesReportsPage.excel.columns.cost")]: r.costTotal == null ? t("salesReportsPage.common.notAvailable") : safeNumber(r.costTotal),
+                        [t("salesReportsPage.excel.columns.profit")]: r.profit == null ? t("salesReportsPage.common.notAvailable") : safeNumber(r.profit),
+                        [t("salesReportsPage.excel.columns.costPercent")]: r.costPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.costPct).toFixed(2)}%`,
+                        [t("salesReportsPage.excel.columns.profitPercent")]: r.profitPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.profitPct).toFixed(2)}%`,
+                        [taxReportLabel]: safeNumber(r.taxTotal),
+                        [serviceChargeReportLabel]: safeNumber(r.tipTotal),
                     };
                 }
 
                 // Por método
                 return {
-                    "Método de pago": r.paymentMethod || "Desconocido",
-                    Cantidad: safeNumber(r.qty),
-                    Ingresos: safeNumber(r.revenue),
-                    Costo: r.costTotal == null ? "N/A" : safeNumber(r.costTotal),
-                    Utilidad: r.profit == null ? "N/A" : safeNumber(r.profit),
-                    "Costo %": r.costPct == null ? "N/A" : `${Number(r.costPct).toFixed(2)}%`,
-                    "Utilidad %": r.profitPct == null ? "N/A" : `${Number(r.profitPct).toFixed(2)}%`,
-                    ITBIS: safeNumber(r.taxTotal),
+                    [t("salesReportsPage.excel.columns.paymentMethod")]: r.paymentMethod || t("salesReportsPage.common.unknown"),
+                    [t("salesReportsPage.excel.columns.quantity")]: safeNumber(r.qty),
+                    [t("salesReportsPage.excel.columns.revenue")]: safeNumber(r.revenue),
+                    [t("salesReportsPage.excel.columns.cost")]: r.costTotal == null ? t("salesReportsPage.common.notAvailable") : safeNumber(r.costTotal),
+                    [t("salesReportsPage.excel.columns.profit")]: r.profit == null ? t("salesReportsPage.common.notAvailable") : safeNumber(r.profit),
+                    [t("salesReportsPage.excel.columns.costPercent")]: r.costPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.costPct).toFixed(2)}%`,
+                    [t("salesReportsPage.excel.columns.profitPercent")]: r.profitPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.profitPct).toFixed(2)}%`,
+                    [taxReportLabel]: safeNumber(r.taxTotal),
                 };
             });
 
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Reporte");
+            XLSX.utils.book_append_sheet(wb, ws, t("salesReportsPage.excel.reportSheet"));
 
             const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
             const blob = new Blob([arrayBuffer], {
@@ -641,15 +753,15 @@ const SalesReports = () => {
 
             const name =
                 tab === "category"
-                    ? "reporte_por_categoria"
+                    ? t("salesReportsPage.excel.fileNames.category")
                     : tab === "payment"
-                        ? "reporte_por_metodo_pago"
-                        : "detalle_por_producto";
+                        ? t("salesReportsPage.excel.fileNames.payment")
+                        : t("salesReportsPage.excel.fileNames.product");
 
             saveAs(blob, `${name}_${filters.from}_a_${filters.to}.xlsx`);
         } catch (error) {
             console.error("Error exportando Excel (reporte):", error);
-            showToast("Error al exportar el archivo.");
+            showToast(t("salesReportsPage.messages.exportError"));
         }
     };
     const salesByDish = useMemo(() => {
@@ -662,7 +774,7 @@ const SalesReports = () => {
                 r?.dishName ||
                 r?.itemName ||
                 r?.name ||
-                "Producto"
+                t("salesReportsPage.common.product")
             ).trim();
 
             const qty = safeNumber(r?.qty ?? r?.quantity ?? 0);
@@ -688,7 +800,7 @@ const SalesReports = () => {
         return Array.from(map.values())
             .sort((a, b) => b.total - a.total)
             .slice(0, 10);
-    }, [detailRows]);
+    }, [detailRows, t, i18n.language]);
     const totalRows = reportRows.length;
     const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
     const getOrderDishesLabel = (order, max = 2) => {
@@ -736,7 +848,7 @@ const SalesReports = () => {
         return (
             <div className="text-center py-8 text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
-                <p className="mt-2">Cargando reportes...</p>
+                <p className="mt-2">{t("salesReportsPage.loading")}</p>
             </div>
         );
     }
@@ -744,7 +856,7 @@ const SalesReports = () => {
     if (isError) {
         return (
             <div className="text-center py-8 text-red-400">
-                Error al cargar reportes{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
+                {t("salesReportsPage.loadError")}{error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
             </div>
         );
     }
@@ -756,24 +868,24 @@ const SalesReports = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                         <TrendingUp className="w-6 h-6 text-[#f6b100]" />
-                        Reportes de Ventas
+                        {t("salesReportsPage.title")}
                     </h2>
-                    <p className="text-sm text-gray-400 mt-1">Análisis detallado de ventas y facturación</p>
+                    <p className="text-sm text-gray-400 mt-1">{t("salesReportsPage.subtitle")}</p>
                 </div>
                 <button
-                    onClick={downloadExcelReport}
+                    onClick={() => downloadExcelReport(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
                 >
                     <Download className="w-4 h-4" />
-                    Exportar a Excel
+                    {t("salesReportsPage.actions.exportExcel")}
                 </button>
             </div>
             <div className="flex flex-wrap gap-2 mb-4">
 
                 {[
-                    { key: "category", label: "Por categoría" },
-                    { key: "payment", label: "Por método de pago" },
-                    { key: "product", label: "Detalle por producto" },
+                    { key: "category", label: t("salesReportsPage.tabs.category") },
+                    { key: "payment", label: t("salesReportsPage.tabs.payment") },
+                    { key: "product", label: t("salesReportsPage.tabs.product") },
                 ].map((t) => {
                     const active = tab === t.key;
                     return (
@@ -797,7 +909,7 @@ const SalesReports = () => {
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Fecha desde</label>
+                        <label className="text-xs text-gray-400 mb-1 block">{t("salesReportsPage.filters.from")}</label>
                         <input
                             type="date"
                             value={filters.from}
@@ -806,7 +918,7 @@ const SalesReports = () => {
                         />
                     </div>
                     <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Fecha hasta</label>
+                        <label className="text-xs text-gray-400 mb-1 block">{t("salesReportsPage.filters.to")}</label>
                         <input
                             type="date"
                             value={filters.to}
@@ -815,17 +927,17 @@ const SalesReports = () => {
                         />
                     </div>
                     <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Método de pago</label>
+                        <label className="text-xs text-gray-400 mb-1 block">{t("salesReportsPage.filters.paymentMethod")}</label>
                         <select
                             value={filters.method}
                             onChange={(e) => setFilters((f) => ({ ...f, method: e.target.value }))}
                             className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
                         >
-                            <option value="">Todos los métodos</option>
-                            <option value="Efectivo">Efectivo</option>
-                            <option value="Tarjeta">Tarjeta</option>
-                            <option value="Transferencia">Transferencia</option>
-                            <option value="Otros">Otros</option>
+                            <option value="">{t("salesReportsPage.filters.allMethods")}</option>
+                            <option value="Efectivo">{t("salesReportsPage.paymentMethods.cash")}</option>
+                            <option value="Tarjeta">{t("salesReportsPage.paymentMethods.card")}</option>
+                            <option value="Transferencia">{t("salesReportsPage.paymentMethods.transfer")}</option>
+                            <option value="Otros">{t("salesReportsPage.paymentMethods.other")}</option>
                         </select>
                     </div>
                 </div>
@@ -835,47 +947,55 @@ const SalesReports = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">Total Ventas</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">{t("salesReportsPage.metrics.totalSales")}</p>
                         <DollarSign className="w-4 h-4 text-[#f6b100]" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(salesAnalysis.totalSales)}</p>
-                    <p className="text-xs text-gray-500 mt-1">{salesAnalysis.totalOrders} órdenes</p>
+                    <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.orderCount", { count: salesAnalysis.totalOrders })}</p>
                 </div>
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">Promedio por orden</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">{t("salesReportsPage.metrics.averageOrder")}</p>
                         <ShoppingCart className="w-4 h-4 text-green-400" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(salesAnalysis.avgTicket)}</p>
-                    <p className="text-xs text-gray-500 mt-1">Por orden</p>
+                    <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.metrics.perOrder")}</p>
                 </div>
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">Total Órdenes</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">{t("salesReportsPage.metrics.totalOrders")}</p>
                         <Calendar className="w-4 h-4 text-blue-400" />
                     </div>
                     <p className="text-2xl font-bold text-white">{salesAnalysis.totalOrders}</p>
-                    <p className="text-xs text-gray-500 mt-1">Órdenes procesadas</p>
+                    <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.metrics.processedOrders")}</p>
                 </div>
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">ITBIS</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">
+                            {taxReportLabel}
+                        </p>
                         <CreditCard className="w-4 h-4 text-purple-400" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(summaryTax)}</p>
-                    <p className="text-xs text-gray-500 mt-1">ITBIS recaudado</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {t("salesReportsPage.metrics.taxesCollected")}
+                    </p>
                 </div>
 
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wide">10% Legal</p>
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">
+                            {serviceChargeReportLabel}
+                        </p>
                         <DollarSign className="w-4 h-4 text-emerald-400" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(summaryTip)}</p>
-                    <p className="text-xs text-gray-500 mt-1">Propina legal recaudada</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {t("salesReportsPage.metrics.serviceChargesCollected")}
+                    </p>
                 </div>
             </div>
 
@@ -883,7 +1003,7 @@ const SalesReports = () => {
             {/* ✅ Reporte por Producto/Categoría/Método (nuevo) */}
             <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <span>Mostrar</span>
+                    <span>{t("salesReportsPage.pagination.show")}</span>
                     <select
                         value={pageSize}
                         onChange={(e) => setPageSize(Number(e.target.value))}
@@ -892,7 +1012,7 @@ const SalesReports = () => {
                         <option value={10}>10</option>
                         <option value={20}>20</option>
                     </select>
-                    <span>filas</span>
+                    <span>{t("salesReportsPage.pagination.rows")}</span>
                 </div>
 
                 <div className="flex items-center gap-2 text-sm text-gray-300">
@@ -901,11 +1021,11 @@ const SalesReports = () => {
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                         disabled={page <= 1}
                     >
-                        Anterior
+                        {t("salesReportsPage.pagination.previous")}
                     </button>
 
                     <span>
-      Página {page} de {totalPages}
+      {t("salesReportsPage.pagination.pageOf", { page, totalPages })}
     </span>
 
                     <button
@@ -913,7 +1033,7 @@ const SalesReports = () => {
                         onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                         disabled={page >= totalPages}
                     >
-                        Siguiente
+                        {t("salesReportsPage.pagination.next")}
                     </button>
                 </div>
             </div>
@@ -921,55 +1041,60 @@ const SalesReports = () => {
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-white">
                         {tab === "category"
-                            ? "Reporte por Categoría"
+                            ? t("salesReportsPage.reportTitles.category")
                             : tab === "payment"
-                                ? "Reporte por Método de Pago"
-                                : "Detalle por Producto"}
+                                ? t("salesReportsPage.reportTitles.payment")
+                                : t("salesReportsPage.reportTitles.product")}
                     </h3>
 
                     <div className="text-xs text-gray-400">
                         {filters.from} → {filters.to}
-                        {filters.method ? ` · ${filters.method}` : " · Todos los métodos"}
+                        {filters.method ? ` · ${normalizePaymentMethodLabel(filters.method, t)}` : ` · ${t("salesReportsPage.filters.allMethods")}`}
                     </div>
                 </div>
 
                 {productReportQuery.isLoading ? (
                     <div className="text-center py-8 text-gray-400">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
-                        <p className="mt-2">Cargando reporte...</p>
+                        <p className="mt-2">{t("salesReportsPage.report.loading")}</p>
                     </div>
                 ) : productReportQuery.isError ? (
                     <div className="text-center py-6 text-red-400">
-                        Error cargando reporte.
+                        {t("salesReportsPage.report.loadError")}
                     </div>
                 ) : reportRows.length === 0 ? (
                     <div className="text-center py-6 text-gray-400">
-                        No hay datos para este rango de fechas.
+                        {t("salesReportsPage.report.empty")}
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
                             <thead>
                             <tr className="text-gray-400 border-b border-gray-800/60">
-                                {tab === "category" && <th className="text-left py-2 pr-4">Categoría</th>}
-                                {tab === "payment" && <th className="text-left py-2 pr-4">Método</th>}
+                                {tab === "category" && <th className="text-left py-2 pr-4">{t("salesReportsPage.table.category")}</th>}
+                                {tab === "payment" && <th className="text-left py-2 pr-4">{t("salesReportsPage.table.method")}</th>}
                                 {tab === "product" && (
                                     <>
-                                        <th className="text-left py-2 pr-4">Categoría</th>
-                                        <th className="text-left py-2 pr-4">Presentación</th>
-                                        <th className="text-left py-2 pr-4">Producto</th>
-                                        <th className="text-left py-2 pr-4">Método</th>
+                                        <th className="text-left py-2 pr-4">{t("salesReportsPage.table.category")}</th>
+                                        <th className="text-left py-2 pr-4">{t("salesReportsPage.table.presentation")}</th>
+                                        <th className="text-left py-2 pr-4">{t("salesReportsPage.table.product")}</th>
+                                        <th className="text-left py-2 pr-4">{t("salesReportsPage.table.method")}</th>
                                     </>
                                 )}
 
-                                <th className="text-right py-2 px-3">Cant.</th>
-                                <th className="text-right py-2 px-3">Ingresos</th>
-                                <th className="text-right py-2 px-3">Costo</th>
-                                <th className="text-right py-2 px-3">Utilidad</th>
-                                <th className="text-right py-2 px-3">Costo %</th>
-                                <th className="text-right py-2 px-3">Utilidad %</th>
-                                <th className="text-right py-2 px-3">ITBIS</th>
-                                <th className="text-right py-2 pl-3">10% Legal</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.quantityShort")}</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.revenue")}</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.cost")}</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.profit")}</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.costPercent")}</th>
+                                <th className="text-right py-2 px-3">{t("salesReportsPage.table.profitPercent")}</th>
+                                <th className="text-right py-2 px-3">
+                                    {taxReportLabel}
+                                </th>
+
+                                <th className="text-right py-2 pl-3">
+                                    {serviceChargeReportLabel}
+                                </th>
                             </tr>
                             </thead>
 
@@ -1011,22 +1136,22 @@ const SalesReports = () => {
 
                                         {/* ✅ Costo */}
                                         <td className="py-2 px-3 text-right">
-                                            {costTotal == null ? "N/A" : currency(costTotal)}
+                                            {costTotal == null ? t("salesReportsPage.common.notAvailable") : currency(costTotal)}
                                         </td>
 
                                         {/* ✅ Utilidad */}
                                         <td className="py-2 px-3 text-right">
-                                            {profit == null ? "N/A" : currency(profit)}
+                                            {profit == null ? t("salesReportsPage.common.notAvailable") : currency(profit)}
                                         </td>
 
                                         {/* ✅ Costo % */}
                                         <td className="py-2 px-3 text-right">
-                                            {costPct == null ? "N/A" : `${costPct.toFixed(2)}%`}
+                                            {costPct == null ? t("salesReportsPage.common.notAvailable") : `${costPct.toFixed(2)}%`}
                                         </td>
 
                                         {/* ✅ Utilidad % */}
                                         <td className="py-2 px-3 text-right">
-                                            {profitPct == null ? "N/A" : `${profitPct.toFixed(2)}%`}
+                                            {profitPct == null ? t("salesReportsPage.common.notAvailable") : `${profitPct.toFixed(2)}%`}
                                         </td>
 
                                         <td className="py-2 px-3 text-right">{currency(taxTotal)}</td>
@@ -1041,13 +1166,13 @@ const SalesReports = () => {
             </div>
             {/* Análisis por método de pago */}
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
-                <h3 className="text-lg font-semibold text-white mb-4">Ventas por Método de Pago</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">{t("salesReportsPage.sections.salesByPaymentMethod")}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     {paymentCards.map(([method, data]) => (
                         <div key={method} className="bg-[#1a1a1a] border border-gray-800/30 rounded-lg p-3">
                             <p className="text-sm text-gray-400 mb-1">{method}</p>
                             <p className="text-lg font-bold text-white">{currency(data.total)}</p>
-                            <p className="text-xs text-gray-500 mt-1">{data.count} órdenes</p>
+                            <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.orderCount", { count: data.count })}</p>
                         </div>
                     ))}
                 </div>
@@ -1056,16 +1181,16 @@ const SalesReports = () => {
             {/* Ventas por Plato */}
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-white">Ventas por Plato</h3>
-                    <span className="text-xs text-gray-400">Top 10</span>
+                    <h3 className="text-lg font-semibold text-white">{t("salesReportsPage.sections.salesByDish")}</h3>
+                    <span className="text-xs text-gray-400">{t("salesReportsPage.common.top10")}</span>
                 </div>
                 {productReportQuery.isLoading ? (
                     <div className="text-center py-6 text-gray-400">
-                        Cargando ventas por plato...
+                        {t("salesReportsPage.sections.loadingDishSales")}
                     </div>
                 ) : salesByDish.length === 0 ? (
                     <div className="text-center py-6 text-gray-400">
-                        No hay productos vendidos para mostrar en este rango.
+                        {t("salesReportsPage.sections.noDishSales")}
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1074,8 +1199,8 @@ const SalesReports = () => {
                                 <p className="text-sm text-gray-200 mb-1 line-clamp-2">{x.name}</p>
                                 <p className="text-lg font-bold text-white">{currency(x.total)}</p>
                                 <p className="text-xs text-gray-500 mt-1">
-                                    {x.count > 0 ? `${x.count} órdenes · ` : ""}
-                                    {Number(x.qty || 0).toFixed(2)} cant.
+                                    {x.count > 0 ? `${t("salesReportsPage.orderCount", { count: x.count })} · ` : ""}
+                                    {t("salesReportsPage.quantityValue", { count: Number(x.qty || 0).toFixed(2) })}
                                 </p>
                             </div>
                         ))}
@@ -1085,7 +1210,7 @@ const SalesReports = () => {
 
             {/* Ventas por día de la semana */}
             <div className="mb-6 rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-4">
-                <h3 className="text-lg font-semibold text-white mb-4">Ventas por Día de la Semana</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">{t("salesReportsPage.sections.salesByWeekday")}</h3>
                 <div className="space-y-2">
                     {Object.entries(salesAnalysis.byDayOfWeek)
                         .sort((a, b) => b[1].total - a[1].total)
@@ -1104,7 +1229,7 @@ const SalesReports = () => {
                                             style={{ width: `${percentage}%` }}
                                         />
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1">{data.count} órdenes</p>
+                                    <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.orderCount", { count: data.count })}</p>
                                 </div>
                             );
                         })}
@@ -1114,30 +1239,33 @@ const SalesReports = () => {
             {/* Tabla de ventas recientes */}
             <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] overflow-hidden">
                 <div className="p-4 border-b border-gray-800/50">
-                    <h3 className="text-lg font-semibold text-white">Ventas Recientes</h3>
+                    <h3 className="text-lg font-semibold text-white">{t("salesReportsPage.sections.recentSales")}</h3>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead className="bg-[#1a1a1a] border-b border-gray-800/50">
                             <tr>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Fecha</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Cliente</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Método</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Platos</th>
-                                <th className="p-3 text-sm font-semibold text-gray-300">Total</th>
+                                <th className="p-3 text-sm font-semibold text-gray-300">{t("salesReportsPage.recentTable.date")}</th>
+                                <th className="p-3 text-sm font-semibold text-gray-300">{t("salesReportsPage.recentTable.customer")}</th>
+                                <th className="p-3 text-sm font-semibold text-gray-300">{t("salesReportsPage.table.method")}</th>
+                                <th className="p-3 text-sm font-semibold text-gray-300">{t("salesReportsPage.recentTable.dishes")}</th>
+                                <th className="p-3 text-sm font-semibold text-gray-300">{t("salesReportsPage.recentTable.total")}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {recentOrders.map((order) => (
                                 <tr key={order._id} className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors">
                                     <td className="p-3 text-sm text-gray-300">
-                                        {new Date(order.createdAt).toLocaleDateString()}
+                                        {formatDate(
+                                            order.createdAt,
+                                            localization
+                                        )}
                                     </td>
                                     <td className="p-3 text-sm text-gray-300">
                                         {order.customerDetails?.name || "—"}
                                     </td>
                                     <td className="p-3 text-sm text-gray-300">
-                                        {order.paymentMethod || "Efectivo"}
+                                        {normalizePaymentMethodLabel(order.paymentMethod, t)}
                                     </td>
                                     <td className="p-3 text-sm text-gray-300 max-w-[260px] truncate">
                                         {getOrderDishesLabel(order, 2)}
@@ -1156,11 +1284,11 @@ const SalesReports = () => {
                             onClick={() => setRecentPage((p) => Math.max(1, p - 1))}
                             disabled={recentPage <= 1}
                         >
-                            Anterior
+                            {t("salesReportsPage.pagination.previous")}
                         </button>
 
                         <span>
-                            Página {recentPage} de {recentTotalPages}
+                            {t("salesReportsPage.pagination.pageOf", { page: recentPage, totalPages: recentTotalPages })}
                           </span>
 
                         <button
@@ -1168,7 +1296,7 @@ const SalesReports = () => {
                             onClick={() => setRecentPage((p) => Math.min(recentTotalPages, p + 1))}
                             disabled={recentPage >= recentTotalPages}
                         >
-                            Siguiente
+                            {t("salesReportsPage.pagination.next")}
                         </button>
                     </div>
                 </div>
@@ -1186,6 +1314,7 @@ const SalesReports = () => {
                             <div className="text-sm font-medium">{toast.message}</div>
                             <button
                                 type="button"
+                                aria-label={t("salesReportsPage.actions.closeNotification")}
                                 className="ml-2 text-white/70 hover:text-white"
                                 onClick={() => setToast((t) => ({ ...t, open: false }))}
                             >

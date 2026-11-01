@@ -1,282 +1,1251 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
+import {
+    useTranslation,
+} from "react-i18next";
+
 import {
     listPayrollRuns,
     createPayrollRun,
     postPayrollRun,
 } from "../../lib/adminFinanceApi";
 
-const todayYMD = () => new Date().toISOString().slice(0, 10);
+import useTenant from "../../hooks/useTenant";
 
-function money(n) {
-    const x = Number(String(n).replace(/,/g, ""));
-    return new Intl.NumberFormat("es-DO", {
-        style: "currency",
-        currency: "DOP",
-        minimumFractionDigits: 2,
-    }).format(Number.isFinite(x) ? x : 0);
-}
+import {
+    formatMoney,
+    getTenantLocalization,
+    getTodayYMD,
+} from "../../lib/localization";
+
+
 function toNumber(value) {
-    const x = Number(String(value ?? "").replace(/,/g, "").trim());
-    return Number.isFinite(x) ? x : 0;
+    const number =
+        Number(
+            String(
+                value ??
+                ""
+            )
+                .replace(
+                    /,/g,
+                    ""
+                )
+                .trim()
+        );
+
+    return Number.isFinite(
+        number
+    )
+        ? number
+        : 0;
 }
+
+
 export default function PayrollRuns() {
-    const [rows, setRows] = useState([]);
-    const [err, setErr] = useState("");
-    const [busy, setBusy] = useState(false);
+    const {
+        t,
+    } =
+        useTranslation();
 
-    const [periodFromYMD, setPeriodFromYMD] = useState(todayYMD());
-    const [periodToYMD, setPeriodToYMD] = useState(todayYMD());
-    const [payDateYMD, setPayDateYMD] = useState(todayYMD());
 
-    const [items, setItems] = useState([
-        { employeeName: "", roleName: "", gross: "", deductions: "", note: "" },
-    ]);
+    const {
+        tenantInfo,
+    } =
+        useTenant();
+
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+
+    const money = (
+        value
+    ) =>
+        formatMoney(
+            value,
+            localization
+        );
+
+
+    const todayYMD =
+        () =>
+            getTodayYMD(
+                localization
+            );
+
+
+    const [
+        rows,
+        setRows,
+    ] =
+        useState(
+            []
+        );
+
+
+    const [
+        err,
+        setErr,
+    ] =
+        useState(
+            ""
+        );
+
+
+    const [
+        busy,
+        setBusy,
+    ] =
+        useState(
+            false
+        );
+
+
+    const [
+        periodFromYMD,
+        setPeriodFromYMD,
+    ] =
+        useState(
+            () =>
+                todayYMD()
+        );
+
+
+    const [
+        periodToYMD,
+        setPeriodToYMD,
+    ] =
+        useState(
+            () =>
+                todayYMD()
+        );
+
+
+    const [
+        payDateYMD,
+        setPayDateYMD,
+    ] =
+        useState(
+            () =>
+                todayYMD()
+        );
+
+
+    const [
+        items,
+        setItems,
+    ] =
+        useState([
+            {
+                employeeName:
+                    "",
+
+                roleName:
+                    "",
+
+                gross:
+                    "",
+
+                deductions:
+                    "",
+
+                note:
+                    "",
+            },
+        ]);
+
+
+    /*
+     * ==========================================
+     * CARGAR CORRIDAS
+     * ==========================================
+     */
 
     async function refresh() {
-        setErr("");
-        const r = await listPayrollRuns({ from: periodFromYMD, to: periodToYMD });
-        setRows(r.data || []);
+        setErr(
+            ""
+        );
+
+
+        const response =
+            await listPayrollRuns({
+                from:
+                periodFromYMD,
+
+                to:
+                periodToYMD,
+            });
+
+
+        setRows(
+            response.data ||
+            []
+        );
     }
 
-    useEffect(() => {
-        refresh().catch((e) => setErr(e.message));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
-    const totals = useMemo(() => {
-        let gross = 0, deductions = 0, net = 0;
+    useEffect(
+        () => {
+            refresh()
+                .catch(
+                    (
+                        error
+                    ) =>
+                        setErr(
+                            error.message
+                        )
+                );
 
-        for (const it of items) {
-            const g = toNumber(it.gross);
-            const d = toNumber(it.deductions);
-            gross += g;
-            deductions += d;
-            net += Math.max(0, g - d);
-        }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        },
+        []
+    );
 
-        return { gross, deductions, net };
-    }, [items]);
 
-    function updateItem(i, patch) {
-        setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+    /*
+     * ==========================================
+     * TOTALES
+     * ==========================================
+     */
+
+    const totals =
+        useMemo(
+            () => {
+                let gross =
+                    0;
+
+                let deductions =
+                    0;
+
+                let net =
+                    0;
+
+
+                for (
+                    const item
+                    of items
+                    ) {
+                    const itemGross =
+                        toNumber(
+                            item.gross
+                        );
+
+
+                    const itemDeductions =
+                        toNumber(
+                            item.deductions
+                        );
+
+
+                    gross +=
+                        itemGross;
+
+
+                    deductions +=
+                        itemDeductions;
+
+
+                    net +=
+                        Math.max(
+                            0,
+                            itemGross -
+                            itemDeductions
+                        );
+                }
+
+
+                return {
+                    gross,
+                    deductions,
+                    net,
+                };
+            },
+            [
+                items,
+            ]
+        );
+
+
+    /*
+     * ==========================================
+     * EMPLEADOS
+     * ==========================================
+     */
+
+    function updateItem(
+        index,
+        patch
+    ) {
+        setItems(
+            (
+                previous
+            ) =>
+                previous.map(
+                    (
+                        item,
+                        itemIndex
+                    ) =>
+                        itemIndex ===
+                        index
+                            ? {
+                                ...item,
+
+                                ...patch,
+                            }
+                            : item
+                )
+        );
     }
+
 
     function addRow() {
-        setItems((prev) => [...prev, { employeeName: "", roleName: "", gross: "", deductions: "", note: "" }]);
+        setItems(
+            (
+                previous
+            ) => [
+                ...previous,
+
+                {
+                    employeeName:
+                        "",
+
+                    roleName:
+                        "",
+
+                    gross:
+                        "",
+
+                    deductions:
+                        "",
+
+                    note:
+                        "",
+                },
+            ]
+        );
     }
 
-    function removeRow(i) {
-        setItems((prev) => prev.filter((_, idx) => idx !== i));
+
+    function removeRow(
+        index
+    ) {
+        setItems(
+            (
+                previous
+            ) =>
+                previous.filter(
+                    (
+                        _,
+                        itemIndex
+                    ) =>
+                        itemIndex !==
+                        index
+                )
+        );
     }
 
-    async function onCreate(e) {
-        e.preventDefault();
-        setBusy(true);
-        setErr("");
+
+    /*
+     * ==========================================
+     * CREAR CORRIDA
+     * ==========================================
+     */
+
+    async function onCreate(
+        event
+    ) {
+        event.preventDefault();
+
+
+        setBusy(
+            true
+        );
+
+
+        setErr(
+            ""
+        );
+
+
         try {
-            const payloadItems = items
-                .filter((x) => String(x.employeeName).trim())
-                .map((x) => ({
-                    employeeName: String(x.employeeName).trim(),
-                    roleName: String(x.roleName || "").trim(),
-                    gross: String(x.gross || "").replace(/,/g, ""),
-                    deductions: String(x.deductions || "").replace(/,/g, ""),
-                    note: String(x.note || "").trim(),
-                }));
+            const payloadItems =
+                items
+                    .filter(
+                        (
+                            item
+                        ) =>
+                            String(
+                                item.employeeName
+                            ).trim()
+                    )
+                    .map(
+                        (
+                            item
+                        ) => ({
+                            employeeName:
+                                String(
+                                    item.employeeName
+                                ).trim(),
 
-            if (!payloadItems.length) throw new Error("Debes agregar al menos un empleado.");
+                            roleName:
+                                String(
+                                    item.roleName ||
+                                    ""
+                                ).trim(),
+
+                            gross:
+                                String(
+                                    item.gross ||
+                                    ""
+                                ).replace(
+                                    /,/g,
+                                    ""
+                                ),
+
+                            deductions:
+                                String(
+                                    item.deductions ||
+                                    ""
+                                ).replace(
+                                    /,/g,
+                                    ""
+                                ),
+
+                            note:
+                                String(
+                                    item.note ||
+                                    ""
+                                ).trim(),
+                        })
+                    );
+
+
+            if (
+                !payloadItems.length
+            ) {
+                setErr(
+                    t(
+                        "payrollRuns.messages.employeeRequired"
+                    )
+                );
+
+                return;
+            }
+
 
             await createPayrollRun({
                 periodFromYMD,
                 periodToYMD,
                 payDateYMD,
-                items: payloadItems,
+
+                items:
+                payloadItems,
             });
 
-            setItems([{ employeeName: "", roleName: "", gross: "", deductions: "", note: "" }]);
+
+            setItems([
+                {
+                    employeeName:
+                        "",
+
+                    roleName:
+                        "",
+
+                    gross:
+                        "",
+
+                    deductions:
+                        "",
+
+                    note:
+                        "",
+                },
+            ]);
+
+
             await refresh();
-        } catch (e2) {
-            setErr(e2.message);
+
+        } catch (
+            error
+            ) {
+            setErr(
+                error.message
+            );
+
         } finally {
-            setBusy(false);
+            setBusy(
+                false
+            );
         }
     }
 
-    async function onPost(runId) {
-        if (!confirm("¿Postear nómina? Esto creará el gasto automático en Gastos.")) return;
-        setBusy(true);
-        setErr("");
+
+    /*
+     * ==========================================
+     * POSTEAR CORRIDA
+     * ==========================================
+     */
+
+    async function onPost(
+        runId
+    ) {
+        if (
+            !window.confirm(
+                t(
+                    "payrollRuns.confirmPost"
+                )
+            )
+        ) {
+            return;
+        }
+
+
+        setBusy(
+            true
+        );
+
+
+        setErr(
+            ""
+        );
+
+
         try {
-            await postPayrollRun(runId);
+            await postPayrollRun(
+                runId
+            );
+
+
             await refresh();
-        } catch (e) {
-            setErr(e.message);
+
+        } catch (
+            error
+            ) {
+            setErr(
+                error.message
+            );
+
         } finally {
-            setBusy(false);
+            setBusy(
+                false
+            );
         }
     }
+
+
+    /*
+     * ==========================================
+     * STATUS
+     * ==========================================
+     *
+     * "posted" es un valor interno.
+     * NO traducir.
+     */
+
+    const getStatusLabel = (
+        status
+    ) => {
+        if (
+            status ===
+            "posted"
+        ) {
+            return t(
+                "payrollRuns.status.posted"
+            );
+        }
+
+
+        return t(
+            "payrollRuns.status.draft"
+        );
+    };
+
 
     return (
         <section className="p-4 text-white">
-            <h1 className="text-xl font-semibold">Nómina</h1>
 
-            {err ? <div className="mt-3 text-red-400">{err}</div> : null}
+            <h1 className="text-xl font-semibold">
 
-            <form onSubmit={onCreate} className="mt-4 border border-white/10 rounded-xl p-3">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-                    <div className="md:col-span-3">
-                        <div className="text-xs text-white/70">Desde</div>
-                        <input className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2" type="date" value={periodFromYMD} onChange={(e) => setPeriodFromYMD(e.target.value)} />
-                    </div>
-                    <div className="md:col-span-3">
-                        <div className="text-xs text-white/70">Hasta</div>
-                        <input className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2" type="date" value={periodToYMD} onChange={(e) => setPeriodToYMD(e.target.value)} />
-                    </div>
-                    <div className="md:col-span-3">
-                        <div className="text-xs text-white/70">Fecha de pago</div>
-                        <input className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2" type="date" value={payDateYMD} onChange={(e) => setPayDateYMD(e.target.value)} />
-                    </div>
-                    <div className="md:col-span-3 flex items-end justify-end">
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                            Neto: <span className="ml-2 font-semibold text-white">{money(totals.net)}</span>
-                        </div>
-                    </div>
+                {t(
+                    "payrollRuns.title"
+                )}
+
+            </h1>
+
+
+            {err ? (
+
+                <div className="mt-3 text-red-400">
+
+                    {err}
+
                 </div>
+
+            ) : null}
+
+
+            {/* ======================================
+                NUEVA CORRIDA
+            ====================================== */}
+
+            <form
+                onSubmit={
+                    onCreate
+                }
+
+                className="mt-4 border border-white/10 rounded-xl p-3"
+            >
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+
+                    {/* DESDE */}
+
+                    <div className="md:col-span-3">
+
+                        <div className="text-xs text-white/70">
+
+                            {t(
+                                "payrollRuns.fields.from"
+                            )}
+
+                        </div>
+
+
+                        <input
+                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+
+                            type="date"
+
+                            value={
+                                periodFromYMD
+                            }
+
+                            onChange={(
+                                event
+                            ) =>
+                                setPeriodFromYMD(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                        />
+
+                    </div>
+
+
+                    {/* HASTA */}
+
+                    <div className="md:col-span-3">
+
+                        <div className="text-xs text-white/70">
+
+                            {t(
+                                "payrollRuns.fields.to"
+                            )}
+
+                        </div>
+
+
+                        <input
+                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+
+                            type="date"
+
+                            value={
+                                periodToYMD
+                            }
+
+                            onChange={(
+                                event
+                            ) =>
+                                setPeriodToYMD(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                        />
+
+                    </div>
+
+
+                    {/* FECHA DE PAGO */}
+
+                    <div className="md:col-span-3">
+
+                        <div className="text-xs text-white/70">
+
+                            {t(
+                                "payrollRuns.fields.payDate"
+                            )}
+
+                        </div>
+
+
+                        <input
+                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+
+                            type="date"
+
+                            value={
+                                payDateYMD
+                            }
+
+                            onChange={(
+                                event
+                            ) =>
+                                setPayDateYMD(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                        />
+
+                    </div>
+
+
+                    {/* NETO */}
+
+                    <div className="md:col-span-3 flex items-end justify-end">
+
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+
+                            {t(
+                                "payrollRuns.summary.net"
+                            )}
+                            :{" "}
+
+
+                            <span className="ml-2 font-semibold text-white">
+
+                                {money(
+                                    totals.net
+                                )}
+
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                {/* ======================================
+                    EMPLEADOS
+                ====================================== */}
 
                 <div className="mt-4 border border-white/10 rounded-xl overflow-hidden">
+
                     <div className="grid grid-cols-12 gap-2 bg-white/5 px-3 py-2 text-sm text-white/80">
-                        <div className="col-span-3 whitespace-nowrap">Empleado</div>
-                        <div className="col-span-2 whitespace-nowrap">Cargo</div>
-                        <div className="col-span-2 text-right whitespace-nowrap">Bruto</div>
-                        <div className="col-span-2 text-right whitespace-nowrap">Deducciones</div>
-                        <div className="col-span-2 whitespace-nowrap">Nota</div>
-                        <div className="col-span-1 text-right whitespace-nowrap">Acción</div>
+
+                        <div className="col-span-3 whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.employee"
+                            )}
+
+                        </div>
+
+
+                        <div className="col-span-2 whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.role"
+                            )}
+
+                        </div>
+
+
+                        <div className="col-span-2 text-right whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.gross"
+                            )}
+
+                        </div>
+
+
+                        <div className="col-span-2 text-right whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.deductions"
+                            )}
+
+                        </div>
+
+
+                        <div className="col-span-2 whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.note"
+                            )}
+
+                        </div>
+
+
+                        <div className="col-span-1 text-right whitespace-nowrap">
+
+                            {t(
+                                "payrollRuns.table.action"
+                            )}
+
+                        </div>
+
                     </div>
 
-                    {items.map((it, i) => (
-                        <div
-                            key={i}
-                            className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
-                        >
-                            <input
-                                className="col-span-3 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
-                                placeholder="Nombre"
-                                value={it.employeeName}
-                                onChange={(e) => updateItem(i, { employeeName: e.target.value })}
-                            />
 
-                            <input
-                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
-                                placeholder="Cargo"
-                                value={it.roleName}
-                                onChange={(e) => updateItem(i, { roleName: e.target.value })}
-                            />
+                    {items.map(
+                        (
+                            item,
+                            index
+                        ) => (
 
-                            <input
-                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
-                                placeholder="0.00"
-                                value={it.gross}
-                                onChange={(e) => updateItem(i, { gross: e.target.value })}
-                            />
+                            <div
+                                key={
+                                    index
+                                }
 
-                            <input
-                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
-                                placeholder="0.00"
-                                value={it.deductions}
-                                onChange={(e) => updateItem(i, { deductions: e.target.value })}
-                            />
+                                className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
+                            >
 
-                            <input
-                                className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
-                                placeholder="Opcional"
-                                value={it.note}
-                                onChange={(e) => updateItem(i, { note: e.target.value })}
-                            />
+                                <input
+                                    className="col-span-3 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
 
-                            <div className="col-span-1 flex justify-end">
-                                <button
-                                    type="button"
-                                    className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30"
-                                    onClick={() => removeRow(i)}
-                                    disabled={items.length === 1}
-                                >
-                                    X
-                                </button>
+                                    placeholder={
+                                        t(
+                                            "payrollRuns.placeholders.employeeName"
+                                        )
+                                    }
+
+                                    value={
+                                        item.employeeName
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        updateItem(
+                                            index,
+                                            {
+                                                employeeName:
+                                                event
+                                                    .target
+                                                    .value,
+                                            }
+                                        )
+                                    }
+                                />
+
+
+                                <input
+                                    className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
+
+                                    placeholder={
+                                        t(
+                                            "payrollRuns.placeholders.role"
+                                        )
+                                    }
+
+                                    value={
+                                        item.roleName
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        updateItem(
+                                            index,
+                                            {
+                                                roleName:
+                                                event
+                                                    .target
+                                                    .value,
+                                            }
+                                        )
+                                    }
+                                />
+
+
+                                <input
+                                    className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
+
+                                    placeholder="0.00"
+
+                                    value={
+                                        item.gross
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        updateItem(
+                                            index,
+                                            {
+                                                gross:
+                                                event
+                                                    .target
+                                                    .value,
+                                            }
+                                        )
+                                    }
+                                />
+
+
+                                <input
+                                    className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-right"
+
+                                    placeholder="0.00"
+
+                                    value={
+                                        item.deductions
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        updateItem(
+                                            index,
+                                            {
+                                                deductions:
+                                                event
+                                                    .target
+                                                    .value,
+                                            }
+                                        )
+                                    }
+                                />
+
+
+                                <input
+                                    className="col-span-2 bg-black/40 border border-white/10 rounded-lg px-2 py-2"
+
+                                    placeholder={
+                                        t(
+                                            "payrollRuns.placeholders.optional"
+                                        )
+                                    }
+
+                                    value={
+                                        item.note
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        updateItem(
+                                            index,
+                                            {
+                                                note:
+                                                event
+                                                    .target
+                                                    .value,
+                                            }
+                                        )
+                                    }
+                                />
+
+
+                                <div className="col-span-1 flex justify-end">
+
+                                    <button
+                                        type="button"
+
+                                        className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+
+                                        onClick={() =>
+                                            removeRow(
+                                                index
+                                            )
+                                        }
+
+                                        disabled={
+                                            items.length ===
+                                            1
+                                        }
+
+                                        aria-label={
+                                            t(
+                                                "payrollRuns.actions.removeEmployee"
+                                            )
+                                        }
+
+                                        title={
+                                            t(
+                                                "payrollRuns.actions.removeEmployee"
+                                            )
+                                        }
+                                    >
+
+                                        X
+
+                                    </button>
+
+                                </div>
+
                             </div>
-                        </div>
-                    ))}
+
+                        )
+                    )}
+
                 </div>
+
+
+                {/* ACCIONES */}
 
                 <div className="mt-3 flex gap-2">
-                    <button type="button" className="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2" onClick={addRow}>
-                        Agregar empleado
+
+                    <button
+                        type="button"
+
+                        className="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2"
+
+                        onClick={
+                            addRow
+                        }
+                    >
+
+                        {t(
+                            "payrollRuns.actions.addEmployee"
+                        )}
+
                     </button>
-                    <button disabled={busy} className="ml-auto bg-yellow-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60">
-                        Crear corrida
+
+
+                    <button
+                        disabled={
+                            busy
+                        }
+
+                        className="ml-auto bg-yellow-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60"
+                    >
+
+                        {busy
+                            ? t(
+                                "payrollRuns.actions.saving"
+                            )
+                            : t(
+                                "payrollRuns.actions.createRun"
+                            )
+                        }
+
                     </button>
+
                 </div>
+
             </form>
 
-            <h2 className="mt-6 text-lg font-semibold">Corridas</h2>
+
+            {/* ======================================
+                CORRIDAS
+            ====================================== */}
+
+            <h2 className="mt-6 text-lg font-semibold">
+
+                {t(
+                    "payrollRuns.runs.title"
+                )}
+
+            </h2>
+
+
             <div className="mt-2 border border-white/10 rounded-xl overflow-hidden">
+
                 <div className="grid grid-cols-12 gap-2 bg-white/5 px-3 py-2 text-sm text-white/80">
-                    <div className="col-span-2 whitespace-nowrap">Fecha pago</div>
-                    <div className="col-span-4 whitespace-nowrap">Período</div>
-                    <div className="col-span-1 text-center whitespace-nowrap">Empleados</div>
-                    <div className="col-span-2 text-right whitespace-nowrap">Neto</div>
-                    <div className="col-span-2 whitespace-nowrap">Estado</div>
-                    <div className="col-span-1 text-right whitespace-nowrap">Acción</div>
+
+                    <div className="col-span-2 whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.payDate"
+                        )}
+
+                    </div>
+
+
+                    <div className="col-span-4 whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.period"
+                        )}
+
+                    </div>
+
+
+                    <div className="col-span-1 text-center whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.employees"
+                        )}
+
+                    </div>
+
+
+                    <div className="col-span-2 text-right whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.net"
+                        )}
+
+                    </div>
+
+
+                    <div className="col-span-2 whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.status"
+                        )}
+
+                    </div>
+
+
+                    <div className="col-span-1 text-right whitespace-nowrap">
+
+                        {t(
+                            "payrollRuns.runs.action"
+                        )}
+
+                    </div>
+
                 </div>
 
-                {rows.map((r) => (
-                    <div
-                        key={r._id}
-                        className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
-                    >
-                        <div className="col-span-2">{r.payDateYMD}</div>
 
-                        <div className="col-span-4">
-                            {r.periodFromYMD} a {r.periodToYMD}
-                        </div>
+                {rows.map(
+                    (
+                        run
+                    ) => (
 
-                        <div className="col-span-1 text-center">
-                            {r.items?.length || 0}
-                        </div>
+                        <div
+                            key={
+                                run._id
+                            }
 
-                        <div className="col-span-2 text-right">
-                            {money(r.totals?.net || 0)}
-                        </div>
+                            className="grid grid-cols-12 gap-2 px-3 py-2 border-t border-white/10 items-center"
+                        >
 
-                        <div className="col-span-2">
-            <span
-                className={`px-2 py-1 rounded text-xs ${
-                    r.status === "posted"
-                        ? "bg-green-500/20 text-green-300"
-                        : "bg-yellow-500/20 text-yellow-300"
-                }`}
-            >
-                {r.status === "posted" ? "Posteada" : "Borrador"}
-            </span>
-                        </div>
+                            <div className="col-span-2">
 
-                        <div className="col-span-1 flex justify-end">
-                            {r.status !== "posted" ? (
-                                <button
-                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20"
-                                    onClick={() => onPost(r._id)}
-                                    disabled={busy}
+                                {run.payDateYMD}
+
+                            </div>
+
+
+                            <div className="col-span-4">
+
+                                {run.periodFromYMD}{" "}
+
+                                {t(
+                                    "payrollRuns.runs.periodSeparator"
+                                )}{" "}
+
+                                {run.periodToYMD}
+
+                            </div>
+
+
+                            <div className="col-span-1 text-center">
+
+                                {run.items?.length || 0}
+
+                            </div>
+
+
+                            <div className="col-span-2 text-right">
+
+                                {money(
+                                    run
+                                        .totals
+                                        ?.net ||
+                                    0
+                                )}
+
+                            </div>
+
+
+                            <div className="col-span-2">
+
+                                <span
+                                    className={`px-2 py-1 rounded text-xs ${
+                                        run.status ===
+                                        "posted"
+                                            ? "bg-green-500/20 text-green-300"
+                                            : "bg-yellow-500/20 text-yellow-300"
+                                    }`}
                                 >
-                                    Postear
-                                </button>
-                            ) : (
-                                <span className="text-white/50">OK</span>
-                            )}
-                        </div>
-                    </div>
-                ))}
 
-                {!rows.length ? <div className="px-3 py-4 text-white/60">No hay corridas aún.</div> : null}
+                                    {getStatusLabel(
+                                        run.status
+                                    )}
+
+                                </span>
+
+                            </div>
+
+
+                            <div className="col-span-1 flex justify-end">
+
+                                {run.status !==
+                                "posted" ? (
+
+                                    <button
+                                        type="button"
+
+                                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 disabled:opacity-60"
+
+                                        onClick={() =>
+                                            onPost(
+                                                run._id
+                                            )
+                                        }
+
+                                        disabled={
+                                            busy
+                                        }
+                                    >
+
+                                        {t(
+                                            "payrollRuns.actions.post"
+                                        )}
+
+                                    </button>
+
+                                ) : (
+
+                                    <span className="text-white/50">
+                                        OK
+                                    </span>
+
+                                )}
+
+                            </div>
+
+                        </div>
+
+                    )
+                )}
+
+
+                {!rows.length ? (
+
+                    <div className="px-3 py-4 text-white/60">
+
+                        {t(
+                            "payrollRuns.runs.empty"
+                        )}
+
+                    </div>
+
+                ) : null}
+
             </div>
+
         </section>
     );
 }

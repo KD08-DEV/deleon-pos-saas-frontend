@@ -211,9 +211,31 @@ export const openCustomerDisplayWindow = (screen = "11") => {
     return popup;
 };
 
-export const formatCurrency = (value) => {
-    return `RD$${num(value).toLocaleString("es-DO", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    })}`;
+export const formatCurrency = (
+    value,
+    localization = {}
+) => {
+    const locale =
+        localization.locale ||
+        "es-DO";
+
+    const currency =
+        localization.currency ||
+        "DOP";
+
+    try {
+        return new Intl.NumberFormat(
+            locale,
+            {
+                style: "currency",
+                currency,
+            }
+        ).format(
+            num(value)
+        );
+    } catch {
+        return `${currency} ${num(
+            value
+        ).toFixed(2)}`;
+    }
 };

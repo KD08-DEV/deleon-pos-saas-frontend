@@ -56,14 +56,8 @@ export default defineConfig({
                 runtimeCaching: [
                     {
                         urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
-                        handler: "NetworkFirst",
-                        options: {
-                            cacheName: "api-cache",
-                            expiration: {
-                                maxEntries: 50,
-                                maxAgeSeconds: 60
-                            }
-                        }
+                        // Las respuestas privadas no deben persistir entre sesiones.
+                        handler: "NetworkOnly"
                     },
                     {
                         urlPattern: ({ request }) => request.destination === "document",

@@ -5,7 +5,11 @@ import {
     subscribeCustomerDisplayState,
 } from "../lib/customerDisplaySync";
 import "./CustomerDisplay.css";
+import useTenant from "../hooks/useTenant";
 
+import {
+    getTenantLocalization,
+} from "../lib/localization";
 const toNumber = (value) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
@@ -16,16 +20,32 @@ const getScreenParam = () => {
     return new URLSearchParams(window.location.search).get("screen") || "";
 };
 
-const formatQuantity = (item) => {
-    const quantity = toNumber(item?.quantity ?? 1);
+const formatQuantity = (
+    item,
+    locale = "es-DO"
+) => {
+    const quantity =
+        toNumber(
+            item?.quantity ?? 1
+        );
 
-    const cleanQuantity = Number.isInteger(quantity)
-        ? quantity
-        : quantity.toLocaleString("es-DO", {
-            maximumFractionDigits: 2,
-        });
+    const cleanQuantity =
+        Number.isInteger(
+            quantity
+        )
+            ? quantity
+            : quantity.toLocaleString(
+                locale,
+                {
+                    maximumFractionDigits: 2,
+                }
+            );
 
-    if (item?.qtyType === "weight" && item?.weightUnit) {
+    if (
+        item?.qtyType ===
+        "weight" &&
+        item?.weightUnit
+    ) {
         return `${cleanQuantity} ${item.weightUnit}`;
     }
 
@@ -33,6 +53,13 @@ const formatQuantity = (item) => {
 };
 
 const CustomerDisplay = () => {
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
     const [state, setState] = useState(() => readCustomerDisplayState());
     const [hasOverflow, setHasOverflow] = useState(false);
     const itemsListRef = useRef(null);
@@ -268,12 +295,18 @@ const CustomerDisplay = () => {
 
                                                 <p className="cd-item-qty">
                                                     Cantidad:{" "}
-                                                    <strong>{formatQuantity(item)}</strong>
+                                                    <strong>{formatQuantity(
+                                                        item,
+                                                        localization.locale
+                                                    )}</strong>
                                                 </p>
                                             </div>
 
                                             <strong className="cd-item-price">
-                                                {formatCurrency(item.price)}
+                                                formatCurrency(
+                                                item.price,
+                                                localization
+                                                )
                                             </strong>
                                         </article>
                                     ))}
@@ -298,19 +331,28 @@ const CustomerDisplay = () => {
                             className="cd-total-value"
                             aria-live="polite"
                         >
-                            {formatCurrency(total)}
+                            {formatCurrency(
+                                total,
+                                localization
+                            )}
                         </h2>
                     </div>
 
                     <div className="cd-mini-summary">
                         <div className="cd-mini-card">
-                            <span>Propina legal</span>
-                            <strong>{formatCurrency(tip)}</strong>
+                            <span>Tip manual</span>
+                            <strong>{formatCurrency(
+                                tip,
+                                localization
+                            )}</strong>
                         </div>
 
                         <div className="cd-mini-card">
-                            <span>ITBIS</span>
-                            <strong>{formatCurrency(tax)}</strong>
+                            <span>Impuestos</span>
+                            <strong>{formatCurrency(
+                                tax,
+                                localization
+                            )}</strong>
                         </div>
                     </div>
                 </aside>

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {  connectSocket, getSocket } from "./socket";
 import { QK } from "../queryKeys";
+import { getScope } from "../lib/api";
 
 const EVENTS = ["tenant:tablesUpdated", "tablesUpdated", "tenant:orderUpdated"];
 
@@ -20,6 +21,9 @@ export const useTablesRealtime = ({ tenantId, baseUrl } = {}) => {
 
         const onTablesUpdated = (payload) => {
             if (payload?.tenantId && tenantId && payload.tenantId !== tenantId) return;
+            // No refrescar mesas de la principal al recibir un evento de otra sede.
+            const activeClientId = String(getScope().clientId || "default");
+            if (payload?.clientId && String(payload.clientId) !== activeClientId) return;
 
             qc.invalidateQueries({ queryKey: QK.TABLES, exact: true });
             qc.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });

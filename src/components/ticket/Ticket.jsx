@@ -4,43 +4,109 @@ import { useReactToPrint } from "react-to-print";
 import useTenant from "../../hooks/useTenant.js";
 import { printWithTenantConfig } from "../../lib/tenantPrint";
 import usePrinterOptions from "../../hooks/usePrinterOptions";
+import {
+    formatDateTime,
+    getTenantLocalization,
+} from "../../lib/localization";
 
-const safeNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-    const n = Number(String(v).replace(/rd\$/gi, "").replace(/,/g, "").trim());
-    return Number.isFinite(n) ? n : 0;
+import {
+    useTranslation,
+} from "react-i18next";
+
+import {
+    getBusinessTaxIdentity,
+    getCustomerTaxIdentity,
+} from "../../lib/taxIdentityDisplay.js";
+const safeNum = (value) => {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return 0;
+    }
+
+    if (
+        typeof value ===
+        "number"
+    ) {
+        return Number.isFinite(
+            value
+        )
+            ? value
+            : 0;
+    }
+
+    let normalized =
+        String(value)
+            .trim()
+            .replace(/\s/g, "")
+            .replace(
+                /[^\d,.-]/g,
+                ""
+            );
+
+    const lastComma =
+        normalized.lastIndexOf(",");
+
+    const lastDot =
+        normalized.lastIndexOf(".");
+
+    if (
+        lastComma >
+        lastDot
+    ) {
+        normalized =
+            normalized
+                .replace(
+                    /\./g,
+                    ""
+                )
+                .replace(
+                    ",",
+                    "."
+                );
+    } else {
+        normalized =
+            normalized.replace(
+                /,/g,
+                ""
+            );
+    }
+
+    const number =
+        Number(normalized);
+
+    return Number.isFinite(
+        number
+    )
+        ? number
+        : 0;
 };
 
-const formatDMYTime = (dateLike) => {
-    if (!dateLike) return "N/A";
-    if (typeof dateLike === "object" && dateLike.$date) dateLike = dateLike.$date;
-    const d = new Date(dateLike);
-    if (Number.isNaN(d.getTime())) return "N/A";
-    return new Intl.DateTimeFormat("es-DO", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-    }).format(d);
-};
 
-const getItemName = (it) =>
+
+const getItemName = (
+    it,
+    fallback = "Item"
+) =>
     it?.name ||
     it?.dishName ||
     it?.title ||
     it?.productName ||
     it?.menuItemName ||
-    "Item";
+    fallback;
 
 const getQty = (it) => {
-    if (it?.qtyType === "weight") return 1;
-    const q = safeNum(it?.quantity ?? it?.qty ?? 1);
-    return q <= 0 ? 1 : q;
-};
+    const q = safeNum(
+        it?.quantity ??
+        it?.qty ??
+        1
+    );
 
+    return q <= 0
+        ? 1
+        : q;
+};
 const getItemExtras = (it) => {
     const extras = [];
     const note = it?.note || it?.comment || it?.specialInstructions || "";
@@ -65,16 +131,124 @@ const getItemExtras = (it) => {
     return extras;
 };
 
-const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
+const Ticket = ({
+                    order,
+                    onClose,
+                    printerCategory = "ticket",
+                    title = "",
+                    closeAfterPrint = false,
+                }) => {
 
+    const {
+        t,
+    } =
+        useTranslation();
     const { tenantInfo } = useTenant();
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
     const receiptRef = useRef(null);
     const [isPrintingLogic, setIsPrintingLogic] = useState(false);
 
-    const businessName = tenantInfo?.business?.name || tenantInfo?.name || "";
-    const businessAddress = tenantInfo?.business?.address || "";
-    const businessRnc = tenantInfo?.business?.rnc || tenantInfo?.fiscal?.rnc || "";
-    const businessPhone = tenantInfo?.business?.phone || "";
+    const businessName =
+        tenantInfo?.business?.name ||
+        tenantInfo?.name ||
+        "";
+
+    const businessAddress =
+        tenantInfo?.business?.address ||
+        "";
+
+    const businessPhone =
+        tenantInfo?.business?.phone ||
+        "";
+
+
+    const businessTaxIdentity =
+        getBusinessTaxIdentity(
+            tenantInfo
+        );
+
+
+    const businessTaxLabel =
+        businessTaxIdentity
+            ?.label ||
+        businessTaxIdentity
+            ?.type ||
+        "Tax ID";
+
+
+    const businessTaxValue =
+        businessTaxIdentity
+            ?.value ||
+        "";
+
+
+    const businessLegacyRnc =
+        businessTaxIdentity
+            ?.countryCode === "DO"
+            ? businessTaxValue
+            : "";
+
+
+// ======================================================
+// CLIENTE
+// ======================================================
+
+    const rawCustomerName =
+        order
+            ?.customerDetails
+            ?.name ||
+        order
+            ?.customerName ||
+        "";
+
+
+    const normalizedCustomerName =
+        String(
+            rawCustomerName
+        )
+            .trim()
+            .toLowerCase();
+
+
+    const isFinalConsumer =
+        !normalizedCustomerName ||
+        [
+            "consumidor final",
+            "final consumer",
+        ].includes(
+            normalizedCustomerName
+        );
+
+
+    const customerName =
+        isFinalConsumer
+            ? t(
+                "ticket.finalConsumer"
+            )
+            : rawCustomerName;
+
+
+    const customerTaxIdentity =
+        getCustomerTaxIdentity(
+            order
+        );
+
+
+    const customerTaxLabel =
+        customerTaxIdentity
+            ?.label ||
+        customerTaxIdentity
+            ?.type ||
+        "Tax ID";
+
+
+    const customerTaxValue =
+        customerTaxIdentity
+            ?.value ||
+        "";
 
     const createdAt = order?.createdAt || order?.updatedAt || order?.date || null;
 
@@ -110,7 +284,7 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
     const tableLabel =
         order?.tableName ||
         order?.table?.name ||
-        (tableObj?.tableNo ? `Mesa ${tableObj.tableNo}` : "") ||
+        (tableObj?.tableNo ? `${t("ticket.table")} ${tableObj.tableNo}` : "") ||
         (typeof order?.table === "string" ? order.table : "") ||
         "N/A";
 
@@ -184,39 +358,217 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
         documentTitle: `Ticket-${operation}`,
     });
 
-    const handleBrowserPrint = async () => {
-        setPrintMessage("Abriendo impresión normal del navegador...");
-        await browserPrint?.();
-    };
+    const handleBrowserPrint =
+        async () => {
 
+            setPrintMessage(
+                t(
+                    "ticket.openingPrintDialog"
+                )
+            );
+
+
+            await browserPrint?.();
+
+
+            /*
+             * Solo se activa cuando Ticket fue abierto
+             * desde Invoice.
+             */
+            if (
+                closeAfterPrint
+            ) {
+                onClose?.();
+            }
+        };
     const handleLogicPrint = async () => {
         if (isPrintingLogic) return;
 
         try {
             setIsPrintingLogic(true);
-            setPrintMessage("Enviando ticket a la impresora...");
+            setPrintMessage(
+                t(
+                    "ticket.sendingToPrinter"
+                )
+            );
 
             console.log("[PRINT][ticket] selectedPrinter =", selectedPrinter);
 
             const payload = {
                 businessName,
-                rnc: businessRnc,
+                rnc:
+                businessLegacyRnc,
+
+                businessTaxIdentity,
+
+                labels: {
+                    business:
+                        t(
+                            "ticket.business"
+                        ),
+
+                    order:
+                        t(
+                            "ticket.operation"
+                        ),
+
+                    table:
+                        t(
+                            "ticket.table"
+                        ),
+
+                    waiter:
+                        t(
+                            "ticket.waiter"
+                        ),
+
+                    date:
+                        t(
+                            "ticket.date"
+                        ),
+
+                    area:
+                        t(
+                            "ticket.roomArea"
+                        ),
+
+                    note:
+                        t(
+                            "ticket.note"
+                        ),
+
+                    subtotal:
+                        t(
+                            "ticket.subtotal"
+                        ),
+
+                    discount:
+                        t(
+                            "ticket.discount"
+                        ),
+
+                    tax:
+                        t(
+                            "ticket.tax"
+                        ),
+
+                    charge:
+                        t(
+                            "ticket.charge"
+                        ),
+
+                    serviceCharge:
+                        t(
+                            "ticket.serviceCharge"
+                        ),
+
+                    manualTip:
+                        t(
+                            "ticket.manualTip"
+                        ),
+
+                    total:
+                        t(
+                            "ticket.total"
+                        ),
+
+                    payment:
+                        t(
+                            "ticket.payment"
+                        ),
+
+                    thankYou:
+                        t(
+                            "ticket.thankYou"
+                        ),
+
+                    item:
+                        t(
+                            "ticket.item"
+                        ),
+
+                    includedShort:
+                        t(
+                            "ticket.includedShort"
+                        ),
+                },
+                businessTaxIdLabel:
+                businessTaxLabel,
+
+                businessTaxIdValue:
+                businessTaxValue,
+
+                clientName:
+                customerName,
+
+                clientTaxIdentity,
+
+                clientTaxIdLabel:
+                customerTaxLabel,
+
+                clientTaxIdValue:
+                customerTaxValue,
                 address: businessAddress,
                 phone: businessPhone,
-                title: title || "TICKET",
+                title:
+                    title ||
+                    t(
+                        "ticket.title"
+                    ),
                 orderId: String(operation),
                 mesa: tableLabel,
                 mesero: String(waiter),
-                fecha: formatDMYTime(createdAt),
+                fecha:
+                    formatDateTime(
+                        createdAt,
+                        localization
+                    ),
+
+                localization,
+
+                locale:
+                localization.locale,
+
+                currency:
+                localization.currency,
+
                 salaArea: roomLabel,
                 orderNote,
                 showTotals: false,
                 showItemPrices: false,
-                items: (items || []).map((it) => ({
-                    name: getItemName(it),
-                    qty: getQty(it),
-                    modifiers: getItemExtras(it).map((label) => ({ name: label })),
-                })),
+                items: (items || []).map(
+                    (it) => ({
+                        name:
+                            getItemName(
+                                it,
+                                t("ticket.item")
+                            ),
+
+                        qty:
+                            getQty(it),
+
+                        qtyType:
+                            it?.qtyType ||
+                            "unit",
+
+                        weightUnit:
+                            it?.qtyType ===
+                            "weight"
+                                ? (
+                                    it?.weightUnit ||
+                                    localization.weightUnit
+                                )
+                                : "",
+
+                        modifiers:
+                            getItemExtras(it).map(
+                                (label) => ({
+                                    name:
+                                    label,
+                                })
+                            ),
+                    })
+                ),
                 subtotal: undefined,
                 tax: undefined,
                 total: undefined,
@@ -231,13 +583,25 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                 payload,
             });
 
-            setPrintMessage(result?.message || "Ticket enviado correctamente.");
+            setPrintMessage(
+                result?.message ||
+                t(
+                    "ticket.sentSuccessfully"
+                )
+            );
+            if (
+                closeAfterPrint
+            ) {
+                onClose?.();
+            }
         } catch (err) {
             console.error("[PRINT][ticket] logic print error:", err);
             setPrintMessage(
                 err?.response?.data?.message ||
                 err?.message ||
-                "No se pudo imprimir el ticket."
+                t(
+                    "ticket.printFailed"
+                )
             );
         } finally {
             setIsPrintingLogic(false);
@@ -311,48 +675,92 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                     <div ref={receiptRef} className="ticket-root text-black bg-white">
                         <div className="text-center">
                             <div className="text-lg font-extrabold">{businessName}</div>
-                            {businessRnc ? <div className="text-xs">RNC: {businessRnc}</div> : null}
-                            {businessAddress ? <div className="text-xs">{businessAddress}</div> : null}
-                            {businessPhone ? <div className="text-xs">Tel: {businessPhone}</div> : null}
+
+                            {businessTaxValue ? (
+                                <div className="text-xs">
+                                    {businessTaxLabel}: {businessTaxValue}
+                                </div>
+                            ) : null}
+
+                            {businessAddress ? (
+                                <div className="text-xs">{businessAddress}</div>
+                            ) : null}
+
+                            {businessPhone ? (
+                                <div className="text-xs">
+                                    {t("ticket.phoneShort")}: {businessPhone}
+                                </div>
+                            ) : null}
                         </div>
 
                         <div className="ticket-divider" />
 
                         <div className="text-xs space-y-1">
                             <div className="flex justify-between">
-                                <span>Operacion:</span>
+                                <span>{t("ticket.operation")}:</span>
                                 <span className="font-semibold">{String(operation)}</span>
                             </div>
+
+                            {customerName && !isFinalConsumer ? (
+                                <div className="flex justify-between gap-4">
+                                    <span>{t("ticket.customer")}:</span>
+                                    <span className="font-semibold text-right">
+                                        {customerName}
+                                    </span>
+                                </div>
+                            ) : null}
+
+                            {customerTaxValue ? (
+                                <div className="flex justify-between gap-4">
+                                    <span>{customerTaxLabel}:</span>
+                                    <span className="font-semibold text-right">
+                                        {customerTaxValue}
+                                    </span>
+                                </div>
+                            ) : null}
+
                             <div className="flex justify-between">
-                                <span>Mesa:</span>
+                                <span>{t("ticket.table")}:</span>
                                 <span className="font-semibold">{tableLabel}</span>
                             </div>
+
                             <div className="flex justify-between">
-                                <span>Fecha:</span>
-                                <span className="font-semibold">{formatDMYTime(createdAt)}</span>
+                                <span>{t("ticket.date")}:</span>
+                                <span className="font-semibold">
+                                    {formatDateTime(createdAt, localization)}
+                                </span>
                             </div>
+
                             <div className="flex justify-between">
-                                <span>Mesero:</span>
+                                <span>{t("ticket.waiter")}:</span>
                                 <span className="font-semibold">{String(waiter)}</span>
                             </div>
+
                             <div className="flex justify-between">
-                                <span>Sala/Área:</span>
+                                <span>{t("ticket.roomArea")}:</span>
                                 <span className="font-semibold">{roomLabel}</span>
                             </div>
                         </div>
 
                         <div className="ticket-divider" />
 
-                        <div className="ticket-divider" />
-
-
                         <div className="text-xs">
                             {items?.length ? (
                                 <div className="space-y-2">
                                     {items.map((it, idx) => {
                                         const qty = getQty(it);
-                                        const name = getItemName(it);
+                                        const name = getItemName(
+                                            it,
+                                            t("ticket.item")
+                                        );
                                         const extras = getItemExtras(it);
+                                        const qtyLabel =
+                                            it?.qtyType === "weight"
+                                                ? `${qty} ${
+                                                    it?.weightUnit ||
+                                                    localization.weightUnit
+                                                }`
+                                                : `x${qty}`;
 
                                         return (
                                             <div
@@ -362,7 +770,7 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                                                 <div className="flex items-start gap-2">
 
                                                     <div className="ticket-qty-badge min-w-[30px] rounded px-2 py-1 text-center text-[13px] font-extrabold leading-none">
-                                                        x{qty}
+                                                        {qtyLabel}
                                                     </div>
 
                                                     <div className="flex-1">
@@ -389,7 +797,11 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                                     })}
                                 </div>
                             ) : (
-                                <div className="text-center text-gray-500">Sin items</div>
+                                <div className="text-center text-gray-500">
+                                    {t(
+                                        "ticket.noItems"
+                                    )}
+                                </div>
                             )}
                         </div>
 
@@ -398,7 +810,9 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                             <>
                                 <div className="mt-4 mb-4 px-1 py-1">
                                     <div className="text-[13px] font-extrabold uppercase">
-                                        Nota del pedido
+                                        {t(
+                                            "ticket.orderNote"
+                                        )}
                                     </div>
 
                                     <div className="mt-2 pl-2 text-[14px] font-semibold whitespace-pre-wrap break-words leading-snug">
@@ -413,13 +827,24 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
 
 
                         <div className="ticket-divider" />
-                        <div className="text-center text-xs font-bold">FIN PEDIDO</div>
-                        <div className="ticket-muted text-center text-[11px]">Gracias por su compra</div>
+                        <div className="text-center text-xs font-bold">
+                            {t(
+                                "ticket.endOrder"
+                            )}
+                        </div>
+
+                        <div className="ticket-muted text-center text-[11px]">
+                            {t(
+                                "ticket.thankYou"
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="no-print border-t pt-3 px-4 pb-2 bg-white">
                     <div className="space-y-2">
-                        <div className="text-xs font-semibold text-gray-700">Impresora</div>
+                        <div className="text-xs font-semibold text-gray-700">{t(
+                            "ticket.printer"
+                        )}</div>
 
                         <select
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
@@ -428,11 +853,13 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                             disabled={isLoadingPrinters || resolvedPrinters.length === 0}
                         >
                             {resolvedPrinters.length === 0 ? (
-                                <option value="">No hay impresoras registradas</option>
+                                <option value="">{t(
+                                    "ticket.noPrinters"
+                                )}</option>
                             ) : (
                                 resolvedPrinters.map((p) => (
                                     <option key={p._id} value={p._id}>
-                                        {p.alias} {p.isDefault ? "• default" : ""}
+                                        {p.alias} {p.isDefault ? `• ${t("ticket.default")}` : ""}
                                     </option>
                                 ))
                             )}
@@ -440,12 +867,22 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
 
                         {selectedPrinter ? (
                             <div className="text-[11px] text-gray-500">
-                                Modo: {selectedPrinter.mode} · Papel: {selectedPrinter.paperSize}
+                                {t(
+                                    "ticket.mode"
+                                )}: {selectedPrinter.mode}
+
+                                {" · "}
+
+                                {t(
+                                    "ticket.paper"
+                                )}: {selectedPrinter.paperSize}
                                 {selectedPrinter.ip ? ` · ${selectedPrinter.ip}:${selectedPrinter.port}` : ""}
                             </div>
                         ) : (
                             <div className="text-[11px] text-gray-400">
-                                En modo browser, el navegador mostrará su diálogo de impresión.
+                                {t(
+                                    "ticket.browserPrinterHelp"
+                                )}
                             </div>
                         )}
                         {printMessage && (
@@ -455,7 +892,13 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                         )}
                         {printerCategory !== "kitchen" && primaryPrinters.length === 0 && kitchenPrinters.length > 0 && (
                             <div className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-2 py-2">
-                                No hay impresora registrada para "{printerCategory}". Se está usando la impresora de cocina.
+                                {t(
+                                    "ticket.fallbackKitchenPrinter",
+                                    {
+                                        category:
+                                        printerCategory,
+                                    }
+                                )}
                             </div>
                         )}
 
@@ -469,7 +912,9 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                             onClick={handleBrowserPrint}
                             className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 font-medium hover:bg-gray-100"
                         >
-                            Otras impresoras
+                            {t(
+                                "ticket.otherPrinters"
+                            )}
                         </button>
 
                         <button
@@ -482,7 +927,14 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                                     : "bg-[#111111] hover:bg-[#2b2b2b]"
                             }`}
                         >
-                            {isPrintingLogic ? "Imprimiendo..." : "Impresora de red"}
+                            {isPrintingLogic
+                                ? t(
+                                    "ticket.printing"
+                                )
+                                : t(
+                                    "ticket.networkPrinter"
+                                )
+                            }
                         </button>
                     </div>
 
@@ -491,7 +943,9 @@ const Ticket = ({ order, onClose, printerCategory = "ticket", title = "" }) => {
                         onClick={onClose}
                         className="px-4 py-2 rounded-md text-red-600 font-semibold hover:bg-red-50"
                     >
-                        Cerrar
+                        {t(
+                            "ticket.close"
+                        )}
                     </button>
                 </div>
             </motion.div>

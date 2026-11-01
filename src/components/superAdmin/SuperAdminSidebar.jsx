@@ -1,6 +1,5 @@
-import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { MdDashboard, MdBusiness, MdAddBusiness, MdLogout } from "react-icons/md";
+import { MdDashboard, MdBusiness, MdAddBusiness, MdLogout, MdUploadFile, MdVerifiedUser } from "react-icons/md";
 import { useMutation } from "@tanstack/react-query";
 import { logout } from "../../https";
 import { useDispatch } from "react-redux";
@@ -64,6 +63,26 @@ const SuperAdminSidebar = () => {
                 >
                     <MdAddBusiness size={18} />
                     <span>Create tenant</span>
+                </NavLink>
+
+                <NavLink
+                    to="/superadmin/rnc-registry"
+                    className={({ isActive }) =>
+                        `${linkBase} ${isActive ? linkActive : linkInactive}`
+                    }
+                >
+                    <MdUploadFile size={18} />
+                    <span>Actualizar padrón RNC</span>
+                </NavLink>
+
+                <NavLink
+                    to="/superadmin/ecf-authorizations"
+                    className={({ isActive }) =>
+                        `${linkBase} ${isActive ? linkActive : linkInactive}`
+                    }
+                >
+                    <MdVerifiedUser size={18} />
+                    <span>Autorizaciones e-CF</span>
                 </NavLink>
 
                 <NavLink

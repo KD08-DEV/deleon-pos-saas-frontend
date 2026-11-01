@@ -1,8 +1,9 @@
-import React, { useState, memo, useCallback, useEffect  } from "react";
-import { Home, ListOrdered, Table2, Settings, Plus, Wallet   } from "lucide-react";
+import React, { useState, memo, useCallback, useEffect } from "react";
+import { Home, ListOrdered, Table2, Settings, Plus, Wallet } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
 import { useDispatch, useSelector } from "react-redux";
+
 import {
     setCustomer,
     setDraftContext,
@@ -15,596 +16,1786 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { enqueueSnackbar } from "notistack";
 import { addOrder, getCustomers, createCustomer } from "../../https";
 import { motion, AnimatePresence } from "framer-motion";
-
+import { useTranslation } from "react-i18next";
 
 
 const BottomNav = memo(() => {
+    const { t } = useTranslation();
+
     const navigate = useNavigate();
     const location = useLocation();
     const dispatch = useDispatch();
-    const { userData } = useSelector((s) => s.user);
 
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [name, setName] = useState("");
-    const [phone, setPhone] = useState("");
-    const [guestCount, setGuestCount] = useState(0);
-    const [address, setAddress] = useState("");
-    const [search, setSearch] = useState("");
-    const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
-    const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-    const [showResults, setShowResults] = useState(false);
-    const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
+    const { userData } =
+        useSelector(
+            (state) =>
+                state.user
+        );
 
 
-    const openModal = useCallback(() => {
-        // Una nueva venta siempre debe comenzar limpia.
-        dispatch(removeAllItems());
-        dispatch(clearDraftContext());
-        dispatch(removeCustomer());
+    const [
+        isModalOpen,
+        setIsModalOpen,
+    ] =
+        useState(false);
 
-        setName("");
-        setPhone("");
-        setGuestCount(0);
-        setAddress("");
-        setSearch("");
-        setSelectedCustomerId(null);
-        setShowResults(false);
-        setIsCustomerPickerOpen(false);
 
-        setIsModalOpen(true);
-    }, [dispatch]);
-    const closeModal = useCallback(() => setIsModalOpen(false), []);
+    const [
+        name,
+        setName,
+    ] =
+        useState("");
 
-    if (userData?.role === "SuperAdmin") {
+
+    const [
+        phone,
+        setPhone,
+    ] =
+        useState("");
+
+
+    const [
+        guestCount,
+        setGuestCount,
+    ] =
+        useState(0);
+
+
+    const [
+        address,
+        setAddress,
+    ] =
+        useState("");
+
+
+    const [
+        search,
+        setSearch,
+    ] =
+        useState("");
+
+
+    const [
+        isCustomerPickerOpen,
+        setIsCustomerPickerOpen,
+    ] =
+        useState(false);
+
+
+    const [
+        selectedCustomerId,
+        setSelectedCustomerId,
+    ] =
+        useState(null);
+
+
+    const [
+        showResults,
+        setShowResults,
+    ] =
+        useState(false);
+
+
+    const [
+        isTablePickerOpen,
+        setIsTablePickerOpen,
+    ] =
+        useState(false);
+
+
+    const openModal =
+        useCallback(
+            () => {
+                /*
+                 * Una nueva venta siempre
+                 * debe comenzar limpia.
+                 */
+                dispatch(
+                    removeAllItems()
+                );
+
+                dispatch(
+                    clearDraftContext()
+                );
+
+                dispatch(
+                    removeCustomer()
+                );
+
+
+                setName("");
+                setPhone("");
+                setGuestCount(0);
+                setAddress("");
+                setSearch("");
+                setSelectedCustomerId(null);
+                setShowResults(false);
+                setIsCustomerPickerOpen(false);
+
+                setIsModalOpen(true);
+            },
+            [
+                dispatch,
+            ]
+        );
+
+
+    const closeModal =
+        useCallback(
+            () =>
+                setIsModalOpen(false),
+            []
+        );
+
+
+    /*
+     * ==========================================
+     * SUPER ADMIN
+     * ==========================================
+     */
+
+    if (
+        userData?.role ===
+        "SuperAdmin"
+    ) {
         return (
             <motion.div
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
+                initial={{
+                    y:
+                        100,
+
+                    opacity:
+                        0,
+                }}
+
+                animate={{
+                    y:
+                        0,
+
+                    opacity:
+                        1,
+                }}
+
                 className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#1a1a1a] to-[#1f1f1f] p-2 h-16 flex justify-center items-center z-40 border-t border-[#2a2a2a]/50 backdrop-blur-lg"
             >
+
                 <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    whileHover={{
+                        scale:
+                            1.05,
+                    }}
+
+                    whileTap={{
+                        scale:
+                            0.95,
+                    }}
+
                     className="flex items-center justify-center gap-2 font-bold bg-gradient-to-r from-blue-500 to-blue-700 text-black px-6 py-3 rounded-xl shadow-lg hover:shadow-blue-500/20 transition-all"
-                    onClick={() => navigate("/superadmin")}
+
+                    onClick={() =>
+                        navigate(
+                            "/superadmin"
+                        )
+                    }
                 >
+
                     <Settings className="w-5 h-5" />
-                    SuperAdmin Panel
+
+                    {t(
+                        "bottomNav.superAdminPanel"
+                    )}
+
                 </motion.button>
+
+
                 <AnimatePresence>
+
                     {isTablePickerOpen && (
+
                         <motion.div
                             className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsTablePickerOpen(false)}
+
+                            initial={{
+                                opacity:
+                                    0,
+                            }}
+
+                            animate={{
+                                opacity:
+                                    1,
+                            }}
+
+                            exit={{
+                                opacity:
+                                    0,
+                            }}
+
+                            onClick={() =>
+                                setIsTablePickerOpen(
+                                    false
+                                )
+                            }
                         >
+
                             <motion.div
                                 className="w-full max-w-md rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-5"
-                                initial={{ scale: 0.95, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0.95, opacity: 0 }}
-                                onClick={(e) => e.stopPropagation()}
+
+                                initial={{
+                                    scale:
+                                        0.95,
+
+                                    opacity:
+                                        0,
+                                }}
+
+                                animate={{
+                                    scale:
+                                        1,
+
+                                    opacity:
+                                        1,
+                                }}
+
+                                exit={{
+                                    scale:
+                                        0.95,
+
+                                    opacity:
+                                        0,
+                                }}
+
+                                onClick={(
+                                    event
+                                ) =>
+                                    event.stopPropagation()
+                                }
                             >
-                                <h3 className="text-white text-lg font-semibold">Seleccionar mesa</h3>
+
+                                <h3 className="text-white text-lg font-semibold">
+
+                                    {t(
+                                        "bottomNav.selectTable"
+                                    )}
+
+                                </h3>
+
+
                                 <p className="text-xs text-[#ababab] mt-1">
-                                    Elige la mesa antes de ir al menú.
+
+                                    {t(
+                                        "bottomNav.selectTableDescription"
+                                    )}
+
                                 </p>
 
-                                {/* Aquí tú pones tu grid/lista de mesas */}
+
                                 <div className="mt-4 grid grid-cols-2 gap-3">
-                                    {/* EJEMPLO: Mesa 1 */}
+
                                     <button
                                         type="button"
+
                                         onClick={() => {
-                                            // TODO: aquí debes pasar la mesa real seleccionada
-                                            const selectedTable = { tableNo: 1, area: "General" };
+                                            /*
+                                             * Valor interno.
+                                             * No traducimos "General".
+                                             */
+                                            const selectedTable = {
+                                                tableNo:
+                                                    1,
+
+                                                area:
+                                                    "General",
+                                            };
+
 
                                             dispatch(
                                                 setDraftContext({
-                                                    table: selectedTable,
-                                                    isVirtual: false,
-                                                    virtualType: null,
-                                                    orderSource: "DINE_IN",
+                                                    table:
+                                                    selectedTable,
+
+                                                    isVirtual:
+                                                        false,
+
+                                                    virtualType:
+                                                        null,
+
+                                                    orderSource:
+                                                        "DINE_IN",
                                                 })
                                             );
 
-                                            setIsTablePickerOpen(false);
-                                            navigate("/menu");
+
+                                            setIsTablePickerOpen(
+                                                false
+                                            );
+
+
+                                            navigate(
+                                                "/menu"
+                                            );
                                         }}
+
                                         className="p-3 rounded-xl bg-[#1f1f1f] border border-gray-800/50 text-white hover:bg-[#2b2b2b]"
                                     >
-                                        <div className="font-semibold">Mesa 1</div>
-                                        <div className="text-xs text-gray-400">General</div>
+
+                                        <div className="font-semibold">
+
+                                            {t(
+                                                "bottomNav.table"
+                                            )}{" "}
+                                            1
+
+                                        </div>
+
+
+                                        <div className="text-xs text-gray-400">
+
+                                            {t(
+                                                "bottomNav.general"
+                                            )}
+
+                                        </div>
+
                                     </button>
+
                                 </div>
+
 
                                 <div className="flex gap-3 mt-5">
+
                                     <button
                                         type="button"
-                                        onClick={() => setIsTablePickerOpen(false)}
+
+                                        onClick={() =>
+                                            setIsTablePickerOpen(
+                                                false
+                                            )
+                                        }
+
                                         className="px-4 py-3 w-full rounded-lg font-semibold bg-[#1f1f1f] text-[#ababab]"
                                     >
-                                        Cancelar
+
+                                        {t(
+                                            "common.cancel"
+                                        )}
+
                                     </button>
+
 
                                     <button
                                         type="button"
+
                                         onClick={() => {
-                                            // Si quieres permitir “sin mesa”
                                             dispatch(
                                                 setDraftContext({
-                                                    table: null,
-                                                    isVirtual: true,
-                                                    virtualType: "QUICK",
-                                                    orderSource: "QUICK",
+                                                    table:
+                                                        null,
+
+                                                    isVirtual:
+                                                        true,
+
+                                                    virtualType:
+                                                        "QUICK",
+
+                                                    orderSource:
+                                                        "QUICK",
                                                 })
                                             );
-                                            setIsTablePickerOpen(false);
-                                            navigate("/menu");
+
+
+                                            setIsTablePickerOpen(
+                                                false
+                                            );
+
+
+                                            navigate(
+                                                "/menu"
+                                            );
                                         }}
+
                                         className="px-4 py-3 w-full rounded-lg font-semibold bg-[#f6b100] text-[#1f1f1f]"
                                     >
-                                        Continuar sin mesa
-                                    </button>
-                                </div>
-                            </motion.div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </motion.div>
 
+                                        {t(
+                                            "bottomNav.continueWithoutTable"
+                                        )}
+
+                                    </button>
+
+                                </div>
+
+                            </motion.div>
+
+                        </motion.div>
+
+                    )}
+
+                </AnimatePresence>
+
+            </motion.div>
         );
     }
-    const customersQuery = useQuery({
-        queryKey: ["customers", isCustomerPickerOpen, search],
-        queryFn: async () => {
-            const q = String(search || "").trim(); // puede estar vacío
-            const res = await getCustomers(q, 50); // más items para scroll
-            return res?.data?.data || [];
-        },
-        enabled: isModalOpen && isCustomerPickerOpen,
-        staleTime: 10_000,
-    });
-    const createCustomerMutation = useMutation({
-        mutationFn: (body) => createCustomer(body),
-    });
-    const pickCustomer = (c) => {
-        setSelectedCustomerId(c?._id || null);
-        setName(c?.name || "");
-        setPhone(c?.phone || "");
-        setAddress(c?.address || "");
-        setSearch(c?.name || "");
-        setShowResults(false);
+
+
+    /*
+     * ==========================================
+     * CLIENTES
+     * ==========================================
+     */
+
+    const customersQuery =
+        useQuery({
+            queryKey: [
+                "customers",
+                isCustomerPickerOpen,
+                search,
+            ],
+
+            queryFn:
+                async () => {
+                    const query =
+                        String(
+                            search ||
+                            ""
+                        ).trim();
+
+
+                    const response =
+                        await getCustomers(
+                            query,
+                            50
+                        );
+
+
+                    return (
+                        response
+                            ?.data
+                            ?.data ||
+                        []
+                    );
+                },
+
+            enabled:
+                isModalOpen &&
+                isCustomerPickerOpen,
+
+            staleTime:
+                10_000,
+        });
+
+
+    const createCustomerMutation =
+        useMutation({
+            mutationFn:
+                (
+                    body
+                ) =>
+                    createCustomer(
+                        body
+                    ),
+        });
+
+
+    const pickCustomer = (
+        customer
+    ) => {
+        setSelectedCustomerId(
+            customer?._id ||
+            null
+        );
+
+        setName(
+            customer?.name ||
+            ""
+        );
+
+        setPhone(
+            customer?.phone ||
+            ""
+        );
+
+        setAddress(
+            customer?.address ||
+            ""
+        );
+
+        setSearch(
+            customer?.name ||
+            ""
+        );
+
+        setShowResults(
+            false
+        );
     };
-    useEffect(() => {
-        // Si el usuario cambia el nombre manualmente, quitamos selección para evitar inconsistencias
-        // (solo si el nombre ya no coincide con el search del cliente seleccionado)
-        if (!isModalOpen) return;
-        if (!selectedCustomerId) return;
-
-        // si están editando, asumimos que ya no es el mismo cliente
-        // (puedes hacerlo más estricto si quieres)
-    }, [name, selectedCustomerId, isModalOpen]);
 
 
-
-
-    // ✅ Crear orden sin mesa y redirigir a /tables
-    const createOrder = useMutation({
-        mutationFn: (payload) => addOrder(payload),
-
-        onSuccess: (res, variables) => {
-            const orderId = res?.data?.data?._id;
-
-            if (!orderId) {
-                enqueueSnackbar("No se pudo crear la orden.", { variant: "error" });
+    useEffect(
+        () => {
+            if (
+                !isModalOpen
+            ) {
                 return;
             }
 
-            const details = variables?.customerDetails || {};
-
-            dispatch(
-                setCustomer({
-                    customerId: variables?.customerId || null,
-                    name: details?.name || "Consumidor Final",
-                    phone: details?.phone || "",
-                    address: details?.address || "",
-                    guests: Number(details?.guests || 0),
-                })
-            );
-
-            setName("");
-            setPhone("");
-            setGuestCount(0);
-            setAddress("");
-            setSearch("");
-            setSelectedCustomerId(null);
-            setShowResults(false);
-            closeModal();
-
-            navigate(`/menu?orderId=${orderId}`);
+            if (
+                !selectedCustomerId
+            ) {
+                return;
+            }
         },
+        [
+            name,
+            selectedCustomerId,
+            isModalOpen,
+        ]
+    );
 
-        onError: (err) => {
-            enqueueSnackbar(err?.response?.data?.message || "Error al crear la orden.", {
-                variant: "error",
-            });
-        },
-    });
-    const handleCreateOrder = async () => {
-        const cleanName = String(name || "").trim();
-        const cleanPhone = String(phone || "").trim();
-        const cleanAddress = String(address || "").trim();
-        const guests = Number(guestCount || 0);
 
-        const finalName = cleanName || "Consumidor Final";
+    /*
+     * ==========================================
+     * CREAR ORDEN
+     * ==========================================
+     *
+     * Los valores internos como:
+     *
+     * Consumidor Final
+     * DINE_IN
+     * QUICK
+     *
+     * permanecen intactos.
+     */
 
-        const openTablePickerWithCustomer = (customerPayload) => {
-            dispatch(setCustomer(customerPayload));
+    const createOrder =
+        useMutation({
+            mutationFn:
+                (
+                    payload
+                ) =>
+                    addOrder(
+                        payload
+                    ),
 
-            // No asignamos mesa aquí. Primero mandamos al usuario a /tables.
-            dispatch(
-                setDraftContext({
-                    table: null,
-                    isVirtual: false,
-                    virtualType: null,
-                    orderSource: "DINE_IN",
-                })
-            );
+            onSuccess:
+                (
+                    response,
+                    variables
+                ) => {
+                    const orderId =
+                        response
+                            ?.data
+                            ?.data
+                            ?._id;
 
-            setName("");
-            setPhone("");
-            setGuestCount(0);
-            setAddress("");
-            setSearch("");
-            setSelectedCustomerId(null);
-            setShowResults(false);
-            closeModal();
 
-            navigate("/tables");
+                    if (
+                        !orderId
+                    ) {
+                        enqueueSnackbar(
+                            t(
+                                "bottomNav.messages.createOrderMissingId"
+                            ),
+                            {
+                                variant:
+                                    "error",
+                            }
+                        );
+
+                        return;
+                    }
+
+
+                    const details =
+                        variables
+                            ?.customerDetails ||
+                        {};
+
+
+                    dispatch(
+                        setCustomer({
+                            customerId:
+                                variables
+                                    ?.customerId ||
+                                null,
+
+                            name:
+                                details
+                                    ?.name ||
+                                "Consumidor Final",
+
+                            phone:
+                                details
+                                    ?.phone ||
+                                "",
+
+                            address:
+                                details
+                                    ?.address ||
+                                "",
+
+                            guests:
+                                Number(
+                                    details
+                                        ?.guests ||
+                                    0
+                                ),
+                        })
+                    );
+
+
+                    setName("");
+                    setPhone("");
+                    setGuestCount(0);
+                    setAddress("");
+                    setSearch("");
+                    setSelectedCustomerId(null);
+                    setShowResults(false);
+
+                    closeModal();
+
+
+                    navigate(
+                        `/menu?orderId=${orderId}`
+                    );
+                },
+
+            onError:
+                (
+                    error
+                ) => {
+                    enqueueSnackbar(
+                        error
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        t(
+                            "bottomNav.messages.createOrderFailed"
+                        ),
+                        {
+                            variant:
+                                "error",
+                        }
+                    );
+                },
+        });
+
+
+    const handleCreateOrder =
+        async () => {
+            const cleanName =
+                String(
+                    name ||
+                    ""
+                ).trim();
+
+
+            const cleanPhone =
+                String(
+                    phone ||
+                    ""
+                ).trim();
+
+
+            const cleanAddress =
+                String(
+                    address ||
+                    ""
+                ).trim();
+
+
+            const guests =
+                Number(
+                    guestCount ||
+                    0
+                );
+
+
+            const finalName =
+                cleanName ||
+                "Consumidor Final";
+
+
+            const openTablePickerWithCustomer =
+                (
+                    customerPayload
+                ) => {
+                    dispatch(
+                        setCustomer(
+                            customerPayload
+                        )
+                    );
+
+
+                    dispatch(
+                        setDraftContext({
+                            table:
+                                null,
+
+                            isVirtual:
+                                false,
+
+                            virtualType:
+                                null,
+
+                            orderSource:
+                                "DINE_IN",
+                        })
+                    );
+
+
+                    setName("");
+                    setPhone("");
+                    setGuestCount(0);
+                    setAddress("");
+                    setSearch("");
+                    setSelectedCustomerId(null);
+                    setShowResults(false);
+
+                    closeModal();
+
+
+                    navigate(
+                        "/tables"
+                    );
+                };
+
+
+            try {
+                let resolvedCustomerId =
+                    selectedCustomerId ||
+                    null;
+
+
+                let resolvedName =
+                    finalName;
+
+
+                let resolvedPhone =
+                    cleanPhone;
+
+
+                let resolvedAddress =
+                    cleanAddress;
+
+
+                if (
+                    !resolvedCustomerId
+                ) {
+                    const shouldCreateCustomer =
+                        Boolean(
+                            cleanName
+                        ) ||
+                        Boolean(
+                            cleanPhone
+                        );
+
+
+                    if (
+                        shouldCreateCustomer
+                    ) {
+                        const created =
+                            await createCustomerMutation
+                                .mutateAsync({
+                                    name:
+                                        cleanName ||
+                                        "Consumidor Final",
+
+                                    phone:
+                                    cleanPhone,
+
+                                    address:
+                                    cleanAddress,
+                                });
+
+
+                        const createdCustomer =
+                            created
+                                ?.data
+                                ?.data;
+
+
+                        resolvedCustomerId =
+                            createdCustomer
+                                ?._id ||
+                            null;
+
+
+                        resolvedName =
+                            createdCustomer
+                                ?.name ||
+                            finalName;
+
+
+                        resolvedPhone =
+                            createdCustomer
+                                ?.phone ||
+                            cleanPhone;
+
+
+                        resolvedAddress =
+                            createdCustomer
+                                ?.address ||
+                            cleanAddress;
+                    }
+                }
+
+
+                openTablePickerWithCustomer({
+                    customerId:
+                    resolvedCustomerId,
+
+                    name:
+                    resolvedName,
+
+                    phone:
+                    resolvedPhone,
+
+                    address:
+                    resolvedAddress,
+
+                    guests,
+                });
+
+            } catch (
+                error
+                ) {
+                const status =
+                    error
+                        ?.response
+                        ?.status;
+
+
+                const code =
+                    error
+                        ?.response
+                        ?.data
+                        ?.code;
+
+
+                if (
+                    status ===
+                    409 &&
+                    code ===
+                    "PHONE_ALREADY_EXISTS"
+                ) {
+                    const existing =
+                        error
+                            ?.response
+                            ?.data
+                            ?.data;
+
+
+                    if (
+                        existing?._id
+                    ) {
+                        enqueueSnackbar(
+                            t(
+                                "bottomNav.messages.phoneExists"
+                            ),
+                            {
+                                variant:
+                                    "info",
+                            }
+                        );
+
+
+                        openTablePickerWithCustomer({
+                            customerId:
+                            existing._id,
+
+                            name:
+                                existing.name ||
+                                cleanName ||
+                                "Consumidor Final",
+
+                            phone:
+                                existing.phone ||
+                                cleanPhone,
+
+                            address:
+                                existing.address ||
+                                cleanAddress,
+
+                            guests,
+                        });
+
+
+                        return;
+                    }
+                }
+
+
+                enqueueSnackbar(
+                    t(
+                        "bottomNav.messages.customerSaveFailed"
+                    ),
+                    {
+                        variant:
+                            "warning",
+                    }
+                );
+
+
+                openTablePickerWithCustomer({
+                    customerId:
+                        null,
+
+                    name:
+                    finalName,
+
+                    phone:
+                    cleanPhone,
+
+                    address:
+                    cleanAddress,
+
+                    guests,
+                });
+            }
         };
 
-        try {
-            let resolvedCustomerId = selectedCustomerId || null;
-            let resolvedName = finalName;
-            let resolvedPhone = cleanPhone;
-            let resolvedAddress = cleanAddress;
 
-            if (!resolvedCustomerId) {
-                const shouldCreateCustomer = Boolean(cleanName) || Boolean(cleanPhone);
+    /*
+     * ==========================================
+     * NAVEGACIÓN
+     * ==========================================
+     */
 
-                if (shouldCreateCustomer) {
-                    const created = await createCustomerMutation.mutateAsync({
-                        name: cleanName || "Consumidor Final",
-                        phone: cleanPhone,
-                        address: cleanAddress,
-                    });
-
-                    const createdCustomer = created?.data?.data;
-
-                    resolvedCustomerId = createdCustomer?._id || null;
-                    resolvedName = createdCustomer?.name || finalName;
-                    resolvedPhone = createdCustomer?.phone || cleanPhone;
-                    resolvedAddress = createdCustomer?.address || cleanAddress;
-                }
-            }
-
-            openTablePickerWithCustomer({
-                customerId: resolvedCustomerId,
-                name: resolvedName,
-                phone: resolvedPhone,
-                address: resolvedAddress,
-                guests,
-            });
-        } catch (e) {
-            const status = e?.response?.status;
-            const code = e?.response?.data?.code;
-
-            if (status === 409 && code === "PHONE_ALREADY_EXISTS") {
-                const existing = e?.response?.data?.data;
-
-                if (existing?._id) {
-                    enqueueSnackbar("Este teléfono ya existe. Usando el cliente guardado.", {
-                        variant: "info",
-                    });
-
-                    openTablePickerWithCustomer({
-                        customerId: existing._id,
-                        name: existing.name || cleanName || "Consumidor Final",
-                        phone: existing.phone || cleanPhone,
-                        address: existing.address || cleanAddress,
-                        guests,
-                    });
-
-                    return;
-                }
-            }
-
-            enqueueSnackbar("No se pudo guardar el cliente, pero puedes continuar con el nombre escrito.", {
-                variant: "warning",
-            });
-
-            openTablePickerWithCustomer({
-                customerId: null,
-                name: finalName,
-                phone: cleanPhone,
-                address: cleanAddress,
-                guests,
-            });
-        }
-    };
-
-    const handleNavigation = (path) => {
+    const handleNavigation = (
+        path
+    ) => {
         const isLeavingMenu =
-            location.pathname.startsWith("/menu") &&
-            !path.startsWith("/menu");
+            location
+                .pathname
+                .startsWith(
+                    "/menu"
+                ) &&
+            !path.startsWith(
+                "/menu"
+            );
 
-        if (isLeavingMenu) {
-            // Limpiar completamente la venta temporal.
-            dispatch(removeAllItems());
-            dispatch(clearDraftContext());
-            dispatch(removeCustomer());
+
+        if (
+            isLeavingMenu
+        ) {
+            dispatch(
+                removeAllItems()
+            );
+
+            dispatch(
+                clearDraftContext()
+            );
+
+            dispatch(
+                removeCustomer()
+            );
         }
 
-        navigate(path);
+
+        navigate(
+            path
+        );
     };
-    const isActive = (path) => location.pathname.startsWith(path);
+
+
+    const isActive = (
+        path
+    ) =>
+        location
+            .pathname
+            .startsWith(
+                path
+            );
+
 
     const navItems = [
-        { path: "/", label: "Home", icon: Home, id: "home" },
-        { path: "/orders", label: "Ordenes", icon: ListOrdered, id: "orders" },
-        { path: "/tables", label: "Mesas", icon: Table2, id: "tables" },
+        {
+            path:
+                "/",
+
+            label:
+                t(
+                    "bottomNav.home"
+                ),
+
+            icon:
+            Home,
+
+            id:
+                "home",
+        },
+
+        {
+            path:
+                "/orders",
+
+            label:
+                t(
+                    "bottomNav.orders"
+                ),
+
+            icon:
+            ListOrdered,
+
+            id:
+                "orders",
+        },
+
+        {
+            path:
+                "/tables",
+
+            label:
+                t(
+                    "bottomNav.tables"
+                ),
+
+            icon:
+            Table2,
+
+            id:
+                "tables",
+        },
     ];
 
-    const role = userData?.role;
-    const isCashier = role === "Cajera";
-    const canSeeAdminPanel = ["Owner", "Admin"].includes(role);
 
-    if (isCashier) {
+    /*
+     * Estos roles son valores internos.
+     * NO se traducen aquí.
+     */
+    const role =
+        userData?.role;
+
+
+    const isCashier =
+        role ===
+        "Cajera";
+
+
+    const canSeeAdminPanel =
+        [
+            "Owner",
+            "Admin",
+        ].includes(
+            role
+        );
+
+
+    if (
+        isCashier
+    ) {
         navItems.push({
-            path: "/admin?tab=cash-register",
-            label: "Cierre de caja",
-            icon: Wallet,
-            id: "cash-register",
+            path:
+                "/admin?tab=cash-register",
+
+            label:
+                t(
+                    "bottomNav.cashRegister"
+                ),
+
+            icon:
+            Wallet,
+
+            id:
+                "cash-register",
         });
-    } else if (canSeeAdminPanel) {
+
+    } else if (
+        canSeeAdminPanel
+    ) {
         navItems.push({
-            path: "/admin",
-            label: "Admin",
-            icon: Settings,
-            id: "admin",
+            path:
+                "/admin",
+
+            label:
+                t(
+                    "bottomNav.admin"
+                ),
+
+            icon:
+            Settings,
+
+            id:
+                "admin",
         });
     }
-    const needsCenterGap = navItems.length === 3;
 
+
+    const needsCenterGap =
+        navItems.length ===
+        3;
 
 
     return (
         <>
-            {/* Bottom navigation bar optimizado */}
+
+            {/* ==========================================
+                BOTTOM NAV
+            ========================================== */}
+
             <motion.div
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
+                initial={{
+                    y:
+                        100,
+
+                    opacity:
+                        0,
+                }}
+
+                animate={{
+                    y:
+                        0,
+
+                    opacity:
+                        1,
+                }}
+
+                transition={{
+                    duration:
+                        0.3,
+
+                    ease:
+                        "easeOut",
+                }}
+
                 className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#1a1a1a] via-[#1f1f1f] to-[#1a1a1a] p-3 h-20 flex justify-between items-center z-50 border-t border-[#2a2a2a]/50 shadow-2xl transition-colors duration-300"
             >
-                {navItems.map((item, idx) => {
-                    const active = isActive(item.path);
-                    const Icon = item.icon;
 
-                    return (
-                        <React.Fragment key={item.id}>
-                            <button
-                                onClick={() => handleNavigation(item.path)}
-                                className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
-                                    active ? "text-white" : "text-[#ababab] hover:text-white"
-                                }`}
+                {navItems.map(
+                    (
+                        item,
+                        index
+                    ) => {
+                        const active =
+                            isActive(
+                                item.path
+                            );
+
+
+                        const Icon =
+                            item.icon;
+
+
+                        return (
+                            <React.Fragment
+                                key={
+                                    item.id
+                                }
                             >
-                                {active && (
-                                    <motion.div
-                                        layoutId="activeTab"
-                                        className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
-                                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                                    />
-                                )}
-                                <Icon className={`w-5 h-5 relative z-10 ${active ? "text-blue-400" : ""}`} />
-                                <span className={`text-xs font-semibold relative z-10 ${active ? "text-blue-400" : ""}`}>
-                                  {item.label}
-                                </span>
-                            </button>
 
-                            {/* ESPACIO CENTRAL para que el "+" no tape "Ordenes" cuando hay solo 3 opciones */}
-                            {needsCenterGap && idx === 1 && (
-                                <div className="w-16 pointer-events-none" aria-hidden="true" />
-                            )}
-                        </React.Fragment>
-                    );
-                })}
+                                <button
+                                    onClick={() =>
+                                        handleNavigation(
+                                            item.path
+                                        )
+                                    }
 
+                                    className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
+                                        active
+                                            ? "text-white"
+                                            : "text-[#ababab] hover:text-white"
+                                    }`}
+                                >
 
-                {/* Botón central: crear orden - simplificado */}
-                <button
-                    onClick={openModal}
-                    className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-blue-300 to-blue-950 text-black font-bold flex items-center justify-center shadow-2xl hover:shadow-blue-900/50 hover:scale-110 active:scale-95 transition-transform duration-200 z-50"
-                    title="Crear Orden"
-                >
-                    <Plus className="w-7 h-7" />
-                </button>
-            </motion.div>
+                                    {active && (
 
-            {/* Modal Crear Orden mejorado */}
-            <AnimatePresence>
-                {isModalOpen && (
-                    <Modal onClose={closeModal} title="Crear Nueva Orden">
-                        <div className="space-y-4 text-white max-h-[calc(100vh-180px)] overflow-y-auto pr-1">
-                        <div className="relative">
-                            <label className="block mb-2 text-sm text-white/70">
-                                Buscar cliente guardado
-                            </label>
+                                        <motion.div
+                                            layoutId="activeTab"
 
-                            <button
-                                type="button"
-                                className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-100 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
-                                onClick={() => {
-                                    setIsCustomerPickerOpen((v) => !v);
-                                    setShowResults(true);
-                                }}
-                            >
-                                Buscar cliente
-                            </button>
+                                            className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
 
-                            {selectedCustomerId ? (
-                                <span className="block mt-2 text-xs text-white/70">
-            Cliente seleccionado
-        </span>
-                            ) : (
-                                <span className="block mt-2 text-xs text-white/50">
-            Opcional
-        </span>
-                            )}
+                                            transition={{
+                                                type:
+                                                    "spring",
 
-                            {isCustomerPickerOpen && (
-                                <div className="absolute left-0 right-0 top-[88px] z-[99999] rounded-xl border border-[#2a2a2a] bg-[#0f0f0f] p-3 shadow-2xl shadow-black/70">
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
-                                            placeholder="Buscar por nombre, teléfono o dirección..."
-                                            value={search}
-                                            onChange={(e) => setSearch(e.target.value)}
+                                                stiffness:
+                                                    300,
+
+                                                damping:
+                                                    25,
+                                            }}
                                         />
 
-                                        <button
-                                            type="button"
-                                            className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
-                                            onClick={() => setSearch("")}
-                                        >
-                                            Limpiar
-                                        </button>
-                                    </div>
-
-                                    <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-[#1f1f1f]">
-                                        {customersQuery.isLoading && (
-                                            <div className="px-3 py-2 text-sm text-white/60">
-                                                Cargando clientes...
-                                            </div>
-                                        )}
-
-                                        {!customersQuery.isLoading && (customersQuery.data?.length || 0) === 0 && (
-                                            <div className="px-3 py-2 text-sm text-white/60">
-                                                No hay clientes para mostrar.
-                                            </div>
-                                        )}
-
-                                        {(customersQuery.data || []).map((c) => (
-                                            <button
-                                                key={c._id}
-                                                type="button"
-                                                onClick={() => {
-                                                    pickCustomer(c);
-                                                    setIsCustomerPickerOpen(false);
-                                                }}
-                                                className="w-full text-left px-3 py-2 hover:bg-[#161616] border-b border-[#1f1f1f]"
-                                            >
-                                                <div className="text-sm font-semibold text-white">
-                                                    {c.name}
-                                                </div>
-                                                <div className="text-xs text-white/60">
-                                                    {c.phone || "Sin teléfono"} {c.address ? `• ${c.address}` : ""}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    <div className="mt-3 flex justify-end">
-                                        <button
-                                            type="button"
-                                            className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
-                                            onClick={() => setIsCustomerPickerOpen(false)}
-                                        >
-                                            Cerrar
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                                    )}
 
 
-                        <div>
-                            <label className="block mb-2 text-sm text-white/70">Customer Name</label>
-                            <input
-                                className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
-                                placeholder="Enter customer name"
-                                value={name}
-                                onChange={(e) => {
-                                    setName(e.target.value);
-                                    if (selectedCustomerId) setSelectedCustomerId(null);
-                                }}
-
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block mb-2 text-sm text-white/70">
-                                Customer Phone (optional)
-                            </label>
-                            <input
-                                className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
-                                placeholder="+1-9999999999"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="block mb-2 text-sm text-white/70">Dirección (opcional)</label>
-                            <input
-                                className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
-                                placeholder="Ej: Alma Rosa II, Calle..., Apto..."
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                            />
-                        </div>
+                                    <Icon
+                                        className={`w-5 h-5 relative z-10 ${
+                                            active
+                                                ? "text-blue-400"
+                                                : ""
+                                        }`}
+                                    />
 
 
-                        <div>
-                            <label className="block mb-2 text-sm text-white/70">Guests</label>
-                            <div className="flex items-center justify-between rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2">
-                                <button
-                                    onClick={() => setGuestCount((g) => Math.max(0, g - 1))}
-                                    className="px-3 py-1 bg-[#2a2a2a] rounded text-white"
-                                >
-                                    −
+                                    <span
+                                        className={`text-xs font-semibold relative z-10 ${
+                                            active
+                                                ? "text-blue-400"
+                                                : ""
+                                        }`}
+                                    >
+
+                                        {item.label}
+
+                                    </span>
+
                                 </button>
-                                <span>{guestCount} Person</span>
-                                <button
-                                    onClick={() => setGuestCount((g) => g + 1)}
-                                    className="px-3 py-1 bg-[#2a2a2a] rounded text-white"
-                                >
-                                    +
-                                </button>
-                            </div>
-                        </div>
 
-                        <div className="pt-2">
-                            <motion.button
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={handleCreateOrder}
-                                disabled={createOrder.isPending}
-                                className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-800 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
-                            >
-                                {createOrder.isPending ? "Creando..." : "Seleccionar cliente"}
-                            </motion.button>
-                        </div>
-                    </div>
-                    </Modal>
+
+                                {needsCenterGap &&
+                                    index ===
+                                    1 && (
+
+                                        <div
+                                            className="w-16 pointer-events-none"
+
+                                            aria-hidden="true"
+                                        />
+
+                                    )}
+
+                            </React.Fragment>
+                        );
+                    }
                 )}
+
+
+                {/* BOTÓN CREAR ORDEN */}
+
+                <button
+                    onClick={
+                        openModal
+                    }
+
+                    className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-blue-300 to-blue-950 text-black font-bold flex items-center justify-center shadow-2xl hover:shadow-blue-900/50 hover:scale-110 active:scale-95 transition-transform duration-200 z-50"
+
+                    title={
+                        t(
+                            "bottomNav.createOrder"
+                        )
+                    }
+                >
+
+                    <Plus className="w-7 h-7" />
+
+                </button>
+
+            </motion.div>
+
+
+            {/* ==========================================
+                MODAL CREAR ORDEN
+            ========================================== */}
+
+            <AnimatePresence>
+
+                {isModalOpen && (
+
+                    <Modal
+                        onClose={
+                            closeModal
+                        }
+
+                        title={
+                            t(
+                                "bottomNav.createNewOrder"
+                            )
+                        }
+                    >
+
+                        <div className="space-y-4 text-white max-h-[calc(100vh-180px)] overflow-y-auto pr-1">
+
+                            {/* CLIENTE GUARDADO */}
+
+                            <div className="relative">
+
+                                <label className="block mb-2 text-sm text-white/70">
+
+                                    {t(
+                                        "bottomNav.savedCustomerSearch"
+                                    )}
+
+                                </label>
+
+
+                                <button
+                                    type="button"
+
+                                    className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-100 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
+
+                                    onClick={() => {
+                                        setIsCustomerPickerOpen(
+                                            (
+                                                value
+                                            ) =>
+                                                !value
+                                        );
+
+                                        setShowResults(
+                                            true
+                                        );
+                                    }}
+                                >
+
+                                    {t(
+                                        "bottomNav.searchCustomer"
+                                    )}
+
+                                </button>
+
+
+                                {selectedCustomerId
+                                    ? (
+
+                                        <span className="block mt-2 text-xs text-white/70">
+
+                                            {t(
+                                                "bottomNav.customerSelected"
+                                            )}
+
+                                        </span>
+
+                                    )
+                                    : (
+
+                                        <span className="block mt-2 text-xs text-white/50">
+
+                                            {t(
+                                                "bottomNav.optional"
+                                            )}
+
+                                        </span>
+
+                                    )
+                                }
+
+
+                                {isCustomerPickerOpen && (
+
+                                    <div className="absolute left-0 right-0 top-[88px] z-[99999] rounded-xl border border-[#2a2a2a] bg-[#0f0f0f] p-3 shadow-2xl shadow-black/70">
+
+                                        <div className="flex items-center gap-2">
+
+                                            <input
+                                                className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
+
+                                                placeholder={
+                                                    t(
+                                                        "bottomNav.searchCustomerPlaceholder"
+                                                    )
+                                                }
+
+                                                value={
+                                                    search
+                                                }
+
+                                                onChange={(
+                                                    event
+                                                ) =>
+                                                    setSearch(
+                                                        event
+                                                            .target
+                                                            .value
+                                                    )
+                                                }
+                                            />
+
+
+                                            <button
+                                                type="button"
+
+                                                className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
+
+                                                onClick={() =>
+                                                    setSearch(
+                                                        ""
+                                                    )
+                                                }
+                                            >
+
+                                                {t(
+                                                    "bottomNav.clear"
+                                                )}
+
+                                            </button>
+
+                                        </div>
+
+
+                                        <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-[#1f1f1f]">
+
+                                            {customersQuery
+                                                .isLoading && (
+
+                                                <div className="px-3 py-2 text-sm text-white/60">
+
+                                                    {t(
+                                                        "bottomNav.loadingCustomers"
+                                                    )}
+
+                                                </div>
+
+                                            )}
+
+
+                                            {!customersQuery
+                                                    .isLoading &&
+                                                (
+                                                    customersQuery
+                                                        .data
+                                                        ?.length ||
+                                                    0
+                                                ) ===
+                                                0 && (
+
+                                                    <div className="px-3 py-2 text-sm text-white/60">
+
+                                                        {t(
+                                                            "bottomNav.noCustomers"
+                                                        )}
+
+                                                    </div>
+
+                                                )}
+
+
+                                            {(
+                                                customersQuery
+                                                    .data ||
+                                                []
+                                            ).map(
+                                                (
+                                                    customer
+                                                ) => (
+
+                                                    <button
+                                                        key={
+                                                            customer._id
+                                                        }
+
+                                                        type="button"
+
+                                                        onClick={() => {
+                                                            pickCustomer(
+                                                                customer
+                                                            );
+
+                                                            setIsCustomerPickerOpen(
+                                                                false
+                                                            );
+                                                        }}
+
+                                                        className="w-full text-left px-3 py-2 hover:bg-[#161616] border-b border-[#1f1f1f]"
+                                                    >
+
+                                                        <div className="text-sm font-semibold text-white">
+
+                                                            {customer.name}
+
+                                                        </div>
+
+
+                                                        <div className="text-xs text-white/60">
+
+                                                            {customer.phone ||
+                                                                t(
+                                                                    "bottomNav.noPhone"
+                                                                )
+                                                            }
+
+                                                            {customer.address
+                                                                ? ` • ${customer.address}`
+                                                                : ""
+                                                            }
+
+                                                        </div>
+
+                                                    </button>
+
+                                                )
+                                            )}
+
+                                        </div>
+
+
+                                        <div className="mt-3 flex justify-end">
+
+                                            <button
+                                                type="button"
+
+                                                className="px-3 py-2 rounded-lg bg-[#111] border border-[#2a2a2a] text-white"
+
+                                                onClick={() =>
+                                                    setIsCustomerPickerOpen(
+                                                        false
+                                                    )
+                                                }
+                                            >
+
+                                                {t(
+                                                    "bottomNav.close"
+                                                )}
+
+                                            </button>
+
+                                        </div>
+
+                                    </div>
+
+                                )}
+
+                            </div>
+
+
+                            {/* NOMBRE */}
+
+                            <div>
+
+                                <label className="block mb-2 text-sm text-white/70">
+
+                                    {t(
+                                        "bottomNav.customerName"
+                                    )}
+
+                                </label>
+
+
+                                <input
+                                    className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
+
+                                    placeholder={
+                                        t(
+                                            "bottomNav.customerNamePlaceholder"
+                                        )
+                                    }
+
+                                    value={
+                                        name
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) => {
+                                        setName(
+                                            event
+                                                .target
+                                                .value
+                                        );
+
+
+                                        if (
+                                            selectedCustomerId
+                                        ) {
+                                            setSelectedCustomerId(
+                                                null
+                                            );
+                                        }
+                                    }}
+                                />
+
+                            </div>
+
+
+                            {/* TELÉFONO */}
+
+                            <div>
+
+                                <label className="block mb-2 text-sm text-white/70">
+
+                                    {t(
+                                        "bottomNav.customerPhoneOptional"
+                                    )}
+
+                                </label>
+
+
+                                <input
+                                    className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
+
+                                    placeholder="+1-9999999999"
+
+                                    value={
+                                        phone
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        setPhone(
+                                            event
+                                                .target
+                                                .value
+                                        )
+                                    }
+                                />
+
+                            </div>
+
+
+                            {/* DIRECCIÓN */}
+
+                            <div>
+
+                                <label className="block mb-2 text-sm text-white/70">
+
+                                    {t(
+                                        "bottomNav.addressOptional"
+                                    )}
+
+                                </label>
+
+
+                                <input
+                                    className="w-full rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2 outline-none text-white"
+
+                                    placeholder={
+                                        t(
+                                            "bottomNav.addressPlaceholder"
+                                        )
+                                    }
+
+                                    value={
+                                        address
+                                    }
+
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        setAddress(
+                                            event
+                                                .target
+                                                .value
+                                        )
+                                    }
+                                />
+
+                            </div>
+
+
+                            {/* PERSONAS */}
+
+                            <div>
+
+                                <label className="block mb-2 text-sm text-white/70">
+
+                                    {t(
+                                        "bottomNav.guests"
+                                    )}
+
+                                </label>
+
+
+                                <div className="flex items-center justify-between rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2">
+
+                                    <button
+                                        onClick={() =>
+                                            setGuestCount(
+                                                (
+                                                    current
+                                                ) =>
+                                                    Math.max(
+                                                        0,
+                                                        current -
+                                                        1
+                                                    )
+                                            )
+                                        }
+
+                                        className="px-3 py-1 bg-[#2a2a2a] rounded text-white"
+                                    >
+                                        −
+                                    </button>
+
+
+                                    <span>
+
+                                        {t(
+                                            "bottomNav.personCount",
+                                            {
+                                                count:
+                                                guestCount,
+                                            }
+                                        )}
+
+                                    </span>
+
+
+                                    <button
+                                        onClick={() =>
+                                            setGuestCount(
+                                                (
+                                                    current
+                                                ) =>
+                                                    current +
+                                                    1
+                                            )
+                                        }
+
+                                        className="px-3 py-1 bg-[#2a2a2a] rounded text-white"
+                                    >
+                                        +
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+
+                            <div className="pt-2">
+
+                                <motion.button
+                                    whileHover={{
+                                        scale:
+                                            1.02,
+                                    }}
+
+                                    whileTap={{
+                                        scale:
+                                            0.98,
+                                    }}
+
+                                    onClick={
+                                        handleCreateOrder
+                                    }
+
+                                    disabled={
+                                        createOrder
+                                            .isPending
+                                    }
+
+                                    className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-800 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
+                                >
+
+                                    {createOrder
+                                        .isPending
+                                        ? t(
+                                            "bottomNav.creating"
+                                        )
+                                        : t(
+                                            "bottomNav.selectCustomer"
+                                        )
+                                    }
+
+                                </motion.button>
+
+                            </div>
+
+                        </div>
+
+                    </Modal>
+
+                )}
+
             </AnimatePresence>
+
         </>
     );
 });
 
-BottomNav.displayName = 'BottomNav';
+
+BottomNav.displayName =
+    "BottomNav";
+
 
 export default BottomNav;

@@ -17,6 +17,7 @@ import BottomNav from "./components/shared/BottomNav";
 import AdminRegister from "@components/auth/AdminRegister.jsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import CustomerDisplay from "./pages/CustomerDisplay";
 import Admin from "./pages/admin/Admin";
 
@@ -25,6 +26,8 @@ import SuperAdminTenants from "./pages/superAdmin/SuperAdminTenants";
 import SuperAdminCreateTenant from "./pages/superAdmin/SuperAdminCreateTenant";
 import SuperAdminLayout from "./components/superAdmin/SuperAdminLayout";
 import SuperAdminTenantUsage from "@pages/superAdmin/SuperAdminTenantUsage.jsx";
+import SuperAdminRncRegistry from "./pages/superAdmin/SuperAdminRncRegistry.jsx";
+import SuperAdminEcfAuthorizations from "./pages/superAdmin/SuperAdminEcfAuthorizations.jsx";
 import { connectSocket, disconnectSocket } from "./realtime/socket.js";
 import { setTenant } from "./redux/slices/storeSlice";
 import { getTenant } from "./https";
@@ -34,6 +37,12 @@ import { getUserData } from "./https"; // ajusta si tu export está en otra ruta
 
 import { QK } from "./queryKeys";
 import api, { getScope, setScope } from "./lib/api";
+import {
+    formatMoney,
+    getTenantLocalization,
+    getTodayYMD,
+} from "./lib/localization";
+
 const REGISTER_ID = "MAIN";
 
 
@@ -105,6 +114,7 @@ function RealtimeTenantConfig() {
 
     const tenantState = useSelector((s) => s.store || s.tenant || {});
     const tenant = tenantState?.tenant || tenantState?.data || tenantState;
+
     const hasTenant = !!tenant?._id;
 
     const isAuth = !!userState?.isAuth;
@@ -197,6 +207,7 @@ function RealtimeTenantConfig() {
 
 
 function Layout() {
+    const { t } = useTranslation();
     const isLoading = useLoadData();
     const location = useLocation();
     const navigate = useNavigate(); // 👈 NUEVO
@@ -204,6 +215,16 @@ function Layout() {
     const { userData, isAuth } = useSelector((state) => state.user);
     const tenantState = useSelector((s) => s.store || s.tenant || {});
     const tenant = tenantState?.tenant || tenantState?.data || tenantState;
+    const localization =
+        getTenantLocalization(
+            tenant
+        );
+
+    const money = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
 
 
     const isSuperAdminRoute = location.pathname.startsWith("/superadmin");
@@ -218,11 +239,7 @@ function Layout() {
         !isCustomerDisplayRoute;
     // ====== CASH SESSION GATE (solo Cajera) ======
     const isCajera = userData?.role === "Cajera";
-    console.log("CASH DEBUG", {
-        userData,
-        role: userData?.role,
-        isCajera
-    });
+
     const [cashGateLoading, setCashGateLoading] = useState(false);
     const [cashSession, setCashSession] = useState(null);
     const [pendingCashSession, setPendingCashSession] = useState(null);
@@ -231,15 +248,10 @@ function Layout() {
     const [openingAmount, setOpeningAmount] = useState("");
     const [cashGateError, setCashGateError] = useState("");
     const [showCloseCashConfirm, setShowCloseCashConfirm] = useState(false);
-    const getLocalYMD = () => {
-        const d = new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
-
-    const todayYMD = getLocalYMD();
+    const todayYMD =
+        getTodayYMD(
+            localization
+        );
 
     const REGISTER_STORAGE_PREFIX = "deleonsoft_active_register_id";
     const LEGACY_REGISTER_STORAGE_KEY = "deleonsoft_active_register_id";
@@ -843,32 +855,36 @@ function Layout() {
                             type="button"
                             onClick={() => setShowCloseCashConfirm(true)}
                             className="absolute top-4 right-4 text-white/40 hover:text-white text-xl transition"
-                            aria-label="Cerrar"
+                            aria-label={t("cashGate.close")}
                         >
                             ✕
                         </button>
                         {cashGateMode === "pending-close" ? (
                             <>
-                                <h2 className="text-xl font-semibold text-white">Cierre pendiente</h2>
+                                <h2 className="text-xl font-semibold text-white">{t("cashGate.pendingTitle")}</h2>
 
                                 <p className="text-sm text-white/70 mt-1">
-                                    Hay una caja anterior abierta. Debes cerrarla antes de abrir la caja de hoy.
+                                    {t("cashGate.pendingDescription")}
                                 </p>
 
                                 <div className="mt-4 rounded-xl bg-white/5 border border-white/10 p-4">
-                                    <div className="text-sm text-white/60">Fecha pendiente</div>
+                                    <div className="text-sm text-white/60">{t("cashGate.pendingDate")}</div>
                                     <div className="text-lg font-semibold text-white">
                                         {pendingCashSession?.dateYMD || "N/A"}
                                     </div>
 
-                                    <div className="text-sm text-white/60 mt-3">Caja</div>
+                                    <div className="text-sm text-white/60 mt-3">{t("cashGate.register")}</div>
                                     <div className="text-lg font-semibold text-white">
                                         {pendingCashSession?.registerId || "MAIN"}
                                     </div>
 
-                                    <div className="text-sm text-white/60 mt-3">Fondo inicial</div>
+                                    <div className="text-sm text-white/60 mt-3">{t("cashGate.openingFloat")}</div>
                                     <div className="text-lg font-semibold text-yellow-400">
-                                        RD${Number(pendingCashSession?.openingFloatInitial || 0).toFixed(2)}
+                                        {money(
+                                            pendingCashSession
+                                                ?.openingFloatInitial ||
+                                            0
+                                        )}
                                     </div>
                                 </div>
 
@@ -908,21 +924,21 @@ function Layout() {
                                         }}
                                         className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
                                     >
-                                        Ir a cerrar caja
+                                        {t("cashGate.goToClose")}
                                     </button>
                                 </div>
                             </>
                         ) : (
                             <>
-                                <h2 className="text-xl font-semibold text-white">Apertura de caja</h2>
+                                <h2 className="text-xl font-semibold text-white">{t("cashGate.openTitle")}</h2>
 
                                 <p className="text-sm text-white/70 mt-1">
-                                    Debes registrar el fondo inicial antes de usar el sistema.
+                                    {t("cashGate.openDescription")}
                                 </p>
 
                                 <div className="mt-4">
                                     <label className="text-sm text-white/70">
-                                        Monto de apertura
+                                        {t("cashGate.openingAmount")}
                                     </label>
 
                                     <input
@@ -931,7 +947,7 @@ function Layout() {
                                         value={openingAmount}
                                         onChange={(e) => setOpeningAmount(e.target.value)}
                                         className="mt-2 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-white outline-none focus:border-white/20"
-                                        placeholder="Ej: 2000"
+                                        placeholder={t("cashGate.amountPlaceholder")}
                                     />
                                 </div>
 
@@ -948,7 +964,7 @@ function Layout() {
                                         disabled={cashGateLoading}
                                         className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3 disabled:opacity-60"
                                     >
-                                        {cashGateLoading ? "Guardando..." : "Guardar apertura"}
+                                        {cashGateLoading ? t("cashGate.saving") : t("cashGate.saveOpening")}
                                     </button>
                                 </div>
                             </>
@@ -960,11 +976,11 @@ function Layout() {
                             <div className="w-full max-w-sm rounded-xl bg-[#161616] border border-white/10 p-5">
 
                                 <h3 className="text-lg font-semibold text-white">
-                                    ¿Cerrar apertura de caja?
+                                    {t("cashGate.closeTitle")}
                                 </h3>
 
                                 <p className="text-sm text-white/70 mt-2">
-                                    Si cierras esta ventana, no podrás registrar ventas hasta abrir la caja con un fondo inicial.
+                                    {t("cashGate.closeDescription")}
                                 </p>
 
                                 <div className="mt-5 flex gap-3">
@@ -974,7 +990,7 @@ function Layout() {
                                         onClick={() => setShowCloseCashConfirm(false)}
                                         className="flex-1 rounded-xl bg-white/10 hover:bg-white/20 text-white py-3"
                                     >
-                                        Cancelar
+                                        {t("cashGate.cancel")}
                                     </button>
 
                                     <button
@@ -985,7 +1001,7 @@ function Layout() {
                                         }}
                                         className="flex-1 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
                                     >
-                                        Cerrar
+                                        {t("cashGate.close")}
                                     </button>
 
                                 </div>
@@ -1082,6 +1098,8 @@ function Layout() {
                     <Route path="tenants" element={<SuperAdminTenants />} />
                     <Route path="create-tenant" element={<SuperAdminCreateTenant />} />
                     <Route path="tenant-usage" element={<SuperAdminTenantUsage />} />
+                    <Route path="rnc-registry" element={<SuperAdminRncRegistry />} />
+                    <Route path="ecf-authorizations" element={<SuperAdminEcfAuthorizations />} />
                 </Route>
 
                 <Route path="/index.html" element={<Navigate to="/" replace />} />
