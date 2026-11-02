@@ -17,7 +17,6 @@ import LanguageSync
 purgeLegacyApiCaches().catch((error) =>
     console.warn("No se pudo limpiar la cache API antigua:", error)
 );
-
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
@@ -28,7 +27,6 @@ const queryClient = new QueryClient({
         },
     },
 });
-
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <ThemeProvider>
@@ -43,12 +41,3 @@ createRoot(document.getElementById("root")).render(
     </ThemeProvider>
   </StrictMode>
 );
-
-if (import.meta.env.PROD &&"serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker
-            .register("/sw.js")
-            .then(() => console.log("Service Worker registrado"))
-            .catch((err) => console.log("Error al registrar SW:", err));
-    });
-}
