@@ -17,9 +17,11 @@ import {
     Boxes,
     RotateCcw,
     CheckCircle2,
+    CreditCard
 } from "lucide-react";
 import { enqueueSnackbar } from "notistack";
-import api from "../../lib/api";
+import { useTranslation } from "react-i18next";
+import api, { getScope } from "../../lib/api";
 
 const DEFAULT_PERMISSIONS = {
     products: {
@@ -35,6 +37,11 @@ const DEFAULT_PERMISSIONS = {
     },
     orders: {
         cancel: false,
+        edit: false,
+    },
+    fiscal: { ecfIssue: false, creditNote: false, debitNote: false, manage: false },
+    accountsReceivable: {
+        view: false,
     },
 };
 
@@ -52,6 +59,18 @@ const normalizePermissions = (permissions = {}) => ({
     },
     orders: {
         cancel: Boolean(permissions?.orders?.cancel),
+        edit: Boolean(permissions?.orders?.edit),
+    },
+    fiscal: {
+        ecfIssue: Boolean(permissions?.fiscal?.ecfIssue),
+        creditNote: Boolean(permissions?.fiscal?.creditNote),
+        debitNote: Boolean(permissions?.fiscal?.debitNote),
+        manage: false,
+    },
+    accountsReceivable: {
+        view: Boolean(
+            permissions?.accountsReceivable?.view
+        ),
     },
 });
 
@@ -66,13 +85,32 @@ const countActivePermissions = (permissions = DEFAULT_PERMISSIONS) => {
         p.inventory.adjust,
         p.inventory.waste,
         p.orders.cancel,
+        p.orders.edit,
+        p.fiscal.ecfIssue,
+        p.fiscal.creditNote,
+        p.fiscal.debitNote,
+        p.accountsReceivable.view,
     ].filter(Boolean).length;
 };
 
-const ToggleSwitch = ({ checked, onChange, disabled = false }) => {
+const getEmployeeRoleLabel = (role, t) => {
+    const keyMap = {
+        Owner: "employeesPage.roles.owner",
+        Admin: "employeesPage.roles.admin",
+        Cajera: "employeesPage.roles.cashier",
+        Camarero: "employeesPage.roles.waiter",
+        Cocina: "employeesPage.roles.kitchen",
+    };
+
+    return keyMap[role] ? t(keyMap[role]) : role || "—";
+};
+
+const ToggleSwitch = ({ checked, onChange, disabled = false, ariaLabel }) => {
     return (
         <button
             type="button"
+            aria-label={ariaLabel}
+            aria-pressed={checked}
             onClick={() => !disabled && onChange(!checked)}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 ${
                 disabled
@@ -110,7 +148,7 @@ const PermissionItem = ({ icon: Icon, title, desc, checked, onChange }) => (
             </div>
 
             <div className="flex justify-end sm:justify-start">
-                <ToggleSwitch checked={checked} onChange={onChange} />
+                <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={title} />
             </div>
         </div>
     </div>
@@ -133,7 +171,17 @@ const PermissionSection = ({ title, subtitle, icon: Icon, children }) => (
 );
 
 const Employees = () => {
+    const { t } = useTranslation();
     const queryClient = useQueryClient();
+    const activeBranchId = getScope().clientId || "default";
+    const { data: branchResponse } = useQuery({
+        queryKey: ["branches", getScope().tenantId],
+        queryFn: async () => (await api.get("/api/clients")).data,
+        staleTime: 30_000,
+    });
+    const branches = Array.isArray(branchResponse?.data) ? branchResponse.data.filter(b => b.isActive !== false) : [];
+    const activeBranchName = branches.find(b => b.clientId === activeBranchId)?.name || (activeBranchId === "default" ? "Sucursal principal" : activeBranchId);
+    const employeeQueryKey = ["admin/employees", activeBranchId];
 
     const [editingEmployeeId, setEditingEmployeeId] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
@@ -147,6 +195,7 @@ const Employees = () => {
         password: "",
         confirmPassword: "",
         permissions: DEFAULT_PERMISSIONS,
+        clientIds: [activeBranchId],
     });
 
     const {
@@ -155,7 +204,7 @@ const Employees = () => {
         isError,
         error,
     } = useQuery({
-        queryKey: ["admin/employees"],
+        queryKey: employeeQueryKey,
         queryFn: async () => {
             const { data } = await api.get("/api/admin/employees");
             return Array.isArray(data?.data) ? data.data : [];
@@ -164,6 +213,16 @@ const Employees = () => {
         refetchOnMount: "always",
         refetchOnReconnect: true,
     });
+
+    // Solo se ofrecen permisos DGII a negocios dominicanos con plan fiscal.
+    const { data: fiscalAccess } = useQuery({
+        queryKey: ["admin/usage", "employee-fiscal-availability"],
+        queryFn: async () => (await api.get("/api/admin/usage")).data?.data,
+        retry: 0,
+        staleTime: 60_000,
+    });
+    const canConfigureFiscal = fiscalAccess?.countryCode === "DO" &&
+        fiscalAccess?.features?.fiscal === true;
 
     const editingEmployee = useMemo(() => {
         if (!editingEmployeeId) return null;
@@ -184,6 +243,7 @@ const Employees = () => {
             password: "",
             confirmPassword: "",
             permissions: normalizePermissions(editingEmployee.permissions),
+            clientIds: editingEmployee.clientIds?.length ? editingEmployee.clientIds : ["default"],
         });
     }, [editingEmployee]);
 
@@ -198,6 +258,7 @@ const Employees = () => {
             password: "",
             confirmPassword: "",
             permissions: DEFAULT_PERMISSIONS,
+            clientIds: [activeBranchId],
         });
     };
 
@@ -206,12 +267,12 @@ const Employees = () => {
             const { data: response } = await api.patch(`/api/admin/employees/${id}`, data);
             return response;
         },
-        onSuccess: (response, variables) => {
+        onSuccess: (_, variables) => {
             const updatedPermissions = normalizePermissions(
                 variables?.data?.permissions || DEFAULT_PERMISSIONS
             );
 
-            queryClient.setQueryData(["admin/employees"], (old = []) => {
+            queryClient.setQueryData(employeeQueryKey, (old = []) => {
                 if (!Array.isArray(old)) return old;
                 return old.map((emp) =>
                     emp._id === variables.id
@@ -223,25 +284,36 @@ const Employees = () => {
                             role: variables.data.role,
                             membershipRole: variables.data.role,
                             permissions: updatedPermissions,
+                            clientIds: variables.data.clientIds || emp.clientIds,
                         }
                         : emp
                 );
             });
 
             enqueueSnackbar(
-                response?.message || "Empleado actualizado exitosamente",
+                t("employeesPage.messages.updateSuccess"),
                 { variant: "success" }
             );
 
             queryClient.invalidateQueries({ queryKey: ["admin/employees"] });
+            queryClient.invalidateQueries({ queryKey: ["order-correction-access"] });
 
             setEditingEmployeeId(null);
             resetForm();
         },
         onError: (error) => {
-            const message =
-                error?.response?.data?.message || "Error al actualizar empleado";
-            enqueueSnackbar(message, { variant: "error" });
+            const code = error?.response?.data?.code;
+            const serverMessage = error?.response?.data?.message || (
+                code === "EMPLOYEE_NOT_IN_BRANCH" ? "El empleado no pertenece a esta sucursal." :
+                code === "INVALID_BRANCH_ASSIGNMENT" ? "La asignación de sucursales no es válida." :
+                code === "GLOBAL_ADMIN_ASSIGNMENT_READ_ONLY" ? "Las sucursales de Owner/Admin no se pueden modificar." :
+                code === "EMPLOYEE_MEMBERSHIP_CHANGED" ? "La asignación cambió; recarga Empleados e intenta de nuevo." :
+                code
+            );
+            enqueueSnackbar(
+                serverMessage || t("employeesPage.messages.updateFailed"),
+                { variant: "error" }
+            );
         },
     });
 
@@ -290,49 +362,80 @@ const Employees = () => {
         if (!editingEmployeeId) return;
 
         if (!formData.name.trim()) {
-            enqueueSnackbar("El nombre es requerido", { variant: "warning" });
+            enqueueSnackbar(t("employeesPage.messages.nameRequired"), { variant: "warning" });
             return;
         }
 
         if (!formData.email.trim()) {
-            enqueueSnackbar("El email es requerido", { variant: "warning" });
+            enqueueSnackbar(t("employeesPage.messages.emailRequired"), { variant: "warning" });
             return;
         }
 
-        if (formData.phone.toString().length !== 10) {
-            enqueueSnackbar("El teléfono debe tener 10 dígitos", {
-                variant: "warning",
-            });
+        const normalizedPhone =
+            String(formData.phone || "")
+                .replace(/\D/g, "");
+
+        if (
+            normalizedPhone &&
+            !/^\d{7,15}$/.test(normalizedPhone)
+        ) {
+            enqueueSnackbar(
+                t("employeesPage.messages.phoneInvalid"),
+                {
+                    variant: "warning",
+                }
+            );
+
             return;
         }
 
         if (!formData.role) {
-            enqueueSnackbar("El rol es requerido", { variant: "warning" });
+            enqueueSnackbar(t("employeesPage.messages.roleRequired"), { variant: "warning" });
             return;
         }
 
         if (formData.password.trim()) {
             if (formData.password.length < 6) {
-                enqueueSnackbar("La contraseña debe tener al menos 6 caracteres", {
-                    variant: "warning",
-                });
+                enqueueSnackbar(
+                    t("employeesPage.messages.passwordMinLength"),
+                    { variant: "warning" }
+                );
                 return;
             }
 
             if (formData.password !== formData.confirmPassword) {
-                enqueueSnackbar("Las contraseñas no coinciden", {
-                    variant: "warning",
-                });
+                enqueueSnackbar(
+                    t("employeesPage.messages.passwordMismatch"),
+                    { variant: "warning" }
+                );
                 return;
             }
         }
 
+        if (formData.role !== "Admin" && formData.role !== "Owner" && !formData.clientIds?.length) {
+            enqueueSnackbar("Selecciona al menos una sucursal para este empleado", { variant: "warning" });
+            return;
+        }
         const updateData = {
             name: formData.name.trim(),
             email: formData.email.trim(),
-            phone: formData.phone,
+            phone: normalizedPhone,
             role: formData.role,
-            permissions: normalizePermissions(formData.permissions),
+            // Owner/Admin son miembros globales; no reenviar su asignación de sedes.
+            clientIds: ["Admin", "Owner"].includes(formData.role) ? undefined : formData.clientIds,
+            permissions: {
+                ...normalizePermissions(formData.permissions),
+                orders: {
+                    ...normalizePermissions(formData.permissions).orders,
+                    edit: formData.role === "Cajera" && Boolean(formData.permissions?.orders?.edit),
+                },
+                fiscal: {
+                    ecfIssue: canConfigureFiscal && formData.role === "Cajera" && Boolean(formData.permissions?.fiscal?.ecfIssue),
+                    creditNote: canConfigureFiscal && formData.role === "Cajera" && Boolean(formData.permissions?.fiscal?.creditNote),
+                    debitNote: canConfigureFiscal && formData.role === "Cajera" && Boolean(formData.permissions?.fiscal?.debitNote),
+                    manage: false,
+                },
+            },
         };
 
         if (formData.password.trim()) {
@@ -348,7 +451,7 @@ const Employees = () => {
     if (isLoading) {
         return (
             <div className="text-center text-[#ababab] py-10">
-                Cargando empleados...
+                {t("employeesPage.loading")}
             </div>
         );
     }
@@ -356,7 +459,7 @@ const Employees = () => {
     if (isError) {
         return (
             <div className="text-center text-red-500 py-10">
-                Error al cargar los empleados
+                {t("employeesPage.loadError")}
                 {error?.response?.status ? ` (HTTP ${error.response.status})` : ""}.
             </div>
         );
@@ -365,24 +468,25 @@ const Employees = () => {
     return (
         <>
             <div className="p-8 bg-gradient-to-br from-[#1a1a1a] to-[#1f1f1f] rounded-lg shadow-lg text-[#f5f5f5]">
-                <h2 className="text-2xl font-bold mb-6 text-center">Empleados</h2>
+                <h2 className="text-2xl font-bold mb-2 text-center">{t("employeesPage.title")}</h2>
+                <p className="text-sm text-center text-amber-300 mb-6">{activeBranchName} · {employees.length} empleado(s) asignado(s)</p>
 
                 {employees.length === 0 ? (
                     <p className="text-center text-[#ababab]">
-                        No hay empleados registrados.
+                        {t("employeesPage.empty")}
                     </p>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse border border-[#2a2a2a] rounded-lg overflow-hidden">
                             <thead className="bg-gradient-to-r from-[#262626] to-[#2a2a2a]">
                             <tr>
-                                <th className="p-4 text-[#f5f5f5] font-semibold">Nombre</th>
-                                <th className="p-4 text-[#f5f5f5] font-semibold">Email</th>
-                                <th className="p-4 text-[#f5f5f5] font-semibold">Teléfono</th>
-                                <th className="p-4 text-[#f5f5f5] font-semibold">Rol</th>
-                                <th className="p-4 text-[#f5f5f5] font-semibold">Permisos</th>
+                                <th className="p-4 text-[#f5f5f5] font-semibold">{t("employeesPage.table.name")}</th>
+                                <th className="p-4 text-[#f5f5f5] font-semibold">{t("employeesPage.table.email")}</th>
+                                <th className="p-4 text-[#f5f5f5] font-semibold">{t("employeesPage.table.phone")}</th>
+                                <th className="p-4 text-[#f5f5f5] font-semibold">{t("employeesPage.table.role")}</th>
+                                <th className="p-4 text-[#f5f5f5] font-semibold">{t("employeesPage.table.permissions")}</th>
                                 <th className="p-4 text-[#f5f5f5] font-semibold text-center">
-                                    Acciones
+                                    {t("employeesPage.table.actions")}
                                 </th>
                             </tr>
                             </thead>
@@ -401,7 +505,7 @@ const Employees = () => {
                                         <td className="p-4 text-[#ababab]">{e.phone}</td>
                                         <td className="p-4">
                                                 <span className="px-3 py-1 rounded-lg bg-[#F6B100]/20 text-[#F6B100] font-semibold text-sm border border-[#F6B100]/30">
-                                                    {e.membershipRole || e.role}
+                                                    {getEmployeeRoleLabel(e.membershipRole || e.role, t)}
                                                 </span>
                                         </td>
                                         <td className="p-4">
@@ -413,18 +517,19 @@ const Employees = () => {
                                                     }`}
                                                 >
                                                     <ShieldCheck className="w-4 h-4" />
-                                                    {total} activos
+                                                    {t("employeesPage.permissions.activeCount", { count: total })}
                                                 </span>
                                         </td>
                                         <td className="p-4">
                                             <motion.button
+                                                type="button"
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
                                                 onClick={() => handleEdit(e)}
                                                 className="mx-auto flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:shadow-lg hover:shadow-blue-500/30 transition-all duration-200"
                                             >
                                                 <Edit className="w-4 h-4" />
-                                                <span className="text-sm font-semibold">Editar</span>
+                                                <span className="text-sm font-semibold">{t("employeesPage.actions.edit")}</span>
                                             </motion.button>
                                         </td>
                                     </motion.tr>
@@ -462,17 +567,20 @@ const Employees = () => {
                                         </div>
                                         <div className="min-w-0">
                                             <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">
-                                                Editar Empleado
+                                                {t("employeesPage.modal.title")}
                                             </h3>
                                             <p className="text-xs sm:text-sm text-gray-400 leading-snug">
-                                                Permisos y datos en tiempo real del usuario seleccionado
+                                                {t("employeesPage.modal.description")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <button
+                                        type="button"
+                                        aria-label={t("common.close")}
                                         onClick={handleCancel}
-                                        className="shrink-0 p-2.5 rounded-2xl bg-white/5 border border-white/10 text-gray-400 hover:bg-red-500/15 hover:border-red-500/20 hover:text-red-400 transition-all"                                    >
+                                        className="shrink-0 p-2.5 rounded-2xl bg-white/5 border border-white/10 text-gray-400 hover:bg-red-500/15 hover:border-red-500/20 hover:text-red-400 transition-all"
+                                    >
                                         <X className="w-5 h-5" />
                                     </button>
                                 </div>
@@ -490,14 +598,14 @@ const Employees = () => {
                                         <div className="space-y-4">
                                             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
                                                 <h4 className="text-sm font-bold text-white mb-4">
-                                                    Información básica
+                                                    {t("employeesPage.sections.basicInfo")}
                                                 </h4>
 
                                                 <div className="space-y-4">
                                                     <div>
                                                         <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                             <User className="w-4 h-4" />
-                                                            Nombre
+                                                            {t("employeesPage.fields.name")}
                                                         </label>
                                                         <input
                                                             type="text"
@@ -505,14 +613,14 @@ const Employees = () => {
                                                             value={formData.name}
                                                             onChange={handleChange}
                                                             className="w-full px-3 py-3 sm:p-3 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
-                                                            placeholder="Nombre del empleado"
+                                                            placeholder={t("employeesPage.placeholders.name")}
                                                         />
                                                     </div>
 
                                                     <div>
                                                         <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                             <Mail className="w-4 h-4" />
-                                                            Email
+                                                            {t("employeesPage.fields.email")}
                                                         </label>
                                                         <input
                                                             type="email"
@@ -520,21 +628,21 @@ const Employees = () => {
                                                             value={formData.email}
                                                             onChange={handleChange}
                                                             className="w-full px-3 py-3 sm:p-3 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
-                                                            placeholder="email@ejemplo.com"
+                                                            placeholder={t("employeesPage.placeholders.email")}
                                                         />
                                                     </div>
 
                                                     <div>
                                                         <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                             <Phone className="w-4 h-4" />
-                                                            Teléfono
+                                                            {t("employeesPage.fields.phone")}
                                                         </label>
                                                         <input
                                                             type="tel"
                                                             name="phone"
                                                             value={formData.phone}
                                                             onChange={handleChange}
-                                                            maxLength={10}
+                                                            maxLength={15}
                                                             className="w-full px-3 py-3 sm:p-3 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
                                                             placeholder="1234567890"
                                                         />
@@ -543,7 +651,7 @@ const Employees = () => {
                                                     <div>
                                                         <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                             <Briefcase className="w-4 h-4" />
-                                                            Rol
+                                                            {t("employeesPage.fields.role")}
                                                         </label>
                                                         <select
                                                             name="role"
@@ -551,24 +659,41 @@ const Employees = () => {
                                                             onChange={handleChange}
                                                             className="w-full px-3 py-3 sm:p-3 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
                                                         >
-                                                            <option value="">Seleccionar rol</option>
-                                                            <option value="Camarero">Camarero</option>
-                                                            <option value="Cajera">Cajera</option>
-                                                            <option value="Cocina">Cocina</option>
-                                                            <option value="Admin">Admin</option>
+                                                            <option value="">{t("employeesPage.roles.select")}</option>
+                                                            <option value="Camarero">{t("employeesPage.roles.waiter")}</option>
+                                                            <option value="Cajera">{t("employeesPage.roles.cashier")}</option>
+                                                            <option value="Cocina">{t("employeesPage.roles.kitchen")}</option>
+                                                            <option value="Admin">{t("employeesPage.roles.admin")}</option>
                                                         </select>
                                                     </div>
                                                 </div>
                                             </div>
 
+                                            {formData.role !== "Owner" && formData.role !== "Admin" && (
+                                                <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4">
+                                                    <h4 className="text-sm font-bold text-white mb-2">Sucursales asignadas</h4>
+                                                    <p className="text-xs text-gray-400 mb-3">Este empleado solo puede entrar a las sedes seleccionadas. El cupo de usuarios se cuenta por empresa.</p>
+                                                    <div className="flex flex-wrap gap-3">
+                                                        {branches.map(b => (
+                                                            <label key={b.clientId} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white">
+                                                                <input type="checkbox" className="accent-amber-500" checked={formData.clientIds?.includes(b.clientId) || false}
+                                                                    onChange={e => setFormData(prev => ({ ...prev, clientIds: e.target.checked
+                                                                        ? [...new Set([...(prev.clientIds || []), b.clientId])]
+                                                                        : (prev.clientIds || []).filter(x => x !== b.clientId) }))} />
+                                                                {b.name}
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
                                                 <div className="flex items-center justify-between mb-4">
                                                     <div>
                                                         <h4 className="text-sm font-bold text-white">
-                                                            Seguridad
+                                                            {t("employeesPage.sections.security")}
                                                         </h4>
                                                         <p className="text-xs text-gray-400 mt-1">
-                                                            Cambia la contraseña solo si es necesario
+                                                            {t("employeesPage.security.description")}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -577,9 +702,9 @@ const Employees = () => {
                                                     <div>
                                                         <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                             <Lock className="w-4 h-4" />
-                                                            Nueva Contraseña
+                                                            {t("employeesPage.security.newPassword")}
                                                             <span className="text-xs text-gray-500 font-normal">
-                                                                (opcional)
+                                                                {t("employeesPage.common.optional")}
                                                             </span>
                                                         </label>
 
@@ -590,10 +715,15 @@ const Employees = () => {
                                                                 value={formData.password}
                                                                 onChange={handleChange}
                                                                 className="w-full px-3 py-3 sm:p-3 pr-10 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
-                                                                placeholder="Dejar vacío para no cambiar"
+                                                                placeholder={t("employeesPage.placeholders.password")}
                                                             />
                                                             <button
                                                                 type="button"
+                                                                aria-label={t(
+                                                                    showPassword
+                                                                        ? "employeesPage.security.hidePassword"
+                                                                        : "employeesPage.security.showPassword"
+                                                                )}
                                                                 onClick={() =>
                                                                     setShowPassword(!showPassword)
                                                                 }
@@ -607,7 +737,7 @@ const Employees = () => {
                                                             </button>
                                                         </div>
                                                         <p className="mt-1 text-xs text-gray-500">
-                                                            Mínimo 6 caracteres
+                                                            {t("employeesPage.security.minimumCharacters")}
                                                         </p>
                                                     </div>
 
@@ -619,7 +749,7 @@ const Employees = () => {
                                                         >
                                                             <label className="flex items-center gap-2 text-sm font-semibold text-[#ababab] mb-2">
                                                                 <Lock className="w-4 h-4" />
-                                                                Confirmar Contraseña
+                                                                {t("employeesPage.security.confirmPassword")}
                                                             </label>
 
                                                             <div className="relative">
@@ -633,10 +763,15 @@ const Employees = () => {
                                                                     value={formData.confirmPassword}
                                                                     onChange={handleChange}
                                                                     className="w-full px-3 py-3 sm:p-3 pr-10 bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl text-[#f5f5f5] placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
-                                                                    placeholder="Confirma la nueva contraseña"
+                                                                    placeholder={t("employeesPage.placeholders.confirmPassword")}
                                                                 />
                                                                 <button
                                                                     type="button"
+                                                                    aria-label={t(
+                                                                        showConfirmPassword
+                                                                            ? "employeesPage.security.hidePassword"
+                                                                            : "employeesPage.security.showPassword"
+                                                                    )}
                                                                     onClick={() =>
                                                                         setShowConfirmPassword(
                                                                             !showConfirmPassword
@@ -657,7 +792,7 @@ const Employees = () => {
                                                                 formData.password !==
                                                                 formData.confirmPassword && (
                                                                     <p className="mt-1 text-xs text-red-400">
-                                                                        Las contraseñas no coinciden
+                                                                        {t("employeesPage.messages.passwordMismatch")}
                                                                     </p>
                                                                 )}
                                                         </motion.div>
@@ -671,14 +806,13 @@ const Employees = () => {
                                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                                     <div>
                                                         <p className="text-xs uppercase tracking-[0.18em] text-[#F6B100]/80">
-                                                            Resumen de permisos
+                                                            {t("employeesPage.permissions.summaryEyebrow")}
                                                         </p>
                                                         <h4 className="text-white font-semibold mt-1">
-                                                            {activePermissions} permisos activos
+                                                            {t("employeesPage.permissions.activeCount", { count: activePermissions })}
                                                         </h4>
                                                         <p className="text-xs text-gray-400 mt-1">
-                                                            Los cambios se cargan desde la base de datos del
-                                                            empleado actual.
+                                                            {t("employeesPage.permissions.summaryDescription")}
                                                         </p>
                                                     </div>
 
@@ -694,48 +828,58 @@ const Employees = () => {
                                                         <>
                                                             {formData.permissions?.products?.create && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-                                                                    Crear productos
+                                                                    {t("employeesPage.permissions.products.create.title")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.products?.update && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-                                                                    Editar productos
+                                                                    {t("employeesPage.permissions.products.update.title")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.products?.delete && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-                                                                    Eliminar productos
+                                                                    {t("employeesPage.permissions.products.delete.title")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.inventory?.entry && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                                                                    Entrada inventario
+                                                                    {t("employeesPage.permissions.inventory.entry.chip")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.inventory?.exit && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                                                                    Salidas
+                                                                    {t("employeesPage.permissions.inventory.exit.chip")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.inventory?.adjust && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                                                                    Ajustes
+                                                                    {t("employeesPage.permissions.inventory.adjust.chip")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.inventory?.waste && (
                                                                 <span className="px-2.5 py-1 rounded-full text-xs bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                                                                    Merma
+                                                                    {t("employeesPage.permissions.inventory.waste.chip")}
+                                                                </span>
+                                                            )}
+                                                            {formData.permissions?.orders?.edit && (
+                                                                <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+                                                                    {t("employeesPage.permissions.orders.edit.title")}
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.orders?.cancel && (
                                                                 <span className="inline-flex items-center rounded-full border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">
-                                                                    Cancelar órdenes
+                                                                    {t("employeesPage.permissions.orders.cancel.title")}
+                                                                </span>
+                                                            )}
+                                                            {formData.permissions?.accountsReceivable?.view && (
+                                                                <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-xs text-violet-300">
+                                                                    {t("employeesPage.permissions.accountsReceivable.view.chip")}
                                                                 </span>
                                                             )}
                                                         </>
                                                     ) : (
                                                         <span className="px-2.5 py-1 rounded-full text-xs bg-white/5 border border-white/10 text-gray-400">
-                                                            Sin permisos especiales
+                                                            {t("employeesPage.permissions.none")}
                                                         </span>
                                                     )}
                                                 </div>
@@ -744,10 +888,10 @@ const Employees = () => {
                                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
                                                 <div>
                                                     <h4 className="text-sm font-bold text-white">
-                                                        Permisos especiales
+                                                        {t("employeesPage.permissions.specialTitle")}
                                                     </h4>
                                                     <p className="text-xs text-gray-400 mt-1">
-                                                        Estos permisos aplican solo al usuario que estás editando.
+                                                        {t("employeesPage.permissions.specialDescription")}
                                                     </p>
                                                 </div>
 
@@ -757,19 +901,19 @@ const Employees = () => {
                                                     className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-all text-sm w-full sm:w-auto"
                                                 >
                                                     <RotateCcw className="w-4 h-4" />
-                                                    Limpiar
+                                                    {t("employeesPage.actions.clear")}
                                                 </button>
                                             </div>
 
                                             <PermissionSection
-                                                title="Productos"
-                                                subtitle="Permisos para gestión de menú y productos"
+                                                title={t("employeesPage.permissions.products.sectionTitle")}
+                                                subtitle={t("employeesPage.permissions.products.sectionSubtitle")}
                                                 icon={Package}
                                             >
                                                 <PermissionItem
                                                     icon={CheckCircle2}
-                                                    title="Crear productos"
-                                                    desc="Permite crear platos o productos nuevos dentro de Gestión de Menú."
+                                                    title={t("employeesPage.permissions.products.create.title")}
+                                                    desc={t("employeesPage.permissions.products.create.description")}
                                                     checked={!!formData.permissions?.products?.create}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -781,8 +925,8 @@ const Employees = () => {
 
                                                 <PermissionItem
                                                     icon={Edit}
-                                                    title="Editar productos"
-                                                    desc="Permite modificar productos existentes."
+                                                    title={t("employeesPage.permissions.products.update.title")}
+                                                    desc={t("employeesPage.permissions.products.update.description")}
                                                     checked={!!formData.permissions?.products?.update}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -794,8 +938,8 @@ const Employees = () => {
 
                                                 <PermissionItem
                                                     icon={X}
-                                                    title="Eliminar productos"
-                                                    desc="Permite eliminar productos del sistema."
+                                                    title={t("employeesPage.permissions.products.delete.title")}
+                                                    desc={t("employeesPage.permissions.products.delete.description")}
                                                     checked={!!formData.permissions?.products?.delete}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -807,14 +951,14 @@ const Employees = () => {
                                             </PermissionSection>
 
                                             <PermissionSection
-                                                title="Inventario"
-                                                subtitle="Permisos para entradas y operaciones sobre stock"
+                                                title={t("employeesPage.permissions.inventory.sectionTitle")}
+                                                subtitle={t("employeesPage.permissions.inventory.sectionSubtitle")}
                                                 icon={Boxes}
                                             >
                                                 <PermissionItem
                                                     icon={CheckCircle2}
-                                                    title="Dar entrada de inventario"
-                                                    desc="Permite registrar entradas tipo compra o entrada manual."
+                                                    title={t("employeesPage.permissions.inventory.entry.title")}
+                                                    desc={t("employeesPage.permissions.inventory.entry.description")}
                                                     checked={!!formData.permissions?.inventory?.entry}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -826,8 +970,8 @@ const Employees = () => {
 
                                                 <PermissionItem
                                                     icon={CheckCircle2}
-                                                    title="Registrar salidas"
-                                                    desc="Permite registrar salidas manuales de inventario."
+                                                    title={t("employeesPage.permissions.inventory.exit.title")}
+                                                    desc={t("employeesPage.permissions.inventory.exit.description")}
                                                     checked={!!formData.permissions?.inventory?.exit}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -839,8 +983,8 @@ const Employees = () => {
 
                                                 <PermissionItem
                                                     icon={CheckCircle2}
-                                                    title="Realizar ajustes"
-                                                    desc="Permite hacer ajustes positivos o negativos de stock."
+                                                    title={t("employeesPage.permissions.inventory.adjust.title")}
+                                                    desc={t("employeesPage.permissions.inventory.adjust.description")}
                                                     checked={!!formData.permissions?.inventory?.adjust}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -852,8 +996,8 @@ const Employees = () => {
 
                                                 <PermissionItem
                                                     icon={CheckCircle2}
-                                                    title="Registrar merma"
-                                                    desc="Permite registrar pérdida o merma de inventario."
+                                                    title={t("employeesPage.permissions.inventory.waste.title")}
+                                                    desc={t("employeesPage.permissions.inventory.waste.description")}
                                                     checked={!!formData.permissions?.inventory?.waste}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
@@ -864,18 +1008,81 @@ const Employees = () => {
                                                 />
                                             </PermissionSection>
                                             <PermissionSection
-                                                title="Órdenes"
-                                                subtitle="Permisos para acciones críticas sobre órdenes"
+                                                title={t("employeesPage.permissions.orders.sectionTitle")}
+                                                subtitle={t("employeesPage.permissions.orders.sectionSubtitle")}
                                                 icon={ShieldCheck}
                                             >
+                                                {formData.role === "Cajera" && (
+                                                    <PermissionItem
+                                                        icon={ShieldCheck}
+                                                        title={t("employeesPage.permissions.orders.edit.title")}
+                                                        desc={t("employeesPage.permissions.orders.edit.description")}
+                                                        checked={!!formData.permissions?.orders?.edit}
+                                                        onChange={(enabled) => handlePermissionChange("orders.edit", enabled)}
+                                                    />
+                                                )}
                                                 <PermissionItem
                                                     icon={X}
-                                                    title="Cancelar órdenes"
-                                                    desc="Permite cancelar una orden activa. Si este permiso está apagado, el usuario no podrá cancelar órdenes."
+                                                    title={t("employeesPage.permissions.orders.cancel.title")}
+                                                    desc={t("employeesPage.permissions.orders.cancel.description")}
                                                     checked={!!formData.permissions?.orders?.cancel}
                                                     onChange={(v) =>
                                                         handlePermissionChange(
                                                             "orders.cancel",
+                                                            v
+                                                        )
+                                                    }
+                                                />
+                                            </PermissionSection>
+                                            {canConfigureFiscal && formData.role === "Cajera" && (
+                                                <PermissionSection
+                                                    title="Facturación electrónica DGII (RD)"
+                                                    subtitle="Permisos independientes para comprobantes electrónicos. Solo República Dominicana."
+                                                    icon={ShieldCheck}
+                                                >
+                                                    <PermissionItem
+                                                        icon={ShieldCheck}
+                                                        title="Emitir e-CF E31 / E32"
+                                                        desc="Permite emitir facturas electrónicas desde el POS, incluida la emisión automática."
+                                                        checked={!!formData.permissions?.fiscal?.ecfIssue}
+                                                        onChange={(v) => handlePermissionChange("fiscal.ecfIssue", v)}
+                                                    />
+                                                    <PermissionItem
+                                                        icon={ShieldCheck}
+                                                        title="Emitir nota de crédito E34"
+                                                        desc="Puede reducir o anular importes fiscales autorizados."
+                                                        checked={!!formData.permissions?.fiscal?.creditNote}
+                                                        onChange={(v) => handlePermissionChange("fiscal.creditNote", v)}
+                                                    />
+                                                    <PermissionItem
+                                                        icon={ShieldCheck}
+                                                        title="Emitir nota de débito E33"
+                                                        desc="Puede incrementar importes fiscales autorizados."
+                                                        checked={!!formData.permissions?.fiscal?.debitNote}
+                                                        onChange={(v) => handlePermissionChange("fiscal.debitNote", v)}
+                                                    />
+                                                    <p className="text-xs text-gray-400">
+                                                        Certificados, secuencias y configuración e-CF: solo Owner/Admin.
+                                                    </p>
+                                                </PermissionSection>
+                                            )}
+                                            <PermissionSection
+                                                title={t("employeesPage.permissions.accountsReceivable.sectionTitle")}
+                                                subtitle={t("employeesPage.permissions.accountsReceivable.sectionSubtitle")}
+                                                icon={CreditCard}
+                                            >
+                                                <PermissionItem
+                                                    icon={CreditCard}
+                                                    title={t("employeesPage.permissions.accountsReceivable.view.title")}
+                                                    desc={t("employeesPage.permissions.accountsReceivable.view.description")}
+                                                    checked={
+                                                        !!formData.permissions
+                                                            ?.accountsReceivable
+                                                            ?.view
+                                                    }
+                                                    onChange={(v) =>
+                                                        handlePermissionChange(
+                                                            "accountsReceivable.view",
                                                             v
                                                         )
                                                     }
@@ -887,19 +1094,21 @@ const Employees = () => {
 
                                 <div className="sticky bottom-0 z-30 border-t border-white/10 bg-[#181818]/98 backdrop-blur-xl px-4 sm:px-6 pt-3 sm:pt-4 pb-6 sm:pb-5 rounded-b-2xl sm:rounded-b-3xl flex flex-col-reverse sm:flex-row sm:justify-end gap-3 shadow-[0_-18px_40px_rgba(0,0,0,0.35)]">
                                     <button
+                                        type="button"
                                         onClick={handleCancel}
                                         className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 hover:border-white/20 transition-all font-medium"
                                     >
-                                        Cancelar
+                                        {t("common.cancel")}
                                     </button>
 
                                     <button
+                                        type="button"
                                         onClick={handleSave}
                                         disabled={updateMutation.isPending}
                                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_10px_30px_rgba(16,185,129,0.28)] transition-all font-semibold disabled:opacity-60"
                                     >
                                         <Save className="w-4 h-4" />
-                                        {updateMutation.isPending ? "Guardando..." : "Guardar"}
+                                        {updateMutation.isPending ? t("employeesPage.actions.saving") : t("employeesPage.actions.save")}
                                     </button>
                                 </div>
                             </div>

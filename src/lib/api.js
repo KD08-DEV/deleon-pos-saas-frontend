@@ -5,8 +5,11 @@ export function getScope() {
     try { return JSON.parse(localStorage.getItem("scope") || "{}"); }
     catch { return {}; }
 }
-export function setScope({ tenantId, clientId = "default" }) {
+export function setScope({ tenantId, clientId = "default", userId } = {}) {
+    const previous = getScope();
     const scope = { tenantId, clientId: clientId || "default" };
+    const resolvedUserId = userId || (previous.tenantId === tenantId ? previous.userId : null);
+    if (resolvedUserId) scope.userId = String(resolvedUserId);
     localStorage.setItem("scope", JSON.stringify(scope));
     return scope;
 }

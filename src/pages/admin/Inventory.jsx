@@ -3,8 +3,8 @@ import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
 import Suppliers from "./Suppliers";
-import InventoryCategories from "./InventoryCategories";
 import { useSnackbar } from "notistack";
+import { useTranslation } from "react-i18next";
 
 import {
     Package,
@@ -23,6 +23,14 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import MermaPanel from "./MermaPanel";
+import useTenant from "../../hooks/useTenant";
+
+import {
+    formatDateTime,
+    formatMoney,
+    getTenantLocalization,
+    getTodayYMD,
+} from "../../lib/localization";
 
 const cardCls =
     "rounded-2xl border border-gray-800/30 bg-[#0b0b0b]/60 backdrop-blur";
@@ -42,71 +50,116 @@ const PAGE_SIZE = 10;
 const INVENTORY_ITEM_TYPES = [
     {
         value: "ingredient",
-        title: "Ingrediente / insumo",
-        desc: "No se vende como plato. Se usa para recetas y puede recibir entrada/salida.",
+        titleKey: "inventoryPage.itemTypes.ingredient.title",
+        descKey: "inventoryPage.itemTypes.ingredient.description",
     },
     {
         value: "direct",
-        title: "Producto con stock directo",
-        desc: "Producto del menú que maneja su propio stock.",
+        titleKey: "inventoryPage.itemTypes.direct.title",
+        descKey: "inventoryPage.itemTypes.direct.description",
     },
     {
         value: "recipe",
-        title: "Plato con receta",
-        desc: "Plato del menú que descuenta ingredientes.",
+        titleKey: "inventoryPage.itemTypes.recipe.title",
+        descKey: "inventoryPage.itemTypes.recipe.description",
     },
 ];
 
 const normalizeInventoryType = (value) => {
     const v = String(value || "").trim();
-    return ["none", "direct", "ingredient", "recipe"].includes(v) ? v : "ingredient";
+
+    return [
+        "none",
+        "direct",
+        "ingredient",
+        "recipe",
+    ].includes(v)
+        ? v
+        : "ingredient";
 };
 
-const getInventoryTypeLabel = (type) => {
-    return (
-        INVENTORY_ITEM_TYPES.find((item) => item.value === type)?.title ||
-        "Ingrediente / insumo"
-    );
+const getInventoryTypeLabel = (
+    type,
+    t
+) => {
+    const normalized =
+        normalizeInventoryType(
+            type
+        );
+
+    if (
+        normalized ===
+        "none"
+    ) {
+        return t(
+            "inventoryPage.itemTypes.none.title"
+        );
+    }
+
+    const found =
+        INVENTORY_ITEM_TYPES.find(
+            (item) =>
+                item.value ===
+                normalized
+        );
+
+    return found
+        ? t(
+            found.titleKey
+        )
+        : t(
+            "inventoryPage.itemTypes.ingredient.title"
+        );
+};
+
+const getUnitLabel = (
+    unit,
+    t
+) => {
+    const normalized =
+        String(
+            unit ||
+            "unidad"
+        ).trim();
+
+    const keyMap = {
+        unidad:
+            "inventoryPage.units.unit",
+
+        lb:
+            "inventoryPage.units.lb",
+
+        kg:
+            "inventoryPage.units.kg",
+
+        g:
+            "inventoryPage.units.g",
+
+        oz:
+            "inventoryPage.units.oz",
+
+        ml:
+            "inventoryPage.units.ml",
+
+        l:
+            "inventoryPage.units.l",
+    };
+
+    return keyMap[
+        normalized
+        ]
+        ? t(
+            keyMap[
+                normalized
+                ]
+        )
+        : normalized;
 };
 
 const num = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
 };
-
-
-const moneyRD = (v) =>
-    new Intl.NumberFormat("es-DO", {
-        style: "currency",
-        currency: "DOP",
-        maximumFractionDigits: 2,
-    }).format(num(v));
-
-function getTodayYMD() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-}
-function toISOStartOfDayLocal(yyyyMMdd) {
-    if (!yyyyMMdd) return "";
-    const [y, m, d] = yyyyMMdd.split("-").map((x) => parseInt(x, 10));
-    const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
-    return dt.toISOString();
-}
-function toISOMiddayLocal(yyyyMMdd) {
-    if (!yyyyMMdd) return "";
-    const [y, m, d] = yyyyMMdd.split("-").map((x) => parseInt(x, 10));
-    const dt = new Date(y, m - 1, d, 12, 0, 0, 0); // 12:00 PM local
-    return dt.toISOString();
-}
-function toISOEndOfDayLocal(yyyyMMdd) {
-    if (!yyyyMMdd) return "";
-    const [y, m, d] = yyyyMMdd.split("-").map((x) => parseInt(x, 10));
-    const dt = new Date(y, m - 1, d, 23, 59, 59, 999);
-    return dt.toISOString();
-}
 
 async function fetchCategories() {
     const res = await api.get("/api/admin/inventory/categories");
@@ -217,17 +270,474 @@ function markYieldProcessed(itemId) {
         // ignore
     }
 }
+// ============================================================
+// HELPERS COMPARTIDOS
+// Inventory + YieldMermaDashboard
+// ============================================================
+
+function getTimezoneOffsetMsGlobal(date, timezone) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+    }).formatToParts(date);
+
+    const values = {};
+
+    parts.forEach((part) => {
+        if (part.type !== "literal") {
+            values[part.type] = part.value;
+        }
+    });
+
+    const asUTC = Date.UTC(
+        Number(values.year),
+        Number(values.month) - 1,
+        Number(values.day),
+        Number(values.hour),
+        Number(values.minute),
+        Number(values.second)
+    );
+
+    const truncatedDate =
+        Math.floor(date.getTime() / 1000) * 1000;
+
+    return asUTC - truncatedDate;
+}
 
 
-export default function Inventory({ plan, currentUser }) {
-    const queryClient = useQueryClient();
-    function getTodayYMDLocal() {
-        const d = new Date();
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
+function addDaysYMDGlobal(ymd, days) {
+    const [
+        year,
+        month,
+        day,
+    ] = String(ymd)
+        .split("-")
+        .map(Number);
+
+    const date = new Date(
+        Date.UTC(
+            year,
+            month - 1,
+            day + days
+        )
+    );
+
+    return [
+        date.getUTCFullYear(),
+        String(
+            date.getUTCMonth() + 1
+        ).padStart(2, "0"),
+        String(
+            date.getUTCDate()
+        ).padStart(2, "0"),
+    ].join("-");
+}
+
+
+function toISOStartOfDayInTimezoneGlobal(
+    ymd,
+    localization = {}
+) {
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(
+            String(ymd || "")
+        )
+    ) {
+        return "";
     }
+
+    const [
+        year,
+        month,
+        day,
+    ] = String(ymd)
+        .split("-")
+        .map(Number);
+
+    const timezone =
+        localization.timezone ||
+        "America/Santo_Domingo";
+
+    const wallClockUTC =
+        Date.UTC(
+            year,
+            month - 1,
+            day,
+            0,
+            0,
+            0
+        );
+
+    let utcMillis =
+        wallClockUTC;
+
+    try {
+        for (
+            let i = 0;
+            i < 3;
+            i += 1
+        ) {
+            const offset =
+                getTimezoneOffsetMsGlobal(
+                    new Date(
+                        utcMillis
+                    ),
+                    timezone
+                );
+
+            const corrected =
+                wallClockUTC -
+                offset;
+
+            if (
+                corrected ===
+                utcMillis
+            ) {
+                break;
+            }
+
+            utcMillis =
+                corrected;
+        }
+
+        return new Date(
+            utcMillis
+        ).toISOString();
+
+    } catch {
+        return new Date(
+            wallClockUTC
+        ).toISOString();
+    }
+}
+
+
+function toISOEndOfDayInTimezoneGlobal(
+    ymd,
+    localization = {}
+) {
+    const nextYMD =
+        addDaysYMDGlobal(
+            ymd,
+            1
+        );
+
+    const nextStart =
+        toISOStartOfDayInTimezoneGlobal(
+            nextYMD,
+            localization
+        );
+
+    if (
+        !nextStart
+    ) {
+        return "";
+    }
+
+    return new Date(
+        new Date(
+            nextStart
+        ).getTime() - 1
+    ).toISOString();
+}
+
+
+const getMovementTypeLabel = (
+    type,
+    t
+) => {
+    const keyMap = {
+        purchase:
+            "inventoryPage.movements.types.purchase",
+
+        sale:
+            "inventoryPage.movements.types.sale",
+
+        waste:
+            "inventoryPage.movements.types.waste",
+
+        adjust:
+            "inventoryPage.movements.types.adjust",
+
+        transfer:
+            "inventoryPage.movements.types.transfer",
+
+        conversion:
+            "inventoryPage.movements.types.conversion",
+    };
+
+    return keyMap[type]
+        ? t(
+            keyMap[type]
+        )
+        : type || "—";
+};
+
+
+const getRoleLabel = (
+    role,
+    t
+) => {
+    const keyMap = {
+        Owner:
+            "inventoryPage.roles.owner",
+
+        Admin:
+            "inventoryPage.roles.admin",
+
+        Cajera:
+            "inventoryPage.roles.cashier",
+
+        Camarero:
+            "inventoryPage.roles.waiter",
+
+        Cocina:
+            "inventoryPage.roles.kitchen",
+    };
+
+    return keyMap[role]
+        ? t(
+            keyMap[role]
+        )
+        : role || "";
+};
+
+export default function Inventory({
+                                      plan,
+                                      currentUser,
+                                  }) {
+
+    const { t } =
+        useTranslation();
+
+    const queryClient =
+        useQueryClient();
+
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const money = (value) =>
+        formatMoney(
+            value,
+            localization
+        );
+    const getTimezoneOffsetMs = (
+        date,
+        timezone
+    ) => {
+        const parts =
+            new Intl.DateTimeFormat(
+                "en-US",
+                {
+                    timeZone:
+                    timezone,
+
+                    year:
+                        "numeric",
+
+                    month:
+                        "2-digit",
+
+                    day:
+                        "2-digit",
+
+                    hour:
+                        "2-digit",
+
+                    minute:
+                        "2-digit",
+
+                    second:
+                        "2-digit",
+
+                    hourCycle:
+                        "h23",
+                }
+            ).formatToParts(
+                date
+            );
+
+        const values = {};
+
+        parts.forEach((part) => {
+            if (
+                part.type !==
+                "literal"
+            ) {
+                values[part.type] =
+                    part.value;
+            }
+        });
+
+        const asUTC =
+            Date.UTC(
+                Number(values.year),
+                Number(values.month) - 1,
+                Number(values.day),
+                Number(values.hour),
+                Number(values.minute),
+                Number(values.second)
+            );
+
+        const truncatedDate =
+            Math.floor(
+                date.getTime() /
+                1000
+            ) * 1000;
+
+        return (
+            asUTC -
+            truncatedDate
+        );
+    };
+
+    const addDaysYMD = (
+        ymd,
+        days
+    ) => {
+        const [
+            year,
+            month,
+            day,
+        ] =
+            String(ymd)
+                .split("-")
+                .map(Number);
+
+        const date =
+            new Date(
+                Date.UTC(
+                    year,
+                    month - 1,
+                    day + days
+                )
+            );
+
+        return [
+            date.getUTCFullYear(),
+            String(
+                date.getUTCMonth() + 1
+            ).padStart(2, "0"),
+            String(
+                date.getUTCDate()
+            ).padStart(2, "0"),
+        ].join("-");
+    };
+
+    const toISOStartOfDayInTimezone = (
+        ymd,
+        localization = {}
+    ) => {
+        if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(
+                String(ymd || "")
+            )
+        ) {
+            return "";
+        }
+
+        const [
+            year,
+            month,
+            day,
+        ] =
+            String(ymd)
+                .split("-")
+                .map(Number);
+
+        const timezone =
+            localization.timezone ||
+            "America/Santo_Domingo";
+
+        const wallClockUTC =
+            Date.UTC(
+                year,
+                month - 1,
+                day,
+                0,
+                0,
+                0
+            );
+
+        let utcMillis =
+            wallClockUTC;
+
+        try {
+            for (
+                let i = 0;
+                i < 3;
+                i += 1
+            ) {
+                const offset =
+                    getTimezoneOffsetMs(
+                        new Date(
+                            utcMillis
+                        ),
+                        timezone
+                    );
+
+                const corrected =
+                    wallClockUTC -
+                    offset;
+
+                if (
+                    corrected ===
+                    utcMillis
+                ) {
+                    break;
+                }
+
+                utcMillis =
+                    corrected;
+            }
+
+            return new Date(
+                utcMillis
+            ).toISOString();
+        } catch {
+            return new Date(
+                wallClockUTC
+            ).toISOString();
+        }
+    };
+
+    const toISOEndOfDayInTimezone = (
+        ymd,
+        localization = {}
+    ) => {
+        const nextYMD =
+            addDaysYMD(
+                ymd,
+                1
+            );
+
+        const nextStart =
+            toISOStartOfDayInTimezone(
+                nextYMD,
+                localization
+            );
+
+        if (!nextStart) {
+            return "";
+        }
+
+        return new Date(
+            new Date(
+                nextStart
+            ).getTime() - 1
+        ).toISOString();
+    };
     const { enqueueSnackbar, closeSnackbar } = useSnackbar();
 
     const reduxUserData = useSelector((state) => state.user.userData);
@@ -309,24 +819,78 @@ export default function Inventory({ plan, currentUser }) {
 
         return () => clearTimeout(timer);
     }, [stockSearchInput]);
-    const [mermaYMD, setMermaYMD] = useState(getTodayYMDLocal());    // Pagination
+
     const [page, setPage] = useState(1);
 
-    // MOVEMENTS filters
-    const [mvFilters, setMvFilters] = useState({
-        itemId: "",
-        type: "",
-        from: getTodayYMD(),
-        to: getTodayYMD(),
-    });
+    const businessTodayYMD =
+        getTodayYMD(
+            localization
+        );
 
+    const [
+        mermaYMD,
+        setMermaYMD,
+    ] =
+        useState(
+            () =>
+                businessTodayYMD
+        );
 
-    // CONSUMPTION filters
-    const [consFilters, setConsFilters] = useState({
-        from: getTodayYMD(),
-        to: getTodayYMD(),
-        inventoryCategoryId: "",
-    });
+    const [
+        mvFilters,
+        setMvFilters,
+    ] =
+        useState(() => ({
+            itemId: "",
+            type: "",
+            from:
+            businessTodayYMD,
+            to:
+            businessTodayYMD,
+        }));
+
+    const [
+        consFilters,
+        setConsFilters,
+    ] =
+        useState(() => ({
+            from:
+            businessTodayYMD,
+            to:
+            businessTodayYMD,
+            inventoryCategoryId:
+                "",
+        }));
+
+    React.useEffect(() => {
+        const today =
+            getTodayYMD(
+                localization
+            );
+
+        setMermaYMD(
+            today
+        );
+
+        setMvFilters(
+            (prev) => ({
+                ...prev,
+                from: today,
+                to: today,
+            })
+        );
+
+        setConsFilters(
+            (prev) => ({
+                ...prev,
+                from: today,
+                to: today,
+            })
+        );
+    }, [
+        localization.timezone,
+    ]);
+
     const [consPage, setConsPage] = useState(1);
     const CONS_LIMIT = 20;
 
@@ -519,136 +1083,499 @@ export default function Inventory({ plan, currentUser }) {
     const [mvModal, setMvModal] = useState({ open: false, type: "purchase", item: null, yield: false });
 
     // Create/update item
+    // Create/update item
     const saveItemMutation = useMutation({
-        mutationFn: async ({ mode, id, payload }) => {
-            if (mode === "create") {
-                const res = await api.post("/api/inventory/items", payload);
+        mutationFn:
+            async ({
+                       mode,
+                       id,
+                       payload,
+                   }) => {
+                if (
+                    mode ===
+                    "create"
+                ) {
+                    const res =
+                        await api.post(
+                            "/api/inventory/items",
+                            payload
+                        );
+
+                    return res.data;
+                }
+
+                const res =
+                    await api.put(
+                        `/api/inventory/items/${encodeURIComponent(
+                            id
+                        )}`,
+                        payload
+                    );
+
                 return res.data;
-            }
-            const res = await api.put(`/api/inventory/items/${encodeURIComponent(id)}`, payload);
-            return res.data;
-        },
-        onSuccess: async () => {
-            enqueueSnackbar("Guardado", { variant: "success" });
-            setItemModal({ open: false, mode: "create", item: null });
+            },
 
-            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
-            await qc.invalidateQueries({ queryKey: ["inventory/movements"] });
-            await qc.invalidateQueries({ queryKey: ["inventory/low-stock"] });
-            await qc.invalidateQueries({ queryKey: ["ingredients"] });
-            await qc.invalidateQueries({ queryKey: ["dish-templates"] });
-            await qc.invalidateQueries({ queryKey: ["dishes"] });
-        },
-        onError: (e) => {
-            const status = e?.response?.status;
+        onSuccess:
+            async () => {
+                enqueueSnackbar(
+                    t(
+                        "inventoryPage.messages.saved"
+                    ),
+                    {
+                        variant:
+                            "success",
+                    }
+                );
 
-            // 409: nombre duplicado (por tu índice único)
-            if (status === 409) {
+                setItemModal({
+                    open:
+                        false,
+
+                    mode:
+                        "create",
+
+                    item:
+                        null,
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "inventory/items",
+                    ],
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "inventory/movements",
+                    ],
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "inventory/low-stock",
+                    ],
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "ingredients",
+                    ],
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "dish-templates",
+                    ],
+                });
+
+                await qc.invalidateQueries({
+                    queryKey: [
+                        "dishes",
+                    ],
+                });
+            },
+
+        onError:
+            (e) => {
+                const status =
+                    e?.response
+                        ?.status;
+
+                if (
+                    status ===
+                    409
+                ) {
+                    const msg =
+                        e
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        t(
+                            "inventoryPage.messages.duplicateItem"
+                        );
+
+                    enqueueSnackbar(
+                        String(
+                            msg
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+
+                    return;
+                }
+
                 const msg =
-                    e?.response?.data?.message ||
-                    "Ya existe un artículo de inventario con ese nombre. Cambia el nombre o archiva el anterior.";
-                enqueueSnackbar(String(msg), { variant: "warning" });
-                return;
-            }
+                    e
+                        ?.response
+                        ?.data
+                        ?.message ||
+                    e
+                        ?.response
+                        ?.data ||
+                    e
+                        ?.message ||
+                    t(
+                        "inventoryPage.messages.saveError"
+                    );
 
-            const msg = e?.response?.data?.message || e?.response?.data || e?.message || "Error guardando";
-            enqueueSnackbar(String(msg), { variant: "error" });
-        },
-    });
-
-    const archiveItemMutation = useMutation({
-        mutationFn: async (id) => {
-            const res = await api.delete(`/api/inventory/items/${encodeURIComponent(id)}`);
-            return res.data;
-        },
-        onSuccess: async () => {
-            enqueueSnackbar("Archivado", { variant: "success" });
-            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
-        },
-        onError: (e) => {
-            const msg = e?.response?.data?.message || e?.message || "Error archivando";
-            enqueueSnackbar(String(msg), { variant: "error" });
-        },
-    });
-    const unarchiveItemMutation = useMutation({
-        mutationFn: async (id) => {
-            const res = await api.patch(`/api/inventory/items/${encodeURIComponent(id)}/unarchive`);
-            return res.data;
-        },
-        onSuccess: async () => {
-            enqueueSnackbar("Desarchivado", { variant: "success" });
-            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
-        },
-        onError: (e) => {
-            const msg = e?.response?.data?.message || e?.message || "Error desarchivando";
-            enqueueSnackbar(String(msg), { variant: "error" });
-        },
+                enqueueSnackbar(
+                    String(
+                        msg
+                    ),
+                    {
+                        variant:
+                            "error",
+                    }
+                );
+            },
     });
 
-    const createMovementMutation = useMutation({
-        mutationFn: async (payload) => {
-            const res = await api.post("/api/inventory/movements", payload);
-            return res.data;
-        },
-        onSuccess: async () => {
-            enqueueSnackbar("Movimiento registrado", { variant: "success" });
-            setMvModal({ open: false, type: "purchase", item: null, yield: false });
-            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
-            await qc.invalidateQueries({ queryKey: ["inventory/movements"] });
-            await qc.invalidateQueries({ queryKey: ["inventory/low-stock"] });
-        },
-        onError: (e) => {
-            const msg =
-                e?.response?.data?.message ||
-                e?.response?.data ||
-                e?.message ||
-                "Error registrando movimiento";
-            enqueueSnackbar(String(msg), { variant: "error" });
-        },
-    });
 
-    // Yield: Proceso de merma (purchase + conversion interno)
-    const createYieldMutation = useMutation({
-        mutationFn: async ({ itemId, purchasedQty, totalCost, finalQty, steps, note, idempotencyKey }) => {
-            const res = await api.post("/api/inventory/movements/yield", {
-                itemId,
-                purchasedQty,
-                totalCost,
-                finalQty,
-                steps,
-                note,
-                idempotencyKey,
-            });
-            return res.data;
-        },
-        onSuccess: async (_data, vars) => {
-            markYieldProcessed(vars?.itemId);
-            enqueueSnackbar("Proceso de merma aplicado", { variant: "success" });
-            setMvModal({ open: false, type: "purchase", item: null, yield: false });
-            await qc.invalidateQueries({ queryKey: ["inventory/items"] });
-            await qc.invalidateQueries({ queryKey: ["inventory/movements"] });
-        },
-        onError: (e) => {
-            const msg =
-                e?.response?.data?.message ||
-                e?.response?.data ||
-                e?.message ||
-                "Error en proceso de merma";
-            enqueueSnackbar(String(msg), { variant: "error" });
-        },
-    });
+    const archiveItemMutation =
+        useMutation({
+            mutationFn:
+                async (
+                    id
+                ) => {
+                    const res =
+                        await api.delete(
+                            `/api/inventory/items/${encodeURIComponent(
+                                id
+                            )}`
+                        );
+
+                    return res.data;
+                },
+
+            onSuccess:
+                async () => {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.messages.archived"
+                        ),
+                        {
+                            variant:
+                                "success",
+                        }
+                    );
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/items",
+                        ],
+                    });
+                },
+
+            onError:
+                (e) => {
+                    const msg =
+                        e
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        e
+                            ?.message ||
+                        t(
+                            "inventoryPage.messages.archiveError"
+                        );
+
+                    enqueueSnackbar(
+                        String(
+                            msg
+                        ),
+                        {
+                            variant:
+                                "error",
+                        }
+                    );
+                },
+        });
+
+
+    const unarchiveItemMutation =
+        useMutation({
+            mutationFn:
+                async (
+                    id
+                ) => {
+                    const res =
+                        await api.patch(
+                            `/api/inventory/items/${encodeURIComponent(
+                                id
+                            )}/unarchive`
+                        );
+
+                    return res.data;
+                },
+
+            onSuccess:
+                async () => {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.messages.unarchived"
+                        ),
+                        {
+                            variant:
+                                "success",
+                        }
+                    );
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/items",
+                        ],
+                    });
+                },
+
+            onError:
+                (e) => {
+                    const msg =
+                        e
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        e
+                            ?.message ||
+                        t(
+                            "inventoryPage.messages.unarchiveError"
+                        );
+
+                    enqueueSnackbar(
+                        String(
+                            msg
+                        ),
+                        {
+                            variant:
+                                "error",
+                        }
+                    );
+                },
+        });
+
+
+    const createMovementMutation =
+        useMutation({
+            mutationFn:
+                async (
+                    payload
+                ) => {
+                    const res =
+                        await api.post(
+                            "/api/inventory/movements",
+                            payload
+                        );
+
+                    return res.data;
+                },
+
+            onSuccess:
+                async () => {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.messages.movementCreated"
+                        ),
+                        {
+                            variant:
+                                "success",
+                        }
+                    );
+
+                    setMvModal({
+                        open:
+                            false,
+
+                        type:
+                            "purchase",
+
+                        item:
+                            null,
+
+                        yield:
+                            false,
+                    });
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/items",
+                        ],
+                    });
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/movements",
+                        ],
+                    });
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/low-stock",
+                        ],
+                    });
+                },
+
+            onError:
+                (e) => {
+                    const msg =
+                        e
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        e
+                            ?.response
+                            ?.data ||
+                        e
+                            ?.message ||
+                        t(
+                            "inventoryPage.messages.movementError"
+                        );
+
+                    enqueueSnackbar(
+                        String(
+                            msg
+                        ),
+                        {
+                            variant:
+                                "error",
+                        }
+                    );
+                },
+        });
+
+
+// Yield: Proceso de merma
+    const createYieldMutation =
+        useMutation({
+            mutationFn:
+                async ({
+                           itemId,
+                           purchasedQty,
+                           totalCost,
+                           finalQty,
+                           steps,
+                           note,
+                           idempotencyKey,
+                       }) => {
+                    const res =
+                        await api.post(
+                            "/api/inventory/movements/yield",
+                            {
+                                itemId,
+                                purchasedQty,
+                                totalCost,
+                                finalQty,
+                                steps,
+                                note,
+                                idempotencyKey,
+                            }
+                        );
+
+                    return res.data;
+                },
+
+            onSuccess:
+                async (
+                    _data,
+                    vars
+                ) => {
+                    markYieldProcessed(
+                        vars?.itemId
+                    );
+
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.messages.yieldApplied"
+                        ),
+                        {
+                            variant:
+                                "success",
+                        }
+                    );
+
+                    setMvModal({
+                        open:
+                            false,
+
+                        type:
+                            "purchase",
+
+                        item:
+                            null,
+
+                        yield:
+                            false,
+                    });
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/items",
+                        ],
+                    });
+
+                    await qc.invalidateQueries({
+                        queryKey: [
+                            "inventory/movements",
+                        ],
+                    });
+                },
+
+            onError:
+                (e) => {
+                    const msg =
+                        e
+                            ?.response
+                            ?.data
+                            ?.message ||
+                        e
+                            ?.response
+                            ?.data ||
+                        e
+                            ?.message ||
+                        t(
+                            "inventoryPage.messages.yieldError"
+                        );
+
+                    enqueueSnackbar(
+                        String(
+                            msg
+                        ),
+                        {
+                            variant:
+                                "error",
+                        }
+                    );
+                },
+        });
 
     // MOVEMENTS list
     const { data: mvResp, isLoading: mvLoading } = useQuery({
-        queryKey: ["inventory/movements", tenantId, mvFilters],
+        queryKey: [
+            "inventory/movements",
+            tenantId,
+            mvFilters,
+            localization.timezone,
+        ],
         enabled: canUseInventory && Boolean(tenantId) && tab === "movements",
         queryFn: async () => {
             const res = await api.get("/api/inventory/movements", {
                 params: {
                     itemId: mvFilters.itemId || undefined,
                     type: mvFilters.type || undefined,
-                    from: mvFilters.from ? toISOStartOfDayLocal(mvFilters.from) : undefined,
-                    to: mvFilters.to ? toISOMiddayLocal(mvFilters.to) : undefined,
+                    from: mvFilters.from
+                        ? toISOStartOfDayInTimezone(
+                            mvFilters.from,
+                            localization
+                        )
+                        : undefined,
+
+                    to: mvFilters.to
+                        ? toISOEndOfDayInTimezone(
+                            mvFilters.to,
+                            localization
+                        )
+                        : undefined,
                     limit: 200,
                 },
             });
@@ -661,13 +1588,30 @@ export default function Inventory({ plan, currentUser }) {
 
     // CONSUMPTION report
     const { data: consResp, isLoading: consLoading } = useQuery({
-        queryKey: ["inventory/consumption", tenantId, consFilters, consPage],
+        queryKey: [
+            "inventory/consumption",
+            tenantId,
+            consFilters,
+            consPage,
+            localization.timezone,
+        ],
         enabled: canUseInventory && Boolean(tenantId) && tab === "consumption",
         queryFn: async () => {
             const res = await api.get("/api/inventory/consumption", {
                 params: {
-                    from: consFilters.from ? toISOStartOfDayLocal(consFilters.from) : undefined,
-                    to: consFilters.to ? toISOMiddayLocal(consFilters.to) : undefined,
+                    from: consFilters.from
+                        ? toISOStartOfDayInTimezone(
+                            consFilters.from,
+                            localization
+                        )
+                        : undefined,
+
+                    to: consFilters.to
+                        ? toISOEndOfDayInTimezone(
+                            consFilters.to,
+                            localization
+                        )
+                        : undefined,
                     inventoryCategoryId: consFilters.inventoryCategoryId || undefined,
                     page: consPage,
                     limit: CONS_LIMIT,
@@ -710,178 +1654,469 @@ export default function Inventory({ plan, currentUser }) {
     const lowStockItems = useMemo(() => (Array.isArray(lowResp?.items) ? lowResp.items : []), [lowResp]);
 
     // ---------- UI helpers ----------
+    // ---------- UI helpers ----------
     const openNewItem = () => {
-        if (!canManageInventoryItems) {
-            enqueueSnackbar("No tienes permiso para crear artículos directos de inventario.", { variant: "warning" });
+        if (
+            !canManageInventoryItems
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.createItem"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
             return;
         }
 
-        setItemModal({ open: true, mode: "create", item: null });
-    };
+        setItemModal({
+            open:
+                true,
 
-    const openEditItem = (it) => {
-        if (!canManageInventoryItems) {
-            enqueueSnackbar("No tienes permiso para editar artículos de inventario.", { variant: "warning" });
-            return;
-        }
+            mode:
+                "create",
 
-        setItemModal({ open: true, mode: "edit", item: it });
-    };
-
-    // Aviso moderno (notistack) si ya se procesó yield antes
-    const maybeWarnYield = (item, onProceed) => {
-        if (!item?._id) return onProceed();
-
-        if (!wasYieldProcessed(item._id)) return onProceed();
-
-        const snackKey = enqueueSnackbar("Ya procesaste una merma (yield) para este producto. ¿Qué deseas hacer?", {
-            variant: "info",
-            persist: true,
-            action: (key) => (
-                <div className="flex gap-2">
-                    <button
-                        className="px-3 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 text-sm"
-                        onClick={() => {
-                            closeSnackbar(key);
-                            onProceed();
-                        }}
-                    >
-                        Procesar otra merma
-                    </button>
-                    <button
-                        className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80 text-sm"
-                        onClick={() => {
-                            closeSnackbar(key);
-                            // abrir modal de pérdida directa (waste)
-                            setMvModal({ open: true, type: "waste", item, yield: false });
-                        }}
-                    >
-                        Agregar pérdida (merma)
-                    </button>
-                    <button
-                        className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80 text-sm"
-                        onClick={() => closeSnackbar(key)}
-                    >
-                        Cancelar
-                    </button>
-                </div>
-            ),
+            item:
+                null,
         });
+    };
+
+
+    const openEditItem = (
+        it
+    ) => {
+        if (
+            !canManageInventoryItems
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.editItem"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        setItemModal({
+            open:
+                true,
+
+            mode:
+                "edit",
+
+            item:
+            it,
+        });
+    };
+
+
+    const maybeWarnYield = (
+        item,
+        onProceed
+    ) => {
+        if (
+            !item?._id
+        ) {
+            return onProceed();
+        }
+
+        if (
+            !wasYieldProcessed(
+                item._id
+            )
+        ) {
+            return onProceed();
+        }
+
+        const snackKey =
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.yield.alreadyProcessedQuestion"
+                ),
+                {
+                    variant:
+                        "info",
+
+                    persist:
+                        true,
+
+                    action:
+                        (
+                            key
+                        ) => (
+                            <div className="flex gap-2">
+
+                                <button
+                                    className="px-3 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 text-sm"
+                                    onClick={() => {
+                                        closeSnackbar(
+                                            key
+                                        );
+
+                                        onProceed();
+                                    }}
+                                >
+                                    {t(
+                                        "inventoryPage.yield.processAnother"
+                                    )}
+                                </button>
+
+                                <button
+                                    className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80 text-sm"
+                                    onClick={() => {
+                                        closeSnackbar(
+                                            key
+                                        );
+
+                                        setMvModal({
+                                            open:
+                                                true,
+
+                                            type:
+                                                "waste",
+
+                                            item,
+
+                                            yield:
+                                                false,
+                                        });
+                                    }}
+                                >
+                                    {t(
+                                        "inventoryPage.yield.addWaste"
+                                    )}
+                                </button>
+
+                                <button
+                                    className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80 text-sm"
+                                    onClick={() =>
+                                        closeSnackbar(
+                                            key
+                                        )
+                                    }
+                                >
+                                    {t(
+                                        "common.cancel"
+                                    )}
+                                </button>
+
+                            </div>
+                        ),
+                }
+            );
 
         return snackKey;
     };
-    const [yieldDoneByItem, setYieldDoneByItem] = React.useState(() => {
-        try {
-            return JSON.parse(localStorage.getItem("yieldDoneByItem") || "{}");
-        } catch {
-            return {};
-        }
-    });
 
-    const markYieldDone = (itemId) => {
-        setYieldDoneByItem((prev) => {
-            const next = { ...prev, [itemId]: Date.now() };
-            localStorage.setItem("yieldDoneByItem", JSON.stringify(next));
-            return next;
-        });
+
+    const [
+        yieldDoneByItem,
+        setYieldDoneByItem,
+    ] =
+        React.useState(
+            () => {
+                try {
+                    return JSON.parse(
+                        localStorage.getItem(
+                            "yieldDoneByItem"
+                        ) ||
+                        "{}"
+                    );
+                } catch {
+                    return {};
+                }
+            }
+        );
+
+
+    const markYieldDone = (
+        itemId
+    ) => {
+        setYieldDoneByItem(
+            (
+                prev
+            ) => {
+                const next = {
+                    ...prev,
+
+                    [itemId]:
+                        Date.now(),
+                };
+
+                localStorage.setItem(
+                    "yieldDoneByItem",
+                    JSON.stringify(
+                        next
+                    )
+                );
+
+                return next;
+            }
+        );
     };
 
 
-// Llama esto cuando el usuario le da a "Proceso merma"
-    const confirmYieldIfAlreadyDone = (item, openYieldModalFn) => {
-        const itemId = item?._id || item?.id;
-        if (!itemId) return openYieldModalFn(item);
+    const confirmYieldIfAlreadyDone = (
+        item,
+        openYieldModalFn
+    ) => {
+        const itemId =
+            item?._id ||
+            item?.id;
 
-        if (!yieldDoneByItem[itemId]) {
-            return openYieldModalFn(item);
-        }
-
-        // Aviso moderno (notistack) con acciones
-        enqueueSnackbar("Ya procesaste merma por proceso para este artículo. ¿Quieres procesar otra?", {
-            variant: "warning",
-            persist: true,
-            action: (snackKey) => (
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                        onClick={() => {
-                            closeSnackbar(snackKey);
-                            openYieldModalFn(item);
-                        }}
-                        style={{
-                            borderRadius: 10,
-                            padding: "6px 10px",
-                            background: "rgba(255,255,255,0.12)",
-                            border: "1px solid rgba(255,255,255,0.18)",
-                            color: "white",
-                            cursor: "pointer",
-                        }}
-                    >
-                        Procesar otra
-                    </button>
-
-                    <button
-                        onClick={() => closeSnackbar(snackKey)}
-                        style={{
-                            borderRadius: 10,
-                            padding: "6px 10px",
-                            background: "rgba(255,255,255,0.06)",
-                            border: "1px solid rgba(255,255,255,0.12)",
-                            color: "white",
-                            cursor: "pointer",
-                        }}
-                    >
-                        Cerrar
-                    </button>
-                </div>
-            ),
-        });
-    };
-
-    const openMovement = (type, item, useYield = false) => {
-        if (type === "purchase" && useYield && !canUseYieldProcess) {
-            enqueueSnackbar("No tienes permiso para procesar rendimiento/merma.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        if (type === "purchase" && !canInventoryEntry) {
-            enqueueSnackbar("No tienes permiso para registrar entradas.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        if (type === "sale" && !canInventoryExit) {
-            enqueueSnackbar("No tienes permiso para registrar salidas.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        if (type === "adjust" && !canInventoryAdjust) {
-            enqueueSnackbar("No tienes permiso para realizar ajustes.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        if (type === "waste" && !canInventoryWaste) {
-            enqueueSnackbar("No tienes permiso para registrar merma.", {
-                variant: "warning",
-            });
-            return;
-        }
-
-        if (type === "purchase" && useYield) {
-            return maybeWarnYield(item, () =>
-                setMvModal({ open: true, type, item, yield: true })
+        if (
+            !itemId
+        ) {
+            return openYieldModalFn(
+                item
             );
         }
 
-        setMvModal({ open: true, type, item, yield: Boolean(useYield) });
+        if (
+            !yieldDoneByItem[
+                itemId
+                ]
+        ) {
+            return openYieldModalFn(
+                item
+            );
+        }
+
+        enqueueSnackbar(
+            t(
+                "inventoryPage.yield.processAgainQuestion"
+            ),
+            {
+                variant:
+                    "warning",
+
+                persist:
+                    true,
+
+                action:
+                    (
+                        snackKey
+                    ) => (
+                        <div
+                            style={{
+                                display:
+                                    "flex",
+
+                                gap:
+                                    8,
+                            }}
+                        >
+                            <button
+                                onClick={() => {
+                                    closeSnackbar(
+                                        snackKey
+                                    );
+
+                                    openYieldModalFn(
+                                        item
+                                    );
+                                }}
+                                style={{
+                                    borderRadius:
+                                        10,
+
+                                    padding:
+                                        "6px 10px",
+
+                                    background:
+                                        "rgba(255,255,255,0.12)",
+
+                                    border:
+                                        "1px solid rgba(255,255,255,0.18)",
+
+                                    color:
+                                        "white",
+
+                                    cursor:
+                                        "pointer",
+                                }}
+                            >
+                                {t(
+                                    "inventoryPage.yield.processAnotherShort"
+                                )}
+                            </button>
+
+                            <button
+                                onClick={() =>
+                                    closeSnackbar(
+                                        snackKey
+                                    )
+                                }
+                                style={{
+                                    borderRadius:
+                                        10,
+
+                                    padding:
+                                        "6px 10px",
+
+                                    background:
+                                        "rgba(255,255,255,0.06)",
+
+                                    border:
+                                        "1px solid rgba(255,255,255,0.12)",
+
+                                    color:
+                                        "white",
+
+                                    cursor:
+                                        "pointer",
+                                }}
+                            >
+                                {t(
+                                    "common.close"
+                                )}
+                            </button>
+                        </div>
+                    ),
+            }
+        );
     };
 
+
+    const openMovement = (
+        type,
+        item,
+        useYield = false
+    ) => {
+        if (
+            type ===
+            "purchase" &&
+            useYield &&
+            !canUseYieldProcess
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.yield"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        if (
+            type ===
+            "purchase" &&
+            !canInventoryEntry
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.entry"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        if (
+            type ===
+            "sale" &&
+            !canInventoryExit
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.exit"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        if (
+            type ===
+            "adjust" &&
+            !canInventoryAdjust
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.adjust"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        if (
+            type ===
+            "waste" &&
+            !canInventoryWaste
+        ) {
+            enqueueSnackbar(
+                t(
+                    "inventoryPage.permissions.waste"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
+
+            return;
+        }
+
+        if (
+            type ===
+            "purchase" &&
+            useYield
+        ) {
+            return maybeWarnYield(
+                item,
+                () =>
+                    setMvModal({
+                        open:
+                            true,
+
+                        type,
+
+                        item,
+
+                        yield:
+                            true,
+                    })
+            );
+        }
+
+        setMvModal({
+            open:
+                true,
+
+            type,
+
+            item,
+
+            yield:
+                Boolean(
+                    useYield
+                ),
+        });
+    };
     const TabBtn = ({ id, icon: Icon, label }) => (
         <button
             onClick={() => setTab(id)}
@@ -914,7 +2149,12 @@ export default function Inventory({ plan, currentUser }) {
             (c) => String(c?._id) === String(categoryId)
         );
 
-        return found?.name || "Sin categoría";
+        return (
+            found?.name ||
+            t(
+                "inventoryPage.common.noCategory"
+            )
+        );
     };
 
     const getSupplierName = (item) => {
@@ -933,18 +2173,19 @@ export default function Inventory({ plan, currentUser }) {
         return (
             found?.name ||
             found?.companyName ||
-            "Sin proveedor"
+            t(
+                "inventoryPage.common.noSupplier"
+            )
         );
     };
 
-    const getExportTypeLabel = (item) => {
-        const type = normalizeInventoryType(item?.inventoryType);
-
-        if (type === "direct") return "Producto con stock directo";
-        if (type === "recipe") return "Plato con receta";
-        if (type === "ingredient") return "Ingrediente / insumo";
-
-        return "Sin inventario";
+    const getExportTypeLabel = (
+        item
+    ) => {
+        return getInventoryTypeLabel(
+            item?.inventoryType,
+            t
+        );
     };
 
     const isInventoryRow = (item) => {
@@ -1104,8 +2345,13 @@ export default function Inventory({ plan, currentUser }) {
             !stockFilters.inventoryCategoryId
         ) {
             enqueueSnackbar(
-                "Selecciona primero una categoría para exportarla.",
-                { variant: "warning" }
+                t(
+                    "inventoryPage.export.selectCategoryFirst"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
             );
 
             return;
@@ -1119,8 +2365,13 @@ export default function Inventory({ plan, currentUser }) {
 
             if (!exportItems.length) {
                 enqueueSnackbar(
-                    "No hay registros para exportar.",
-                    { variant: "warning" }
+                    t(
+                        "inventoryPage.export.noRecords"
+                    ),
+                    {
+                        variant:
+                            "warning",
+                    }
                 );
 
                 return;
@@ -1163,27 +2414,107 @@ export default function Inventory({ plan, currentUser }) {
                     !isInactiveInventory &&
                     stock <= stockMin;
 
-                const status = isInactiveInventory
-                    ? "Sin inventario"
-                    : isLow
-                        ? "Bajo stock"
-                        : "OK";
+                const status =
+                    isInactiveInventory
+                        ? t(
+                            "inventoryPage.status.noInventory"
+                        )
+                        : isLow
+                            ? t(
+                                "inventoryPage.status.lowStock"
+                            )
+                            : t(
+                                "inventoryPage.status.ok"
+                            );
 
                 return {
-                    "Artículo": item?.name || "",
-                    "Tipo": getExportTypeLabel(item),
-                    "Categoría": getCategoryName(item),
-                    "Unidad": item?.unit || "unidad",
-                    "Stock actual": stock,
-                    "Stock mínimo": stockMin,
-                    "Último costo": lastCost,
-                    "Costo promedio": avgCost,
-                    "Costo utilizado": effectiveCost,
-                    "Valor inventario": inventoryValue,
-                    "Proveedor": getSupplierName(item),
-                    "Estado": status,
-                    "Archivado": item?.isArchived ? "Sí" : "No",
-                    "ID": item?._id || "",
+                    [t(
+                        "inventoryPage.export.columns.item"
+                    )]:
+                        item?.name ||
+                        "",
+
+                    [t(
+                        "inventoryPage.export.columns.type"
+                    )]:
+                        getExportTypeLabel(
+                            item
+                        ),
+
+                    [t(
+                        "inventoryPage.export.columns.category"
+                    )]:
+                        getCategoryName(
+                            item
+                        ),
+
+                    [t(
+                        "inventoryPage.export.columns.unit"
+                    )]:
+                        getUnitLabel(
+                            item?.unit ||
+                            "unidad",
+                            t
+                        ),
+
+                    [t(
+                        "inventoryPage.export.columns.currentStock"
+                    )]:
+                    stock,
+
+                    [t(
+                        "inventoryPage.export.columns.minimumStock"
+                    )]:
+                    stockMin,
+
+                    [t(
+                        "inventoryPage.export.columns.lastCost"
+                    )]:
+                    lastCost,
+
+                    [t(
+                        "inventoryPage.export.columns.averageCost"
+                    )]:
+                    avgCost,
+
+                    [t(
+                        "inventoryPage.export.columns.usedCost"
+                    )]:
+                    effectiveCost,
+
+                    [t(
+                        "inventoryPage.export.columns.inventoryValue"
+                    )]:
+                    inventoryValue,
+
+                    [t(
+                        "inventoryPage.export.columns.supplier"
+                    )]:
+                        getSupplierName(
+                            item
+                        ),
+
+                    [t(
+                        "inventoryPage.export.columns.status"
+                    )]:
+                    status,
+
+                    [t(
+                        "inventoryPage.export.columns.archived"
+                    )]:
+                        item?.isArchived
+                            ? t(
+                                "inventoryPage.common.yes"
+                            )
+                            : t(
+                                "inventoryPage.common.no"
+                            ),
+
+                    [t(
+                        "inventoryPage.export.columns.id"
+                    )]:
+                        item?._id ||
+                        "",
                 };
             });
 
@@ -1213,15 +2544,26 @@ export default function Inventory({ plan, currentUser }) {
             XLSX.utils.book_append_sheet(
                 workbook,
                 worksheet,
-                "Inventario"
+                t(
+                    "inventoryPage.export.sheetName"
+                )
             );
 
-            const today = getTodayYMD();
+            const today =
+                getTodayYMD(
+                    localization
+                );
 
-            let exportName = "Todos";
+            let exportName =
+                t(
+                    "inventoryPage.export.fileNames.all"
+                );
 
             if (exportMode === "products") {
-                exportName = "Productos";
+                exportName =
+                    t(
+                        "inventoryPage.export.fileNames.products"
+                    );
             }
 
             if (exportMode === "category") {
@@ -1232,7 +2574,10 @@ export default function Inventory({ plan, currentUser }) {
                 );
 
                 exportName =
-                    category?.name || "Categoria";
+                    category?.name ||
+                    t(
+                        "inventoryPage.export.fileNames.category"
+                    );
             }
 
             // Limpiamos caracteres inválidos para nombre de archivo.
@@ -1242,12 +2587,23 @@ export default function Inventory({ plan, currentUser }) {
 
             XLSX.writeFile(
                 workbook,
-                `Inventario_${exportName}_${today}.xlsx`
+                `${t(
+                    "inventoryPage.export.filePrefix"
+                )}_${exportName}_${today}.xlsx`
             );
 
             enqueueSnackbar(
-                `${excelRows.length} registros exportados a Excel.`,
-                { variant: "success" }
+                t(
+                    "inventoryPage.export.success",
+                    {
+                        count:
+                        excelRows.length,
+                    }
+                ),
+                {
+                    variant:
+                        "success",
+                }
             );
         } catch (error) {
             console.error(
@@ -1258,7 +2614,9 @@ export default function Inventory({ plan, currentUser }) {
             enqueueSnackbar(
                 error?.response?.data?.message ||
                 error?.message ||
-                "No se pudo exportar el inventario.",
+                t(
+                    "inventoryPage.export.error"
+                ),
                 { variant: "error" }
             );
         } finally {
@@ -1271,41 +2629,102 @@ export default function Inventory({ plan, currentUser }) {
         return (
             <div className="p-6">
                 <div className={`${cardCls} p-6`}>
-                    <div className="text-white text-lg font-semibold">Inventario</div>
+                    <div className="text-white text-lg font-semibold">
+                        {t("inventoryPage.title")}
+                    </div>
+
                     <div className="text-white/70 mt-1">
-                        Este módulo está disponible solo para los planes <b>Premium</b> y <b>Estandar</b>.
+                        {t("inventoryPage.plan.restricted")}
                     </div>
                 </div>
             </div>
         );
     }
 
+
     // ---------- Render ----------
     return (
         <div className="p-4 md:p-6">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                    <div className="text-white text-2xl font-semibold">Inventario</div>
-                    <div className="text-white/60">Stock real, kardex y consumo</div>
+                    <div className="text-white text-2xl font-semibold">
+                        {t(
+                            "inventoryPage.title"
+                        )}
+                    </div>
+
+                    <div className="text-white/60">
+                        {t(
+                            "inventoryPage.subtitle"
+                        )}
+                    </div>
+
                     <div className="text-white/40 text-xs mt-1">
-                        Nota: <b>Último costo</b> = último precio unitario comprado. <b>Costo promedio</b> = promedio ponderado para calcular costo real.
+                        {t(
+                            "inventoryPage.help.costs"
+                        )}
+
                         <br />
-                        <b>Stock mínimo</b> sirve para marcar “Bajo stock” cuando el stock actual llega a esa cantidad o menos.
+
+                        {t(
+                            "inventoryPage.help.minimumStock"
+                        )}
                     </div>
                 </div>
-
                 <div className="flex flex-wrap gap-2">
-                    <TabBtn id="stock" icon={Package} label="Stock" />
+
+                    <TabBtn
+                        id="stock"
+                        icon={Package}
+                        label={t(
+                            "inventoryPage.tabs.stock"
+                        )}
+                    />
 
                     {canViewAdvancedInventoryTabs && (
                         <>
-                            <TabBtn id="movements" icon={History} label="Movimientos" />
-                            <TabBtn id="consumption" icon={BarChart3} label="Consumo" />
-                            <TabBtn id="merma" icon={Trash2} label="Merma" />
-                            <TabBtn id="suppliers" icon={SlidersHorizontal} label="Proveedores" />
-                            <TabBtn id="categories" icon={SlidersHorizontal} label="Categorías" />
+                            <TabBtn
+                                id="movements"
+                                icon={History}
+                                label={t(
+                                    "inventoryPage.tabs.movements"
+                                )}
+                            />
+
+                            <TabBtn
+                                id="consumption"
+                                icon={BarChart3}
+                                label={t(
+                                    "inventoryPage.tabs.consumption"
+                                )}
+                            />
+
+                            <TabBtn
+                                id="merma"
+                                icon={Trash2}
+                                label={t(
+                                    "inventoryPage.tabs.waste"
+                                )}
+                            />
+
+                            <TabBtn
+                                id="suppliers"
+                                icon={SlidersHorizontal}
+                                label={t(
+                                    "inventoryPage.tabs.suppliers"
+                                )}
+                            />
+
+                            <TabBtn
+                                id="categories"
+                                icon={SlidersHorizontal}
+                                label={t(
+                                    "inventoryPage.tabs.categories"
+                                )}
+                            />
                         </>
                     )}
+
                 </div>
             </div>
 
@@ -1313,16 +2732,28 @@ export default function Inventory({ plan, currentUser }) {
             {tab === "stock" && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                     <div className={`${cardCls} p-4`}>
-                        <div className="text-white/60 text-sm">Artículos</div>
+                        <div className="text-white/60 text-sm">
+                            {t(
+                                "inventoryPage.metrics.items"
+                            )}
+                        </div>
                         <div className="text-white text-2xl font-semibold">{metrics.total}</div>
                     </div>
                     <div className={`${cardCls} p-4`}>
-                        <div className="text-white/60 text-sm">Bajo stock</div>
+                        <div className="text-white/60 text-sm">
+                            {t(
+                                "inventoryPage.metrics.lowStock"
+                            )}
+                        </div>
                         <div className="text-white text-2xl font-semibold">{metrics.low}</div>
                     </div>
                     <div className={`${cardCls} p-4`}>
-                        <div className="text-white/60 text-sm">Valor estimado</div>
-                        <div className="text-white text-2xl font-semibold">{moneyRD(metrics.value)}</div>
+                        <div className="text-white/60 text-sm">
+                            {t(
+                                "inventoryPage.metrics.estimatedValue"
+                            )}
+                        </div>
+                        <div className="text-white text-2xl font-semibold">{money(metrics.value)}</div>
                     </div>
                 </div>
             )}
@@ -1340,19 +2771,25 @@ export default function Inventory({ plan, currentUser }) {
                             {/* BUSCAR */}
                             <div className="min-w-0">
                                 <div className="text-white/60 text-xs mb-1.5">
-                                    Buscar
+                                    {t(
+                                        "inventoryPage.filters.search"
+                                    )}
                                 </div>
 
                                 <input
                                     className={inputCls}
-                                    placeholder="Buscar por nombre..."
+                                    placeholder={t(
+                                        "inventoryPage.filters.searchPlaceholder"
+                                    )}
                                     value={stockSearchInput}
                                     onChange={(e) => setStockSearchInput(e.target.value)}
                                 />
 
                                 {itemsFetching && stockFilters.q && (
                                     <div className="text-[11px] text-yellow-200/60 mt-1">
-                                        Buscando...
+                                        {t(
+                                            "inventoryPage.filters.searching"
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1360,7 +2797,9 @@ export default function Inventory({ plan, currentUser }) {
                             {/* CATEGORÍA */}
                             <div className="min-w-0">
                                 <div className="text-white/60 text-xs mb-1.5">
-                                    Categoría
+                                    {t(
+                                        "inventoryPage.filters.category"
+                                    )}
                                 </div>
 
                                 <select
@@ -1373,7 +2812,11 @@ export default function Inventory({ plan, currentUser }) {
                                         }))
                                     }
                                 >
-                                    <option value="">Todas las categorías</option>
+                                    <option value="">
+                                        {t(
+                                            "inventoryPage.filters.allCategories"
+                                        )}
+                                    </option>
 
                                     {categories.map((c) => (
                                         <option key={c._id} value={c._id}>
@@ -1386,7 +2829,9 @@ export default function Inventory({ plan, currentUser }) {
                             {/* PROVEEDOR */}
                             <div className="min-w-0 sm:col-span-2 xl:col-span-1">
                                 <div className="text-white/60 text-xs mb-1.5">
-                                    Proveedor
+                                    {t(
+                                        "inventoryPage.filters.supplier"
+                                    )}
                                 </div>
 
                                 <select
@@ -1399,11 +2844,18 @@ export default function Inventory({ plan, currentUser }) {
                                         }))
                                     }
                                 >
-                                    <option value="">Todos los proveedores</option>
-
+                                    <option value="">
+                                        {t(
+                                            "inventoryPage.filters.allSuppliers"
+                                        )}
+                                    </option>
                                     {suppliers.map((sp) => (
                                         <option key={sp._id} value={sp._id}>
-                                            {sp.name || sp.companyName || "Proveedor"}
+                                            {sp.name ||
+                                                sp.companyName ||
+                                                t(
+                                                    "inventoryPage.common.supplier"
+                                                )}
                                         </option>
                                     ))}
                                 </select>
@@ -1415,29 +2867,40 @@ export default function Inventory({ plan, currentUser }) {
                         {/* ===================================================== */}
                         <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3 pt-3 border-t border-white/5">
 
-                            {/* EXPORTACIÓN */}
                             <div className="flex flex-col sm:flex-row sm:items-end gap-2">
 
                                 <div className="w-full sm:w-[230px]">
                                     <div className="text-white/60 text-xs mb-1.5">
-                                        Exportar
+                                        {t(
+                                            "inventoryPage.export.label"
+                                        )}
                                     </div>
 
                                     <select
                                         value={exportMode}
-                                        onChange={(e) => setExportMode(e.target.value)}
+                                        onChange={(e) =>
+                                            setExportMode(
+                                                e.target.value
+                                            )
+                                        }
                                         className={selectCls}
                                     >
                                         <option value="all">
-                                            Todo el inventario
+                                            {t(
+                                                "inventoryPage.export.options.all"
+                                            )}
                                         </option>
 
                                         <option value="category">
-                                            Categoría seleccionada
+                                            {t(
+                                                "inventoryPage.export.options.category"
+                                            )}
                                         </option>
 
                                         <option value="products">
-                                            Solo productos
+                                            {t(
+                                                "inventoryPage.export.options.products"
+                                            )}
                                         </option>
                                     </select>
                                 </div>
@@ -1455,12 +2918,15 @@ export default function Inventory({ plan, currentUser }) {
                                     <FileSpreadsheet className="w-4 h-4 shrink-0" />
 
                                     {exportingExcel
-                                        ? "Exportando..."
-                                        : "Exportar Excel"}
+                                        ? t(
+                                            "inventoryPage.export.exporting"
+                                        )
+                                        : t(
+                                            "inventoryPage.export.button"
+                                        )}
                                 </button>
                             </div>
 
-                            {/* ACCIONES DERECHA */}
                             <div className="flex flex-wrap gap-2 xl:justify-end">
 
                                 <button
@@ -1468,7 +2934,8 @@ export default function Inventory({ plan, currentUser }) {
                                     onClick={() =>
                                         setStockFilters((s) => ({
                                             ...s,
-                                            includeArchived: !s.includeArchived,
+                                            includeArchived:
+                                                !s.includeArchived,
                                         }))
                                     }
                                     className={`h-[46px] px-4 rounded-xl border inline-flex items-center justify-center gap-2 whitespace-nowrap ${
@@ -1480,8 +2947,12 @@ export default function Inventory({ plan, currentUser }) {
                                     <Archive className="w-4 h-4 shrink-0" />
 
                                     {stockFilters.includeArchived
-                                        ? "Mostrando archivados"
-                                        : "Ocultando archivados"}
+                                        ? t(
+                                            "inventoryPage.archive.showing"
+                                        )
+                                        : t(
+                                            "inventoryPage.archive.hiding"
+                                        )}
                                 </button>
 
                                 {canManageInventoryItems && (
@@ -1491,10 +2962,15 @@ export default function Inventory({ plan, currentUser }) {
                                         className="h-[46px] px-4 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center justify-center gap-2 whitespace-nowrap hover:bg-yellow-500/20"
                                     >
                                         <Plus className="w-4 h-4 shrink-0" />
-                                        Nuevo artículo
+
+                                        {t(
+                                            "inventoryPage.actions.newItem"
+                                        )}
                                     </button>
                                 )}
+
                             </div>
+
                         </div>
                     </div>
 
@@ -1503,37 +2979,55 @@ export default function Inventory({ plan, currentUser }) {
                         <table className="w-full text-base">
                             <thead>
                             <tr className="text-left text-white/80 border-b border-white/10">
+
                                 <th className="py-3 pr-4 min-w-[220px] text-base font-semibold">
-                                    Artículo
+                                    {t(
+                                        "inventoryPage.table.item"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Unidad
+                                    {t(
+                                        "inventoryPage.table.unit"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Stock
+                                    {t(
+                                        "inventoryPage.table.stock"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Mínimo
+                                    {t(
+                                        "inventoryPage.table.minimum"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Costo prom.
+                                    {t(
+                                        "inventoryPage.table.averageCost"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Proveedor
+                                    {t(
+                                        "inventoryPage.table.supplier"
+                                    )}
                                 </th>
 
                                 <th className="py-3 pr-4 text-base font-semibold">
-                                    Estado
+                                    {t(
+                                        "inventoryPage.table.status"
+                                    )}
                                 </th>
 
-                                <th className="py-3 pr-4 text-right text-base font-semibold">
-                                    Acciones
+                                <th className="py-3 pr-0 min-w-[170px] w-[170px] text-right text-base font-semibold">
+                                    {t(
+                                        "inventoryPage.table.actions"
+                                    )}
                                 </th>
+
                             </tr>
                             </thead>
 
@@ -1541,13 +3035,17 @@ export default function Inventory({ plan, currentUser }) {
                             {itemsLoading ? (
                                 <tr>
                                     <td colSpan={8} className="py-6 text-white/60">
-                                        Cargando...
+                                        {t(
+                                            "inventoryPage.common.loading"
+                                        )}
                                     </td>
                                 </tr>
                             ) : items.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="py-6 text-white/60">
-                                        No hay artículos.
+                                        {t(
+                                            "inventoryPage.stock.empty"
+                                        )}
                                     </td>
                                 </tr>
                             ) : (
@@ -1565,7 +3063,13 @@ export default function Inventory({ plan, currentUser }) {
                                     const providerName =
                                         it?.supplierId?.name ||
                                         it?.supplierId?.companyName ||
-                                        (typeof it?.supplierId === "string" ? "Proveedor" : "—");
+                                        (
+                                            typeof it?.supplierId === "string"
+                                                ? t(
+                                                    "inventoryPage.common.supplier"
+                                                )
+                                                : "—"
+                                        );
                                     return (
                                         <tr key={it._id} className="border-b border-white/5">
                                             <td className="py-4 pr-4">
@@ -1578,7 +3082,10 @@ export default function Inventory({ plan, currentUser }) {
                                                 </div>
                                             </td>
                                             <td className="py-4 pr-4 text-white text-base font-medium">
-                                                {it.unit || "unidad"}
+                                                {getUnitLabel(
+                                                    it.unit || "unidad",
+                                                    t
+                                                )}
                                             </td>
                                             <td
                                                 className={`py-4 pr-4 text-base font-semibold ${
@@ -1596,97 +3103,124 @@ export default function Inventory({ plan, currentUser }) {
                                             </td>
                                             <td className="py-4 pr-4 text-white text-base font-medium">
 
-                                            {moneyRD(num(it.avgCost) || num(it.lastCost) || 0)}
+                                            {money(num(it.avgCost) || num(it.lastCost) || 0)}
                                             </td>
                                             <td className="py-4 pr-4 text-white text-base">{providerName}</td>
-                                            <td className="py-4 pr-4">
+                                            <td className="py-4 pr-4 align-middle">
                                                 {isInactiveInventory ? (
-                                                    <Badge tone="warning">Sin inventario</Badge>
+                                                    <Badge tone="warning">
+                                                        {t(
+                                                            "inventoryPage.status.noInventory"
+                                                        )}
+                                                    </Badge>
                                                 ) : isLow ? (
-                                                    <Badge tone="warning">Bajo stock</Badge>
+                                                    <Badge tone="warning">
+                                                        {t(
+                                                            "inventoryPage.status.lowStock"
+                                                        )}
+                                                    </Badge>
                                                 ) : (
-                                                    <Badge>OK</Badge>
+                                                    <Badge>
+                                                        {t(
+                                                            "inventoryPage.status.ok"
+                                                        )}
+                                                    </Badge>
                                                 )}
                                             </td>
-                                            <td className="py-4 pr-0">
+
+                                            <td className="py-4 pr-0 align-top">
                                                 <div className="flex flex-col items-end gap-2">
-                                                    <div className="flex flex-wrap gap-2 justify-end">
-                                                        {canInventoryEntry && (
-                                                            <button
-                                                                onClick={() => openMovement("purchase", it, false)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                            >
-                                                                <ArrowDownCircle className="w-4 h-4" />
-                                                                Entrada
-                                                            </button>
-                                                        )}
-                                                        {canInventoryExit && !isInactiveInventory && (
-                                                            <button
-                                                                onClick={() => openMovement("sale", it, false)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                            >
-                                                                <ArrowUpCircle className="w-4 h-4" />
-                                                                Salida
-                                                            </button>
-                                                        )}
+                                                    {canInventoryEntry && (
+                                                        <button
+                                                            onClick={() => openMovement("purchase", it, false)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center gap-2 text-center leading-tight whitespace-normal"
+                                                        >
+                                                            <ArrowDownCircle className="w-4 h-4 shrink-0" />
+                                                            {t(
+                                                                "inventoryPage.actions.entry"
+                                                            )}
+                                                        </button>
+                                                    )}
 
-                                                        {canUseYieldProcess && !isInactiveInventory && (
-                                                            <button
-                                                                onClick={() => openMovement("purchase", it, true)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                            >
-                                                                Proceso merma
-                                                            </button>
-                                                        )}
+                                                    {canInventoryExit && !isInactiveInventory && (
+                                                        <button
+                                                            onClick={() => openMovement("sale", it, false)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center gap-2 text-center leading-tight whitespace-normal"
+                                                        >
+                                                            <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                                                            {t(
+                                                                "inventoryPage.actions.exit"
+                                                            )}
+                                                        </button>
+                                                    )}
 
-                                                        {canInventoryAdjust && !isInactiveInventory && (
-                                                            <button
-                                                                onClick={() => openMovement("adjust", it, false)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                            >
-                                                                <SlidersHorizontal className="w-4 h-4" />
-                                                                Ajuste
-                                                            </button>
-                                                        )}
+                                                    {canUseYieldProcess && !isInactiveInventory && (
+                                                        <button
+                                                            onClick={() => openMovement("purchase", it, true)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center text-center leading-tight whitespace-normal"
+                                                        >
+                                                            {t(
+                                                                "inventoryPage.actions.yieldProcess"
+                                                            )}
+                                                        </button>
+                                                    )}
 
-                                                        {canInventoryWaste && !isInactiveInventory && (
-                                                            <button
-                                                                onClick={() => openMovement("waste", it, false)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                            >
-                                                                <ArrowUpCircle className="w-4 h-4" />
-                                                                Merma
-                                                            </button>
-                                                        )}
+                                                    {canInventoryAdjust && !isInactiveInventory && (
+                                                        <button
+                                                            onClick={() => openMovement("adjust", it, false)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center gap-2 text-center leading-tight whitespace-normal"
+                                                        >
+                                                            <SlidersHorizontal className="w-4 h-4 shrink-0" />
+                                                            {t(
+                                                                "inventoryPage.actions.adjust"
+                                                            )}
+                                                        </button>
+                                                    )}
 
-                                                        {canManageInventoryItems && (
-                                                            <button
-                                                                onClick={() => openEditItem(it)}
-                                                                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                            >
-                                                                Editar
-                                                            </button>
-                                                        )}
+                                                    {canInventoryWaste && !isInactiveInventory && (
+                                                        <button
+                                                            onClick={() => openMovement("waste", it, false)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center gap-2 text-center leading-tight whitespace-normal"
+                                                        >
+                                                            <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                                                            {t(
+                                                                "inventoryPage.actions.waste"
+                                                            )}
+                                                        </button>
+                                                    )}
 
-                                                        {canManageInventoryItems && (
-                                                            it.isArchived ? (
-                                                                <button
-                                                                    onClick={() => unarchiveItemMutation.mutate(it._id)}
-                                                                    className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center gap-2"
-                                                                >
-                                                                    Desarchivar
-                                                                </button>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={() => archiveItemMutation.mutate(it._id)}
-                                                                    className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center gap-2"
-                                                                >
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                    Archivar
-                                                                </button>
-                                                            )
-                                                        )}
-                                                    </div>
+                                                    {canManageInventoryItems && (
+                                                        <button
+                                                            onClick={() => openEditItem(it)}
+                                                            className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center justify-center text-center leading-tight whitespace-normal"
+                                                        >
+                                                            {t(
+                                                                "inventoryPage.actions.edit"
+                                                            )}
+                                                        </button>
+                                                    )}
+
+                                                    {canManageInventoryItems &&
+                                                        (it.isArchived ? (
+                                                            <button
+                                                                onClick={() => unarchiveItemMutation.mutate(it._id)}
+                                                                className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center justify-center text-center leading-tight whitespace-normal"
+                                                            >
+                                                                {t(
+                                                                    "inventoryPage.actions.unarchive"
+                                                                )}
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => archiveItemMutation.mutate(it._id)}
+                                                                className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 inline-flex items-center justify-center gap-2 text-center leading-tight whitespace-normal"
+                                                            >
+                                                                <Trash2 className="w-4 h-4 shrink-0" />
+                                                                {t(
+                                                                    "inventoryPage.actions.archive"
+                                                                )}
+                                                            </button>
+                                                        ))}
                                                 </div>
                                             </td>
                                         </tr>
@@ -1700,9 +3234,13 @@ export default function Inventory({ plan, currentUser }) {
                     {/* Mobile cards */}
                     <div className="md:hidden mt-4 space-y-3">
                         {itemsLoading ? (
-                            <div className="text-white/60">Cargando...</div>
+                            <div className="text-white/60">{t(
+                                "inventoryPage.common.loading"
+                            )}</div>
                         ) : items.length === 0 ? (
-                            <div className="text-white/60">No hay artículos.</div>
+                            <div className="text-white/60">{t(
+                                "inventoryPage.stock.empty"
+                            )}</div>
                         ) : (
                             items.map((it) => {
                                 const type = String(it?.inventoryType || "none").trim().toLowerCase();
@@ -1721,33 +3259,69 @@ export default function Inventory({ plan, currentUser }) {
                                 const providerName =
                                     it?.supplierId?.name ||
                                     it?.supplierId?.companyName ||
-                                    (typeof it?.supplierId === "string" ? "Proveedor" : "—");
+                                    (
+                                        typeof it?.supplierId === "string"
+                                            ? t(
+                                                "inventoryPage.common.supplier"
+                                            )
+                                            : "—"
+                                    );
                                 return (
                                     <div key={it._id} className={`${cardCls} p-4`}>
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
                                                 <div className="text-white font-semibold">{it.name}</div>
                                                 <div className="text-white/50 text-xs mt-1">
-                                                    {it.unit || "unidad"} · Stock {num(it.stockCurrent)} · Mín {num(it.stockMin)}
+                                                    {getUnitLabel(
+                                                        it.unit || "unidad",
+                                                        t
+                                                    )}{" · "}
+
+                                                    {t(
+                                                        "inventoryPage.table.stock"
+                                                    )}{" "}
+
+                                                    {num(
+                                                        it.stockCurrent
+                                                    )}{" · "}
+
+                                                    {t(
+                                                        "inventoryPage.table.minimumShort"
+                                                    )}{" "}
+
+                                                    {num(
+                                                        it.stockMin
+                                                    )}
                                                 </div>
-                                                <div className="text-white/40 text-xs mt-1">Proveedor: {providerName}</div>
+                                                <div className="text-white/40 text-xs mt-1">{t(
+                                                    "inventoryPage.table.supplier"
+                                                )}
+                                                    : {providerName}</div>
                                             </div>
                                             <div>
                                                 {isNegativeStock ? (
                                                     <Badge tone="danger">
-                                                        Stock negativo
+                                                        {t(
+                                                            "inventoryPage.status.negativeStock"
+                                                        )}
                                                     </Badge>
                                                 ) : isInactiveInventory ? (
                                                     <Badge tone="warning">
-                                                        Sin inventario
+                                                        {t(
+                                                            "inventoryPage.status.noInventory"
+                                                        )}
                                                     </Badge>
                                                 ) : isLow ? (
                                                     <Badge tone="warning">
-                                                        Bajo stock
+                                                        {t(
+                                                            "inventoryPage.status.lowStock"
+                                                        )}
                                                     </Badge>
                                                 ) : (
                                                     <Badge>
-                                                        OK
+                                                        {t(
+                                                            "inventoryPage.status.ok"
+                                                        )}
                                                     </Badge>
                                                 )}
                                             </div>
@@ -1760,7 +3334,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                 >
                                                     <ArrowDownCircle className="w-4 h-4" />
-                                                    Entrada
+                                                    {t(
+                                                        "inventoryPage.actions.entry"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1770,7 +3346,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                 >
                                                     <ArrowUpCircle className="w-4 h-4" />
-                                                    Salida
+                                                    {t(
+                                                        "inventoryPage.actions.exit"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1779,7 +3357,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     onClick={() => openMovement("purchase", it, true)}
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
                                                 >
-                                                    Proceso merma
+                                                    {t(
+                                                        "inventoryPage.actions.yieldProcess"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1789,7 +3369,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                 >
                                                     <SlidersHorizontal className="w-4 h-4" />
-                                                    Ajuste
+                                                    {t(
+                                                        "inventoryPage.actions.adjust"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1799,7 +3381,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
                                                 >
                                                     <ArrowUpCircle className="w-4 h-4" />
-                                                    Merma
+                                                    {t(
+                                                        "inventoryPage.actions.waste"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1808,7 +3392,9 @@ export default function Inventory({ plan, currentUser }) {
                                                     onClick={() => openEditItem(it)}
                                                     className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
                                                 >
-                                                    Editar
+                                                    {t(
+                                                        "inventoryPage.actions.edit"
+                                                    )}
                                                 </button>
                                             )}
 
@@ -1818,14 +3404,18 @@ export default function Inventory({ plan, currentUser }) {
                                                         onClick={() => unarchiveItemMutation.mutate(it._id)}
                                                         className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200"
                                                     >
-                                                        Desarchivar
+                                                        {t(
+                                                            "inventoryPage.actions.unarchive"
+                                                        )}
                                                     </button>
                                                 ) : (
                                                     <button
                                                         onClick={() => archiveItemMutation.mutate(it._id)}
                                                         className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
                                                     >
-                                                        Archivar
+                                                        {t(
+                                                            "inventoryPage.actions.archive"
+                                                        )}
                                                     </button>
                                                 )
                                             )}
@@ -1839,10 +3429,35 @@ export default function Inventory({ plan, currentUser }) {
                     {/* Pagination */}
                     <div className="mt-4 flex items-center justify-between gap-2 flex-wrap">
                         <div className="text-white/60 text-sm">
-                            Página <b className="text-white">{page}</b> de <b className="text-white">{pageCount}</b> · Total:{" "}
-                            <b className="text-white">{totalItems}</b>
-                        </div>
 
+                            {t(
+                                "inventoryPage.pagination.page"
+                            )}{" "}
+
+                            <b className="text-white">
+                                {page}
+                            </b>{" "}
+
+                            {t(
+                                "inventoryPage.pagination.of"
+                            )}{" "}
+
+                            <b className="text-white">
+                                {pageCount}
+                            </b>
+
+                            {" · "}
+
+                            {t(
+                                "inventoryPage.pagination.total"
+                            )}
+                            :{" "}
+
+                            <b className="text-white">
+                                {totalItems}
+                            </b>
+
+                        </div>
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -1854,7 +3469,9 @@ export default function Inventory({ plan, currentUser }) {
                                 }`}
                             >
                                 <ChevronLeft className="w-4 h-4" />
-                                Anterior
+                                {t(
+                                    "inventoryPage.pagination.previous"
+                                )}
                             </button>
 
                             <button
@@ -1866,7 +3483,9 @@ export default function Inventory({ plan, currentUser }) {
                                         : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
                                 }`}
                             >
-                                Siguiente
+                                {t(
+                                    "inventoryPage.pagination.next"
+                                )}
                                 <ChevronRight className="w-4 h-4" />
                             </button>
                         </div>
@@ -1875,217 +3494,746 @@ export default function Inventory({ plan, currentUser }) {
             )}
 
             {/* MOVEMENTS TAB */}
+
+            {/* MOVEMENTS TAB */}
             {tab === "movements" && (
                 <div className={`${cardCls} p-4 mt-4`}>
+
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+
                         <div>
-                            <div className="text-white/60 text-xs mb-1">Artículo</div>
-                            <select className={selectCls} value={mvFilters.itemId} onChange={(e) => setMvFilters((s) => ({ ...s, itemId: e.target.value }))}>
-                                <option value="">Todos</option>
-                                {rawItems.map((it) => (
-                                    <option key={it._id} value={it._id}>
-                                        {it.name}
-                                    </option>
-                                ))}
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.movements.filters.item"
+                                )}
+                            </div>
+
+                            <select
+                                className={selectCls}
+                                value={
+                                    mvFilters.itemId
+                                }
+                                onChange={(e) =>
+                                    setMvFilters(
+                                        (state) => ({
+                                            ...state,
+                                            itemId:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            >
+
+                                <option value="">
+                                    {t(
+                                        "inventoryPage.movements.filters.allItems"
+                                    )}
+                                </option>
+
+                                {rawItems.map(
+                                    (it) => (
+                                        <option
+                                            key={
+                                                it._id
+                                            }
+                                            value={
+                                                it._id
+                                            }
+                                        >
+                                            {it.name}
+                                        </option>
+                                    )
+                                )}
+
                             </select>
                         </div>
 
+
                         <div>
-                            <div className="text-white/60 text-xs mb-1">Tipo</div>
-                            <select className={selectCls} value={mvFilters.type} onChange={(e) => setMvFilters((s) => ({ ...s, type: e.target.value }))}>
-                                <option value="">Todos</option>
-                                {["purchase", "sale", "waste", "adjust", "transfer", "conversion"].map((t) => (
-                                    <option key={t} value={t}>
-                                        {t}
-                                    </option>
-                                ))}
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.movements.filters.type"
+                                )}
+                            </div>
+
+                            <select
+                                className={selectCls}
+                                value={
+                                    mvFilters.type
+                                }
+                                onChange={(e) =>
+                                    setMvFilters(
+                                        (state) => ({
+                                            ...state,
+                                            type:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            >
+
+                                <option value="">
+                                    {t(
+                                        "inventoryPage.movements.filters.allTypes"
+                                    )}
+                                </option>
+
+                                {[
+                                    "purchase",
+                                    "sale",
+                                    "waste",
+                                    "adjust",
+                                    "transfer",
+                                    "conversion",
+                                ].map(
+                                    (
+                                        movementType
+                                    ) => (
+                                        <option
+                                            key={
+                                                movementType
+                                            }
+                                            value={
+                                                movementType
+                                            }
+                                        >
+                                            {getMovementTypeLabel(
+                                                movementType,
+                                                t
+                                            )}
+                                        </option>
+                                    )
+                                )}
+
                             </select>
                         </div>
 
-                        <div>
-                            <div className="text-white/60 text-xs mb-1">Desde</div>
-                            <input type="date" className={inputCls} value={mvFilters.from} onChange={(e) => setMvFilters((s) => ({ ...s, from: e.target.value }))} />
-                        </div>
 
                         <div>
-                            <div className="text-white/60 text-xs mb-1">Hasta</div>
-                            <input type="date" className={inputCls} value={mvFilters.to} onChange={(e) => setMvFilters((s) => ({ ...s, to: e.target.value }))} />
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.common.from"
+                                )}
+                            </div>
+
+                            <input
+                                type="date"
+                                className={inputCls}
+                                value={
+                                    mvFilters.from
+                                }
+                                onChange={(e) =>
+                                    setMvFilters(
+                                        (state) => ({
+                                            ...state,
+                                            from:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            />
                         </div>
+
+
+                        <div>
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.common.to"
+                                )}
+                            </div>
+
+                            <input
+                                type="date"
+                                className={inputCls}
+                                value={
+                                    mvFilters.to
+                                }
+                                onChange={(e) =>
+                                    setMvFilters(
+                                        (state) => ({
+                                            ...state,
+                                            to:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            />
+                        </div>
+
 
                         <div className="flex items-end">
+
                             <button
-                                onClick={() => qc.invalidateQueries({ queryKey: ["inventory/movements"] })}
+                                type="button"
+                                onClick={() =>
+                                    qc.invalidateQueries({
+                                        queryKey: [
+                                            "inventory/movements",
+                                        ],
+                                    })
+                                }
                                 className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80 hover:bg-white/10"
                             >
-                                Refrescar
+                                {t(
+                                    "inventoryPage.common.refresh"
+                                )}
                             </button>
+
                         </div>
+
                     </div>
+
 
                     <div className="mt-4 overflow-x-auto">
+
                         <table className="w-full text-[15px]">
+
                             <thead>
                             <tr className="text-left text-white/60 border-b border-white/10">
-                                <th className="py-3 pr-4 min-w-[160px]">Fecha</th>
-                                <th className="py-3 pr-4">Tipo</th>
-                                <th className="py-3 pr-4 min-w-[220px]">Artículo</th>
-                                <th className="py-3 pr-4">Cantidad</th>
-                                <th className="py-3 pr-4">Antes</th>
-                                <th className="py-3 pr-4">Después</th>
-                                <th className="py-3 pr-4">Costo</th>
-                                <th className="py-3 pr-4 min-w-[140px]">Usuario</th>
-                                <th className="py-3 pr-4">Nota</th>
+
+                                <th className="py-3 pr-4 min-w-[160px]">
+                                    {t(
+                                        "inventoryPage.movements.table.date"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.type"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4 min-w-[220px]">
+                                    {t(
+                                        "inventoryPage.movements.table.item"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.quantity"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.before"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.after"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.cost"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4 min-w-[140px]">
+                                    {t(
+                                        "inventoryPage.movements.table.user"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.movements.table.note"
+                                    )}
+                                </th>
+
                             </tr>
                             </thead>
+
+
                             <tbody>
+
                             {mvLoading ? (
+
                                 <tr>
-                                    <td colSpan={9} className="py-6 text-white/60">
-                                        Cargando...
+                                    <td
+                                        colSpan={9}
+                                        className="py-6 text-white/60"
+                                    >
+                                        {t(
+                                            "inventoryPage.common.loading"
+                                        )}
                                     </td>
                                 </tr>
-                            ) : movements.length === 0 ? (
+
+                            ) : movements.length ===
+                            0 ? (
+
                                 <tr>
-                                    <td colSpan={9} className="py-6 text-white/60">
-                                        No hay movimientos.
+                                    <td
+                                        colSpan={9}
+                                        className="py-6 text-white/60"
+                                    >
+                                        {t(
+                                            "inventoryPage.movements.empty"
+                                        )}
                                     </td>
                                 </tr>
+
                             ) : (
-                                movements.map((m) => (
-                                    <tr key={m._id} className="border-b border-white/5">
-                                        <td className="py-3 pr-4 text-white/80">
-                                            {m.createdAt ? new Date(m.createdAt).toLocaleString("es-DO") : "—"}
-                                        </td>
-                                        <td className="py-3 pr-4 text-white/80">{m.type}</td>
-                                        <td className="py-3 pr-4 text-white/80">{m.itemName || m?.itemId?.name || "—"}</td>
-                                        <td className="py-3 pr-4 text-white/80">{num(m.qty)}</td>
-                                        <td className="py-3 pr-4 text-white/80">{num(m.beforeStock)}</td>
-                                        <td className="py-3 pr-4 text-white/80">{num(m.afterStock)}</td>
-                                        <td className="py-3 pr-4 text-white/80">
-                                            {moneyRD(num(m.costAmount) || 0)}
-                                        </td>
 
-                                        <td className="py-3 pr-4 text-white/80">
-                                            {m?.createdBy?.name || m?.createdByName || "Sistema"}
-                                            {m?.createdBy?.role && (
-                                                <div className="text-xs text-white/40">
-                                                    {m.createdBy.role}
-                                                </div>
-                                            )}
-                                        </td>
+                                movements.map(
+                                    (m) => (
 
-                                        <td className="py-3 pr-4 text-white/60">{m.note || "—"}</td>
-                                    </tr>
-                                ))
+                                        <tr
+                                            key={
+                                                m._id
+                                            }
+                                            className="border-b border-white/5"
+                                        >
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {m.createdAt
+                                                    ? formatDateTime(
+                                                        m.createdAt,
+                                                        localization
+                                                    )
+                                                    : "—"
+                                                }
+
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {getMovementTypeLabel(
+                                                    m.type,
+                                                    t
+                                                )}
+
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {m.itemName ||
+                                                    m
+                                                        ?.itemId
+                                                        ?.name ||
+                                                    "—"
+                                                }
+
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+                                                {num(
+                                                    m.qty
+                                                )}
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+                                                {num(
+                                                    m.beforeStock
+                                                )}
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+                                                {num(
+                                                    m.afterStock
+                                                )}
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {money(
+                                                    num(
+                                                        m.costAmount
+                                                    ) ||
+                                                    0
+                                                )}
+
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {m
+                                                        ?.createdBy
+                                                        ?.name ||
+                                                    m
+                                                        ?.createdByName ||
+                                                    t(
+                                                        "inventoryPage.roles.system"
+                                                    )
+                                                }
+
+                                                {m
+                                                    ?.createdBy
+                                                    ?.role && (
+
+                                                    <div className="text-xs text-white/40">
+
+                                                        {getRoleLabel(
+                                                            m
+                                                                .createdBy
+                                                                .role,
+                                                            t
+                                                        )}
+
+                                                    </div>
+
+                                                )}
+
+                                            </td>
+
+
+                                            <td className="py-3 pr-4 text-white/60">
+                                                {m.note ||
+                                                    "—"
+                                                }
+                                            </td>
+
+                                        </tr>
+
+                                    )
+                                )
+
                             )}
+
                             </tbody>
+
                         </table>
+
                     </div>
+
                 </div>
             )}
+
 
             {/* CONSUMPTION TAB */}
             {tab === "consumption" && (
                 <div className={`${cardCls} p-4 mt-4`}>
+
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div>
-                            <div className="text-white/60 text-xs mb-1">Desde</div>
-                            <input type="date" className={inputCls} value={consFilters.from} onChange={(e) => setConsFilters((s) => ({ ...s, from: e.target.value }))} />
-                        </div>
 
                         <div>
-                            <div className="text-white/60 text-xs mb-1">Hasta</div>
-                            <input type="date" className={inputCls} value={consFilters.to} onChange={(e) => setConsFilters((s) => ({ ...s, to: e.target.value }))} />
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.common.from"
+                                )}
+                            </div>
+
+                            <input
+                                type="date"
+                                className={inputCls}
+                                value={
+                                    consFilters.from
+                                }
+                                onChange={(e) =>
+                                    setConsFilters(
+                                        (state) => ({
+                                            ...state,
+                                            from:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            />
                         </div>
 
+
                         <div>
-                            <div className="text-white/60 text-xs mb-1">Categoría</div>
-                            <select className={selectCls} value={consFilters.inventoryCategoryId} onChange={(e) => setConsFilters((s) => ({ ...s, inventoryCategoryId: e.target.value }))}>
-                                <option value="">Todas</option>
-                                {categories.map((c) => (
-                                    <option key={c._id} value={c._id}>
-                                        {c.name}
-                                    </option>
-                                ))}
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.common.to"
+                                )}
+                            </div>
+
+                            <input
+                                type="date"
+                                className={inputCls}
+                                value={
+                                    consFilters.to
+                                }
+                                onChange={(e) =>
+                                    setConsFilters(
+                                        (state) => ({
+                                            ...state,
+                                            to:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            />
+                        </div>
+
+
+                        <div>
+                            <div className="text-white/60 text-xs mb-1">
+                                {t(
+                                    "inventoryPage.filters.category"
+                                )}
+                            </div>
+
+                            <select
+                                className={selectCls}
+                                value={
+                                    consFilters
+                                        .inventoryCategoryId
+                                }
+                                onChange={(e) =>
+                                    setConsFilters(
+                                        (state) => ({
+                                            ...state,
+                                            inventoryCategoryId:
+                                            e.target.value,
+                                        })
+                                    )
+                                }
+                            >
+
+                                <option value="">
+                                    {t(
+                                        "inventoryPage.filters.allCategories"
+                                    )}
+                                </option>
+
+                                {categories.map(
+                                    (
+                                        category
+                                    ) => (
+                                        <option
+                                            key={
+                                                category._id
+                                            }
+                                            value={
+                                                category._id
+                                            }
+                                        >
+                                            {category.name}
+                                        </option>
+                                    )
+                                )}
+
                             </select>
                         </div>
 
+
                         <div className="flex items-end">
+
                             <button
-                                onClick={() => qc.invalidateQueries({ queryKey: ["inventory/consumption"] })}
+                                type="button"
+                                onClick={() =>
+                                    qc.invalidateQueries({
+                                        queryKey: [
+                                            "inventory/consumption",
+                                        ],
+                                    })
+                                }
                                 className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80 hover:bg-white/10"
                             >
-                                Refrescar
+                                {t(
+                                    "inventoryPage.common.refresh"
+                                )}
                             </button>
+
                         </div>
+
                     </div>
+
 
                     <div className="mt-4 overflow-x-auto">
+
                         <table className="w-full text-sm">
+
                             <thead>
                             <tr className="text-left text-white/60 border-b border-white/10">
-                                <th className="py-3 pr-4 min-w-[220px]">Artículo</th>
-                                <th className="py-3 pr-4">Cantidad</th>
-                                <th className="py-3 pr-4">Costo</th>
+
+                                <th className="py-3 pr-4 min-w-[220px]">
+                                    {t(
+                                        "inventoryPage.consumption.table.item"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.consumption.table.quantity"
+                                    )}
+                                </th>
+
+                                <th className="py-3 pr-4">
+                                    {t(
+                                        "inventoryPage.consumption.table.cost"
+                                    )}
+                                </th>
+
                             </tr>
                             </thead>
+
+
                             <tbody>
+
                             {consLoading ? (
+
                                 <tr>
-                                    <td colSpan={3} className="py-6 text-white/60">
-                                        Cargando...
+                                    <td
+                                        colSpan={3}
+                                        className="py-6 text-white/60"
+                                    >
+                                        {t(
+                                            "inventoryPage.common.loading"
+                                        )}
                                     </td>
                                 </tr>
-                            ) : consumptionRows.length === 0 ? (
+
+                            ) : consumptionRows.length ===
+                            0 ? (
+
                                 <tr>
-                                    <td colSpan={3} className="py-6 text-white/60">
-                                        No hay datos.
+                                    <td
+                                        colSpan={3}
+                                        className="py-6 text-white/60"
+                                    >
+                                        {t(
+                                            "inventoryPage.consumption.empty"
+                                        )}
                                     </td>
                                 </tr>
+
                             ) : (
-                                consumptionRows.map((r, idx) => (
-                                    <tr key={r._id || `${r.name}-${idx}`} className="border-b border-white/5">
-                                        <td className="py-3 pr-4 text-white/80">{r.name || r.itemName || "—"}</td>
-                                        <td className="py-3 pr-4 text-white/80">{num(r.qtySold ?? r.qty ?? 0)}</td>
-                                        <td className="py-3 pr-4 text-white/80">{moneyRD(num(r.revenue ?? 0))}</td>
-                                    </tr>
-                                ))
+
+                                consumptionRows.map(
+                                    (
+                                        row,
+                                        idx
+                                    ) => (
+
+                                        <tr
+                                            key={
+                                                row._id ||
+                                                `${row.name}-${idx}`
+                                            }
+                                            className="border-b border-white/5"
+                                        >
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {row.name ||
+                                                    row.itemName ||
+                                                    "—"
+                                                }
+
+                                            </td>
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {num(
+                                                    row.qtySold ??
+                                                    row.qty ??
+                                                    0
+                                                )}
+
+                                            </td>
+
+                                            <td className="py-3 pr-4 text-white/80">
+
+                                                {money(
+                                                    num(
+                                                        row.revenue ??
+                                                        0
+                                                    )
+                                                )}
+
+                                            </td>
+
+                                        </tr>
+
+                                    )
+                                )
+
                             )}
+
                             </tbody>
+
                         </table>
+
+
                         <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-white/10 pt-4">
+
                             <div className="text-sm text-white/60">
-                                Mostrando página{" "}
-                                <span className="text-white font-semibold">{consPagination.page}</span>{" "}
-                                de{" "}
-                                <span className="text-white font-semibold">{consPagination.totalPages}</span>
-                                {" "}·{" "}
-                                <span className="text-white font-semibold">{consPagination.total}</span>{" "}
-                                registros
+
+                                {t(
+                                    "inventoryPage.consumption.pagination.summary",
+                                    {
+                                        page:
+                                        consPagination.page,
+
+                                        totalPages:
+                                        consPagination.totalPages,
+
+                                        total:
+                                        consPagination.total,
+                                    }
+                                )}
+
                             </div>
+
 
                             <div className="flex items-center gap-2">
+
                                 <button
-                                    disabled={!consPagination.hasPrev || consLoading}
-                                    onClick={() => setConsPage((p) => Math.max(p - 1, 1))}
+                                    type="button"
+                                    disabled={
+                                        !consPagination.hasPrev ||
+                                        consLoading
+                                    }
+                                    onClick={() =>
+                                        setConsPage(
+                                            (p) =>
+                                                Math.max(
+                                                    p - 1,
+                                                    1
+                                                )
+                                        )
+                                    }
                                     className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    Anterior
+                                    {t(
+                                        "inventoryPage.pagination.previous"
+                                    )}
                                 </button>
+
 
                                 <button
-                                    disabled={!consPagination.hasNext || consLoading}
-                                    onClick={() => setConsPage((p) => p + 1)}
+                                    type="button"
+                                    disabled={
+                                        !consPagination.hasNext ||
+                                        consLoading
+                                    }
+                                    onClick={() =>
+                                        setConsPage(
+                                            (p) =>
+                                                p + 1
+                                        )
+                                    }
                                     className="px-4 py-2 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    Siguiente
+                                    {t(
+                                        "inventoryPage.pagination.next"
+                                    )}
                                 </button>
+
                             </div>
+
                         </div>
+
                     </div>
+
                 </div>
             )}
-
             {/* MERMA TAB */}
             {tab === "merma" && (
                 <YieldMermaDashboard
@@ -2093,7 +4241,8 @@ export default function Inventory({ plan, currentUser }) {
                     canUseInventory={canUseInventory}
                     ymd={mermaYMD}
                     setYmd={setMermaYMD}
-                    moneyRD={moneyRD}
+                    money={money}
+                    localization={localization}
                 />
             )}
 
@@ -2106,6 +4255,7 @@ export default function Inventory({ plan, currentUser }) {
             <ItemModal
                 open={itemModal.open}
                 mode={itemModal.mode}
+                money={money}
                 item={itemModal.item}
                 categories={categories}
                 suppliers={suppliers}
@@ -2134,6 +4284,7 @@ export default function Inventory({ plan, currentUser }) {
                 type={mvModal.type}
                 item={mvModal.item}
                 defaultYield={mvModal.yield}
+                money={money}
                 saving={createMovementMutation.isPending || createYieldMutation.isPending}
                 onClose={() => {
                     if (createMovementMutation.isPending || createYieldMutation.isPending) return;
@@ -2145,1186 +4296,3821 @@ export default function Inventory({ plan, currentUser }) {
         </div>
     );
 }
-function YieldMermaDashboard({ tenantId, canUseInventory, ymd, setYmd, moneyRD }) {
-    const [openHistory, setOpenHistory] = useState(false);
+function YieldMermaDashboard({
+                                 tenantId,
+                                 canUseInventory,
+                                 ymd,
+                                 setYmd,
+                                 money,
+                                 localization,
+                             }) {
+    const { t } =
+        useTranslation();
 
-    // Helpers
-    const safeNumber = (v) => {
-        const n = Number(v);
-        return Number.isFinite(n) ? n : 0;
+    const [
+        openHistory,
+        setOpenHistory,
+    ] =
+        useState(false);
+
+
+    const safeNumber = (
+        value
+    ) => {
+        const number =
+            Number(
+                value
+            );
+
+        return Number.isFinite(
+            number
+        )
+            ? number
+            : 0;
     };
 
-    const parseYieldFromNote = (note) => {
-        const text = String(note || "");
 
-        // Ejemplos esperados:
-        // "Yield: comprado 9 → final 7 | pasos: Hervido:8, Cocido:7"
-        // o "comprado 9" "final 7"
-        const boughtMatch = text.match(/comprad[oa]\s*([0-9]+(?:\.[0-9]+)?)/i);
-        const finalMatch = text.match(/final\s*([0-9]+(?:\.[0-9]+)?)/i);
+    const parseYieldFromNote = (
+        note
+    ) => {
+        const text =
+            String(
+                note ||
+                ""
+            );
 
-        const bought = boughtMatch ? Number(boughtMatch[1]) : null;
-        const final = finalMatch ? Number(finalMatch[1]) : null;
+        /*
+         * IMPORTANTE:
+         * Estos patrones permanecen en español
+         * por compatibilidad con registros históricos.
+         */
+        const boughtMatch =
+            text.match(
+                /comprad[oa]\s*([0-9]+(?:\.[0-9]+)?)/i
+            );
 
-        // Pasos: "pasos: Hervido:8, Cocido:7"
-        const stepsMatch = text.match(/pasos:\s*(.*)$/i);
+        const finalMatch =
+            text.match(
+                /final\s*([0-9]+(?:\.[0-9]+)?)/i
+            );
+
+        const bought =
+            boughtMatch
+                ? Number(
+                    boughtMatch[1]
+                )
+                : null;
+
+        const final =
+            finalMatch
+                ? Number(
+                    finalMatch[1]
+                )
+                : null;
+
+        const stepsMatch =
+            text.match(
+                /pasos:\s*(.*)$/i
+            );
+
         let steps = [];
-        if (stepsMatch && stepsMatch[1]) {
-            steps = stepsMatch[1]
-                .split(",")
-                .map((p) => p.trim())
-                .map((p) => {
-                    const [label, qty] = p.split(":").map((x) => x.trim());
-                    const q = Number(qty);
-                    return label ? { label, qtyAfter: Number.isFinite(q) ? q : null } : null;
-                })
-                .filter(Boolean);
+
+        if (
+            stepsMatch &&
+            stepsMatch[1]
+        ) {
+            steps =
+                stepsMatch[1]
+                    .split(",")
+                    .map(
+                        (part) =>
+                            part.trim()
+                    )
+                    .map(
+                        (part) => {
+                            const [
+                                label,
+                                qty,
+                            ] =
+                                part
+                                    .split(":")
+                                    .map(
+                                        (
+                                            value
+                                        ) =>
+                                            value.trim()
+                                    );
+
+                            const parsedQty =
+                                Number(
+                                    qty
+                                );
+
+                            return label
+                                ? {
+                                    label,
+
+                                    qtyAfter:
+                                        Number.isFinite(
+                                            parsedQty
+                                        )
+                                            ? parsedQty
+                                            : null,
+                                }
+                                : null;
+                        }
+                    )
+                    .filter(
+                        Boolean
+                    );
         }
-
-        return { bought, final, steps };
-    };
-
-    const { data: wasteResp, isLoading } = useQuery({
-        queryKey: ["inventory/merma/yield-movements", tenantId, ymd],
-        enabled: canUseInventory && Boolean(tenantId),
-        queryFn: async () => {
-            const res = await api.get("/api/inventory/movements", {
-                params: {
-                    type: "waste",
-                    from: ymd ? toISOStartOfDayLocal(ymd) : undefined,
-                    to: ymd ? toISOEndOfDayLocal(ymd) : undefined,
-                    limit: 500,
-                },
-            });
-            return res.data;
-        },
-        staleTime: 5_000,
-    });
-
-    const wasteMovements = useMemo(() => {
-        const list = wasteResp?.movements;
-        return Array.isArray(list) ? list : [];
-    }, [wasteResp]);
-
-    const kpis = useMemo(() => {
-        const list = wasteMovements;
-
-        let wasteQty = 0;
-        let wasteCost = 0;
-
-        let boughtTotal = 0;
-        let finalTotal = 0;
-        let hasYieldMeta = 0;
-
-        for (const m of list) {
-            wasteQty += safeNumber(m.qty);
-            wasteCost += safeNumber(m.costAmount);
-
-            const meta = parseYieldFromNote(m.note);
-            if (meta.bought != null && meta.final != null) {
-                boughtTotal += safeNumber(meta.bought);
-                finalTotal += safeNumber(meta.final);
-                hasYieldMeta += 1;
-            }
-        }
-
-        const avgWasteUnitCost = wasteQty > 0 ? wasteCost / wasteQty : 0;
-        const yieldPct = boughtTotal > 0 ? (finalTotal / boughtTotal) * 100 : 0;
-        const wastePct = boughtTotal > 0 ? ((boughtTotal - finalTotal) / boughtTotal) * 100 : 0;
 
         return {
-            movementsCount: list.length,
-
-            wasteQty,
-            wasteCost,
-            avgWasteUnitCost,
-
-            boughtTotal,
-            finalTotal,
-            yieldPct,
-            wastePct,
-            hasYieldMeta,
+            bought,
+            final,
+            steps,
         };
-    }, [wasteMovements]);
+    };
 
-    const latest = useMemo(() => {
-        return [...wasteMovements]
-            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-            .slice(0, 10);
-    }, [wasteMovements]);
+
+    const {
+        data:
+            wasteResp,
+
+        isLoading,
+    } =
+        useQuery({
+            queryKey: [
+                "inventory/merma/yield-movements",
+                tenantId,
+                ymd,
+            ],
+
+            enabled:
+                canUseInventory &&
+                Boolean(
+                    tenantId
+                ),
+
+            queryFn:
+                async () => {
+                    const res =
+                        await api.get(
+                            "/api/inventory/movements",
+                            {
+                                params: {
+                                    type:
+                                        "waste",
+
+                                    from:
+                                        ymd
+                                            ? toISOStartOfDayInTimezoneGlobal(
+                                                ymd,
+                                                localization
+                                            )
+                                            : undefined,
+
+                                    to:
+                                        ymd
+                                            ? toISOEndOfDayInTimezoneGlobal(
+                                                ymd,
+                                                localization
+                                            )
+                                            : undefined,
+
+                                    limit:
+                                        500,
+                                },
+                            }
+                        );
+
+                    return res.data;
+                },
+
+            staleTime:
+                5_000,
+        });
+
+
+    const wasteMovements =
+        useMemo(
+            () => {
+                const list =
+                    wasteResp
+                        ?.movements;
+
+                return Array.isArray(
+                    list
+                )
+                    ? list
+                    : [];
+            },
+            [
+                wasteResp,
+            ]
+        );
+
+
+    const kpis =
+        useMemo(
+            () => {
+                const list =
+                    wasteMovements;
+
+                let wasteQty =
+                    0;
+
+                let wasteCost =
+                    0;
+
+                let boughtTotal =
+                    0;
+
+                let finalTotal =
+                    0;
+
+                let hasYieldMeta =
+                    0;
+
+                for (
+                    const movement
+                    of list
+                    ) {
+                    wasteQty +=
+                        safeNumber(
+                            movement.qty
+                        );
+
+                    wasteCost +=
+                        safeNumber(
+                            movement.costAmount
+                        );
+
+                    const meta =
+                        parseYieldFromNote(
+                            movement.note
+                        );
+
+                    if (
+                        meta.bought !=
+                        null &&
+                        meta.final !=
+                        null
+                    ) {
+                        boughtTotal +=
+                            safeNumber(
+                                meta.bought
+                            );
+
+                        finalTotal +=
+                            safeNumber(
+                                meta.final
+                            );
+
+                        hasYieldMeta +=
+                            1;
+                    }
+                }
+
+                const avgWasteUnitCost =
+                    wasteQty >
+                    0
+                        ? wasteCost /
+                        wasteQty
+                        : 0;
+
+                const yieldPct =
+                    boughtTotal >
+                    0
+                        ? (
+                            finalTotal /
+                            boughtTotal
+                        ) *
+                        100
+                        : 0;
+
+                const wastePct =
+                    boughtTotal >
+                    0
+                        ? (
+                            (
+                                boughtTotal -
+                                finalTotal
+                            ) /
+                            boughtTotal
+                        ) *
+                        100
+                        : 0;
+
+                return {
+                    movementsCount:
+                    list.length,
+
+                    wasteQty,
+
+                    wasteCost,
+
+                    avgWasteUnitCost,
+
+                    boughtTotal,
+
+                    finalTotal,
+
+                    yieldPct,
+
+                    wastePct,
+
+                    hasYieldMeta,
+                };
+            },
+            [
+                wasteMovements,
+            ]
+        );
+
+
+    const latest =
+        useMemo(
+            () => {
+                return [
+                    ...wasteMovements,
+                ]
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) =>
+                            new Date(
+                                b.createdAt ||
+                                0
+                            ) -
+                            new Date(
+                                a.createdAt ||
+                                0
+                            )
+                    )
+                    .slice(
+                        0,
+                        10
+                    );
+            },
+            [
+                wasteMovements,
+            ]
+        );
+
 
     return (
         <div className={cardCls + " p-5"}>
+
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+
                 <div>
-                    <div className="text-white font-bold text-lg">Merma (Yield)</div>
-                    <div className="text-white/60 text-sm">
-                        Historial y KPIs basados en movimientos tipo <span className="text-white/80">waste</span>.
+
+                    <div className="text-white font-bold text-lg">
+                        {t(
+                            "inventoryPage.yieldDashboard.title"
+                        )}
                     </div>
 
-                    {kpis.hasYieldMeta === 0 ? (
+                    <div className="text-white/60 text-sm">
+                        {t(
+                            "inventoryPage.yieldDashboard.description"
+                        )}
+                    </div>
+
+                    {kpis.hasYieldMeta ===
+                    0 ? (
+
                         <div className="text-[11px] text-yellow-200/80 mt-2">
-                            Nota: Para calcular “Comprado/Final/Rendimiento”, el note del yield debe incluir “comprado X” y “final Y”.
-                            (Si no, igual verás Merma cantidad/costo).
+
+                            {t(
+                                "inventoryPage.yieldDashboard.metadataHelp"
+                            )}
+
                         </div>
+
                     ) : null}
+
                 </div>
 
+
                 <div className="flex items-center gap-2">
+
                     <input
                         type="date"
-                        value={ymd}
-                        onChange={(e) => setYmd(e.target.value)}
+                        value={
+                            ymd
+                        }
+                        onChange={(e) =>
+                            setYmd(
+                                e.target.value
+                            )
+                        }
                         className="px-3 py-2 rounded-xl bg-[#0b0b0b] border border-gray-800/30 text-white"
                     />
 
                     <button
                         type="button"
-                        onClick={() => setOpenHistory(true)}
+                        onClick={() =>
+                            setOpenHistory(
+                                true
+                            )
+                        }
                         className="px-3 py-2 rounded-xl bg-[#1a1a1a] border border-gray-800/40 text-white font-semibold hover:bg-[#262626]"
                     >
-                        Ver historial
+                        {t(
+                            "inventoryPage.yieldDashboard.viewHistory"
+                        )}
                     </button>
+
                 </div>
+
             </div>
 
-            {/* KPI cards */}
+
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Comprado (total)</div>
-                    <div className="text-lg font-semibold text-white">{kpis.boughtTotal || 0}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        Movimientos: {kpis.movementsCount}
-                    </div>
-                </div>
 
                 <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Final usable (total)</div>
-                    <div className="text-lg font-semibold text-white">{kpis.finalTotal || 0}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        Rendimiento: {kpis.yieldPct.toFixed(1)}%
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.purchasedTotal"
+                        )}
                     </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {kpis.boughtTotal ||
+                            0
+                        }
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.movements",
+                            {
+                                count:
+                                kpis.movementsCount,
+                            }
+                        )}
+
+                    </div>
+
                 </div>
 
-                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Merma (cantidad)</div>
-                    <div className="text-lg font-semibold text-white">{kpis.wasteQty}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        % Merma: {kpis.wastePct.toFixed(1)}%
-                    </div>
-                </div>
 
                 <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Merma (costo)</div>
-                    <div className="text-lg font-semibold text-white">{moneyRD(kpis.wasteCost)}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        Costo prom./u merma: {moneyRD(kpis.avgWasteUnitCost)}
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.finalUsable"
+                        )}
                     </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {kpis.finalTotal ||
+                            0
+                        }
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.yieldPercent",
+                            {
+                                value:
+                                    kpis
+                                        .yieldPct
+                                        .toFixed(
+                                            1
+                                        ),
+                            }
+                        )}
+
+                    </div>
+
                 </div>
 
-                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Costo prom. por unidad (merma)</div>
-                    <div className="text-lg font-semibold text-white">{moneyRD(kpis.avgWasteUnitCost)}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        wasteCost / wasteQty
-                    </div>
-                </div>
 
                 <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                    <div className="text-xs text-gray-400">Registros con metadata (comprado/final)</div>
-                    <div className="text-lg font-semibold text-white">{kpis.hasYieldMeta}</div>
-                    <div className="text-[11px] text-gray-500 mt-1">
-                        Si es 0, agrega “comprado/final” al note del yield.
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.wasteQuantity"
+                        )}
                     </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {kpis.wasteQty}
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.wastePercent",
+                            {
+                                value:
+                                    kpis
+                                        .wastePct
+                                        .toFixed(
+                                            1
+                                        ),
+                            }
+                        )}
+
+                    </div>
+
                 </div>
+
+
+                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.wasteCost"
+                        )}
+                    </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {money(
+                            kpis.wasteCost
+                        )}
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.averageWasteCost",
+                            {
+                                value:
+                                    money(
+                                        kpis.avgWasteUnitCost
+                                    ),
+                            }
+                        )}
+
+                    </div>
+
+                </div>
+
+
+                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.averageWasteUnit"
+                        )}
+                    </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {money(
+                            kpis.avgWasteUnitCost
+                        )}
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.averageWasteFormula"
+                        )}
+                    </div>
+
+                </div>
+
+
+                <div className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
+
+                    <div className="text-xs text-gray-400">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.metadataRecords"
+                        )}
+                    </div>
+
+                    <div className="text-lg font-semibold text-white">
+                        {kpis.hasYieldMeta}
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+                        {t(
+                            "inventoryPage.yieldDashboard.kpis.metadataHelp"
+                        )}
+                    </div>
+
+                </div>
+
             </div>
 
-            {/* Últimas mermas */}
+
             <div className="mt-4 rounded-2xl bg-[#0b0b0b] border border-gray-800/50">
+
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800/50">
-                    <div className="text-white font-bold">Últimas mermas</div>
-                    <div className="text-xs text-white/50">{ymd}</div>
+
+                    <div className="text-white font-bold">
+                        {t(
+                            "inventoryPage.yieldDashboard.latest.title"
+                        )}
+                    </div>
+
+                    <div className="text-xs text-white/50">
+                        {ymd}
+                    </div>
+
                 </div>
+
 
                 <div className="p-4 space-y-3">
+
                     {isLoading ? (
-                        <div className="text-white/60">Cargando...</div>
-                    ) : latest.length === 0 ? (
-                        <div className="text-white/60">No hay mermas registradas para este día.</div>
+
+                        <div className="text-white/60">
+                            {t(
+                                "inventoryPage.common.loading"
+                            )}
+                        </div>
+
+                    ) : latest.length ===
+                    0 ? (
+
+                        <div className="text-white/60">
+                            {t(
+                                "inventoryPage.yieldDashboard.latest.empty"
+                            )}
+                        </div>
+
                     ) : (
-                        latest.map((m) => {
-                            const meta = parseYieldFromNote(m.note);
-                            const stepsArr = meta.steps || [];
 
-                            const itemName =
-                                m?.itemId?.name ||
-                                m?.itemName ||
-                                m?.itemId ||
-                                "—";
+                        latest.map(
+                            (
+                                movement
+                            ) => {
+                                const meta =
+                                    parseYieldFromNote(
+                                        movement.note
+                                    );
 
-                            return (
-                                <div key={m._id} className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <div className="text-white font-semibold truncate">{itemName}</div>
+                                const stepsArr =
+                                    meta.steps ||
+                                    [];
 
-                                            <div className="text-xs text-gray-400 mt-1">
-                                                Merma: <span className="text-gray-200">{safeNumber(m.qty)}</span> · Costo:{" "}
-                                                <span className="text-gray-200">{moneyRD(safeNumber(m.costAmount))}</span>
-                                            </div>
+                                const itemName =
+                                    movement
+                                        ?.itemId
+                                        ?.name ||
+                                    movement
+                                        ?.itemName ||
+                                    movement
+                                        ?.itemId ||
+                                    "—";
 
-                                            {(meta.bought != null && meta.final != null) ? (
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    Comprado: <span className="text-gray-200">{meta.bought}</span> · Final:{" "}
-                                                    <span className="text-gray-200">{meta.final}</span>
-                                                </div>
-                                            ) : null}
-
-                                            {String(m.note || "").trim() ? (
-                                                <div className="text-xs text-gray-400 mt-2">
-                                                    Nota: <span className="text-gray-200">{String(m.note).trim()}</span>
-                                                </div>
-                                            ) : null}
-
-                                            {stepsArr.length > 0 ? (
-                                                <div className="mt-2 flex flex-wrap gap-2">
-                                                    {stepsArr.slice(0, 8).map((s, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className="text-[11px] px-2 py-1 rounded-lg bg-black/30 border border-white/10 text-gray-200"
-                                                        >
-                              {s.label}: {s.qtyAfter ?? "—"}
-                            </span>
-                                                    ))}
-                                                    {stepsArr.length > 8 ? (
-                                                        <span className="text-[11px] px-2 py-1 rounded-lg bg-black/30 border border-white/10 text-gray-400">
-                              +{stepsArr.length - 8} más
-                            </span>
-                                                    ) : null}
-                                                </div>
-                                            ) : null}
-                                        </div>
-
-                                        <div className="text-xs text-white/50 shrink-0">
-                                            {m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-            </div>
-
-            {/* History Modal */}
-            <Modal open={openHistory} title={`Historial de merma (Yield) — ${ymd}`} onClose={() => setOpenHistory(false)}>
-                <div className="space-y-3">
-                    {wasteMovements.length === 0 ? (
-                        <div className="text-white/60">No hay registros.</div>
-                    ) : (
-                        wasteMovements
-                            .slice()
-                            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-                            .map((m) => {
-                                const itemName = m?.itemId?.name || m?.itemName || m?.itemId || "—";
                                 return (
-                                    <div key={m._id} className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4">
-                                        <div className="text-white font-semibold">{itemName}</div>
-                                        <div className="text-xs text-gray-400 mt-1">
-                                            Merma: <span className="text-gray-200">{safeNumber(m.qty)}</span> · Costo:{" "}
-                                            <span className="text-gray-200">{moneyRD(safeNumber(m.costAmount))}</span>
-                                        </div>
-                                        {String(m.note || "").trim() ? (
-                                            <div className="text-xs text-gray-400 mt-2">
-                                                Nota: <span className="text-gray-200">{String(m.note).trim()}</span>
+                                    <div
+                                        key={
+                                            movement._id
+                                        }
+                                        className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4"
+                                    >
+
+                                        <div className="flex items-start justify-between gap-3">
+
+                                            <div className="min-w-0">
+
+                                                <div className="text-white font-semibold truncate">
+                                                    {itemName}
+                                                </div>
+
+
+                                                <div className="text-xs text-gray-400 mt-1">
+
+                                                    {t(
+                                                        "inventoryPage.yieldDashboard.latest.waste"
+                                                    )}
+                                                    :{" "}
+
+                                                    <span className="text-gray-200">
+                                                        {safeNumber(
+                                                            movement.qty
+                                                        )}
+                                                    </span>
+
+                                                    {" · "}
+
+                                                    {t(
+                                                        "inventoryPage.yieldDashboard.latest.cost"
+                                                    )}
+                                                    :{" "}
+
+                                                    <span className="text-gray-200">
+                                                        {money(
+                                                            safeNumber(
+                                                                movement.costAmount
+                                                            )
+                                                        )}
+                                                    </span>
+
+                                                </div>
+
+
+                                                {meta.bought !=
+                                                null &&
+                                                meta.final !=
+                                                null ? (
+
+                                                    <div className="text-xs text-gray-500 mt-1">
+
+                                                        {t(
+                                                            "inventoryPage.yieldDashboard.latest.purchased"
+                                                        )}
+                                                        :{" "}
+
+                                                        <span className="text-gray-200">
+                                                            {meta.bought}
+                                                        </span>
+
+                                                        {" · "}
+
+                                                        {t(
+                                                            "inventoryPage.yieldDashboard.latest.final"
+                                                        )}
+                                                        :{" "}
+
+                                                        <span className="text-gray-200">
+                                                            {meta.final}
+                                                        </span>
+
+                                                    </div>
+
+                                                ) : null}
+
+
+                                                {String(
+                                                    movement.note ||
+                                                    ""
+                                                ).trim() ? (
+
+                                                    <div className="text-xs text-gray-400 mt-2">
+
+                                                        {t(
+                                                            "inventoryPage.yieldDashboard.latest.note"
+                                                        )}
+                                                        :{" "}
+
+                                                        <span className="text-gray-200">
+                                                            {String(
+                                                                movement.note
+                                                            ).trim()}
+                                                        </span>
+
+                                                    </div>
+
+                                                ) : null}
+
+
+                                                {stepsArr.length >
+                                                0 ? (
+
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+
+                                                        {stepsArr
+                                                            .slice(
+                                                                0,
+                                                                8
+                                                            )
+                                                            .map(
+                                                                (
+                                                                    step,
+                                                                    idx
+                                                                ) => (
+
+                                                                    <span
+                                                                        key={
+                                                                            idx
+                                                                        }
+                                                                        className="text-[11px] px-2 py-1 rounded-lg bg-black/30 border border-white/10 text-gray-200"
+                                                                    >
+                                                                        {
+                                                                            step.label
+                                                                        }
+                                                                        :{" "}
+                                                                        {
+                                                                            step.qtyAfter ??
+                                                                            "—"
+                                                                        }
+                                                                    </span>
+
+                                                                )
+                                                            )}
+
+
+                                                        {stepsArr.length >
+                                                        8 ? (
+
+                                                            <span className="text-[11px] px-2 py-1 rounded-lg bg-black/30 border border-white/10 text-gray-400">
+
+                                                                +{
+                                                                stepsArr.length -
+                                                                8
+                                                            }{" "}
+
+                                                                {t(
+                                                                    "inventoryPage.yieldDashboard.latest.more"
+                                                                )}
+
+                                                            </span>
+
+                                                        ) : null}
+
+                                                    </div>
+
+                                                ) : null}
+
                                             </div>
-                                        ) : null}
-                                        <div className="text-[11px] text-gray-500 mt-2">
-                                            {m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}
+
+
+                                            <div className="text-xs text-white/50 shrink-0">
+
+                                                {movement.createdAt
+                                                    ? formatDateTime(
+                                                        movement.createdAt,
+                                                        localization
+                                                    )
+                                                    : ""
+                                                }
+
+                                            </div>
+
                                         </div>
+
                                     </div>
                                 );
-                            })
+                            }
+                        )
+
                     )}
+
                 </div>
+
+            </div>
+
+
+            <Modal
+                open={
+                    openHistory
+                }
+                title={t(
+                    "inventoryPage.yieldDashboard.history.title",
+                    {
+                        date:
+                        ymd,
+                    }
+                )}
+                onClose={() =>
+                    setOpenHistory(
+                        false
+                    )
+                }
+            >
+
+                <div className="space-y-3">
+
+                    {wasteMovements.length ===
+                    0 ? (
+
+                        <div className="text-white/60">
+                            {t(
+                                "inventoryPage.yieldDashboard.history.empty"
+                            )}
+                        </div>
+
+                    ) : (
+
+                        wasteMovements
+                            .slice()
+                            .sort(
+                                (
+                                    a,
+                                    b
+                                ) =>
+                                    new Date(
+                                        b.createdAt ||
+                                        0
+                                    ) -
+                                    new Date(
+                                        a.createdAt ||
+                                        0
+                                    )
+                            )
+                            .map(
+                                (
+                                    movement
+                                ) => {
+                                    const itemName =
+                                        movement
+                                            ?.itemId
+                                            ?.name ||
+                                        movement
+                                            ?.itemName ||
+                                        movement
+                                            ?.itemId ||
+                                        "—";
+
+                                    return (
+                                        <div
+                                            key={
+                                                movement._id
+                                            }
+                                            className="rounded-xl bg-[#0f0f0f] border border-gray-800/40 p-4"
+                                        >
+
+                                            <div className="text-white font-semibold">
+                                                {itemName}
+                                            </div>
+
+                                            <div className="text-xs text-gray-400 mt-1">
+
+                                                {t(
+                                                    "inventoryPage.yieldDashboard.latest.waste"
+                                                )}
+                                                :{" "}
+
+                                                <span className="text-gray-200">
+                                                    {safeNumber(
+                                                        movement.qty
+                                                    )}
+                                                </span>
+
+                                                {" · "}
+
+                                                {t(
+                                                    "inventoryPage.yieldDashboard.latest.cost"
+                                                )}
+                                                :{" "}
+
+                                                <span className="text-gray-200">
+                                                    {money(
+                                                        safeNumber(
+                                                            movement.costAmount
+                                                        )
+                                                    )}
+                                                </span>
+
+                                            </div>
+
+
+                                            {String(
+                                                movement.note ||
+                                                ""
+                                            ).trim() ? (
+
+                                                <div className="text-xs text-gray-400 mt-2">
+
+                                                    {t(
+                                                        "inventoryPage.yieldDashboard.latest.note"
+                                                    )}
+                                                    :{" "}
+
+                                                    <span className="text-gray-200">
+                                                        {String(
+                                                            movement.note
+                                                        ).trim()}
+                                                    </span>
+
+                                                </div>
+
+                                            ) : null}
+
+
+                                            <div className="text-[11px] text-gray-500 mt-2">
+
+                                                {movement.createdAt
+                                                    ? formatDateTime(
+                                                        movement.createdAt,
+                                                        localization
+                                                    )
+                                                    : ""
+                                                }
+
+                                            </div>
+
+                                        </div>
+                                    );
+                                }
+                            )
+
+                    )}
+
+                </div>
+
             </Modal>
+
         </div>
     );
 }
-function ItemModal({ open, mode, item, categories, suppliers, dishTemplates, ingredients, tenantId, queryClient, onClose, onSave }) {
-    const isEdit = mode === "edit";
-    const { enqueueSnackbar } = useSnackbar();
+function ItemModal({
+                       open,
+                       mode,
+                       item,
+                       categories,
+                       suppliers,
+                       dishTemplates,
+                       ingredients,
+                       tenantId,
+                       queryClient,
+                       money,
+                       onClose,
+                       onSave,
+                   }) {
+    const { t } =
+        useTranslation();
+
+    const isEdit =
+        mode ===
+        "edit";
+
+    const {
+        enqueueSnackbar,
+    } =
+        useSnackbar();
 
 
-    const [createMode, setCreateMode] = useState("new"); // new | fromDish
-    const [selectedDishId, setSelectedDishId] = useState("");
-    const [selectedDishInventoryType, setSelectedDishInventoryType] = useState("direct");
+    const [
+        createMode,
+        setCreateMode,
+    ] =
+        useState(
+            "new"
+        );
 
-    const selectedDish = useMemo(() => {
-        return (dishTemplates || []).find((d) => String(d._id) === String(selectedDishId)) || null;
-    }, [dishTemplates, selectedDishId]);
+    const [
+        selectedDishId,
+        setSelectedDishId,
+    ] =
+        useState(
+            ""
+        );
 
-// ✅ Ingredientes vienen del padre (Inventory). Evita doble fetch y mantiene consistencia.
-    // ✅ Ingredientes vienen del padre (Inventory). Evita doble fetch y mantiene consistencia.
-    const ingredientsList = Array.isArray(ingredients) ? ingredients : [];
-
-// ✅ Lista “limpia” para UI (id y name asegurados, ordenada)
-    const availableIngredients = useMemo(() => {
-        return (ingredientsList || [])
-            .map((x) => ({ _id: String(x._id), name: x.name }))
-            .filter((x) => x._id && x.name)
-            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    }, [ingredientsList]);
-
-    const [form, setForm] = useState({
-        name: "",
-        unit: "unidad",
-        inventoryType: "ingredient",
-        allowNegativeStock: true,
-        stockMin: 0,
-        lastCost: "",
-        avgCost: "",
-        inventoryCategoryId: "",
-        supplierId: "",
-    });
-
-// -----------------------------
-// Receta (opcional) cuando creas desde plato existente
-    const [recipeLines, setRecipeLines] = useState([]); // [{ ingredientId, qty }]
-    const [pickedIngredientId, setPickedIngredientId] = useState("");
-    const [pickedQty, setPickedQty] = useState("1");
-
-// Crear ingrediente inline
-    const [newIngName, setNewIngName] = useState("");
-    const [newIngCategoryId, setNewIngCategoryId] = useState("");
-
-// Loading states
-    const [savingRecipe, setSavingRecipe] = useState(false);
-    const [creatingIngredient, setCreatingIngredient] = useState(false);
-
-    const normalizeQty = (v) => {
-        const n = Number(v);
-        if (!Number.isFinite(n) || n <= 0) return null;
-        return Number(n.toFixed(6));
-    };
+    const [
+        selectedDishInventoryType,
+        setSelectedDishInventoryType,
+    ] =
+        useState(
+            "direct"
+        );
 
 
-    React.useEffect(() => {
-        if (!open) return;
-        setCreateMode("new");
-        setSelectedDishId("");
-        setSelectedDishInventoryType("direct");
-        setForm({
-            name: item?.name || "",
-            unit: item?.unit || "unidad",
-            inventoryType: normalizeInventoryType(item?.inventoryType || "ingredient"),
-            allowNegativeStock: item?.allowNegativeStock !== false,
-            stockMin: item?.stockMin ?? 0,
-            lastCost: item?.lastCost ?? "",
-            avgCost: item?.avgCost ?? "",
-            inventoryCategoryId: item?.inventoryCategoryId?._id || item?.inventoryCategoryId || "",
-            supplierId: item?.supplierId?._id || item?.supplierId || "",
-        });
-    }, [open, item]);
+    const selectedDish =
+        useMemo(
+            () => {
+                return (
+                    (
+                        dishTemplates ||
+                        []
+                    ).find(
+                        (
+                            dish
+                        ) =>
+                            String(
+                                dish._id
+                            ) ===
+                            String(
+                                selectedDishId
+                            )
+                    ) ||
+                    null
+                );
+            },
+            [
+                dishTemplates,
+                selectedDishId,
+            ]
+        );
 
-// Cargar receta existente del plato (si viene en /api/dishes)
-    React.useEffect(() => {
-        if (!open) return;
-        if (!selectedDishId) {
-            setRecipeLines([]);
-            return;
-        }
 
-        const raw = selectedDish?.recipe;
-        if (Array.isArray(raw)) {
-            const mapped = raw
-                .map((r) => {
-                    const ingredientId =
-                        r?.ingredientDishId ||
-                        r?.ingredientId ||
-                        r?.dishId ||
-                        r?.inventoryItemId ||
-                        r?._id ||
-                        null;                    const qty = r?.qty ?? r?.quantity ?? null;
-                    if (!ingredientId || qty == null) return null;
-                    const q = normalizeQty(qty);
-                    if (!q) return null;
-                    return { ingredientId: String(ingredientId), qty: q };
-                })
-                .filter(Boolean);
+    const ingredientsList =
+        Array.isArray(
+            ingredients
+        )
+            ? ingredients
+            : [];
 
-            setRecipeLines(mapped);
-        } else {
-            setRecipeLines([]);
-        }
-    }, [open, selectedDishId, selectedDish]);
 
-    React.useEffect(() => {
-        if (!open) return;
-        if (!isEdit && createMode === "fromDish" && selectedDish) {
-            setForm((s) => ({
-                ...s,
-                name: selectedDish.name || s.name,
-            }));
-        }
-    }, [open, isEdit, createMode, selectedDish]);
-    const handleSaveInventory = async () => {
-        const name = String(form.name || "").trim();
-        if (!name) {
-            enqueueSnackbar("Nombre requerido", { variant: "warning" });
-            return;
-        }
+    const availableIngredients =
+        useMemo(
+            () => {
+                return (
+                    ingredientsList ||
+                    []
+                )
+                    .map(
+                        (
+                            ingredient
+                        ) => ({
+                            _id:
+                                String(
+                                    ingredient._id
+                                ),
 
-        const normalizedType = isEdit
-            ? normalizeInventoryType(form.inventoryType)
-            : createMode === "fromDish"
-                ? selectedDishInventoryType
-                : "ingredient";
+                            name:
+                            ingredient.name,
 
-        const payload = {
-            name,
-            unit: form.unit,
-            inventoryType: normalizedType,
-            allowNegativeStock:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? form.allowNegativeStock !== false
-                    : false,
-            stockMin:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? Number(form.stockMin || 0)
-                    : null,
-            lastCost:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? form.lastCost === "" ? null : Number(form.lastCost)
-                    : null,
-            avgCost:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? form.avgCost === "" ? null : Number(form.avgCost)
-                    : null,
-            inventoryCategoryId:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? form.inventoryCategoryId || null
-                    : null,
-            supplierId:
-                normalizedType === "direct" || normalizedType === "ingredient"
-                    ? form.supplierId || null
-                    : null,
-        };
+                            unit:
+                                ingredient.unit ||
+                                "unidad",
 
-        // Si es "basado en plato existente", NO creamos otro Dish.
-// Actualizamos el MISMO dish usando existingDishId
-        if (!isEdit && createMode === "fromDish") {
-            if (!selectedDishId) {
-                enqueueSnackbar("Selecciona un plato primero.", { variant: "warning" });
-                return;
-            }
-            if (!["direct", "recipe"].includes(selectedDishInventoryType)) {
-                enqueueSnackbar("Selecciona si el plato será stock directo o plato con receta.", {
-                    variant: "warning",
-                });
-                return;
-            }
-
-            if (selectedDishInventoryType === "recipe" && recipeLines.length === 0) {
-                enqueueSnackbar("Agrega al menos un ingrediente para crear un plato con receta.", {
-                    variant: "warning",
-                });
-                return;
-            }
-
-            // 1) Guardar receta si existe (opcional)
-            if (recipeLines.length > 0) {
-                try {
-                    setSavingRecipe(true);
-
-                    // Normaliza receta al formato esperado por backend: [{ ingredientId, qty }]
-                    const recipePayload = (recipeLines || [])
-                        .map((r) => {
-                            const id =
-                                r?.dishId ||
-                                r?.ingredientId ||
-                                r?.ingredientDishId ||
-                                r?.inventoryItemId ||
-                                null;
-
-                            const qty = normalizeQty(r?.qty);
-
-                            if (!id || !qty || qty <= 0) return null;
-
-                            return {
-                                ingredientDishId: String(id),
-                                dishId: String(id),
-                                inventoryItemId: String(id),
-                                qty,
-                                unit: r?.unit || "unidad",
-                            };
+                            stockCurrent:
+                                ingredient.stockCurrent ??
+                                0,
                         })
-                        .filter(Boolean);
+                    )
+                    .filter(
+                        (
+                            ingredient
+                        ) =>
+                            ingredient._id &&
+                            ingredient.name
+                    )
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) =>
+                            String(
+                                a.name
+                            ).localeCompare(
+                                String(
+                                    b.name
+                                )
+                            )
+                    );
+            },
+            [
+                ingredientsList,
+            ]
+        );
 
-                    await api.put(`/api/dishes/${selectedDishId}/recipe`, {
-                        recipe: recipePayload,
-                    });
 
-                    enqueueSnackbar("Receta guardada.", { variant: "success" });
-                } catch (e) {
-                    const msg =
-                        e?.response?.data?.message ||
-                        e?.message ||
-                        "No se pudo guardar la receta.";
-                    enqueueSnackbar(msg, { variant: "error" });
-                    return; // no seguimos si la receta falló
-                } finally {
-                    setSavingRecipe(false);
-                }
-            }
+    const [
+        form,
+        setForm,
+    ] =
+        useState({
+            name:
+                "",
 
-            // 2) Guardar habilitación inventario del plato (tu flujo actual)
-            payload.inventoryType = selectedDishInventoryType;
-            payload.allowNegativeStock = selectedDishInventoryType === "direct";
-            payload.existingDishId = selectedDishId;
+            unit:
+                "unidad",
+
+            inventoryType:
+                "ingredient",
+
+            allowNegativeStock:
+                true,
+
+            stockMin:
+                0,
+
+            lastCost:
+                "",
+
+            avgCost:
+                "",
+
+            inventoryCategoryId:
+                "",
+
+            supplierId:
+                "",
+        });
+
+
+    const [
+        recipeLines,
+        setRecipeLines,
+    ] =
+        useState([]);
+
+    const [
+        pickedIngredientId,
+        setPickedIngredientId,
+    ] =
+        useState("");
+
+    const [
+        pickedQty,
+        setPickedQty,
+    ] =
+        useState(
+            "1"
+        );
+
+    const [
+        newIngName,
+        setNewIngName,
+    ] =
+        useState("");
+
+    // Mostrar el nombre del ingrediente recién creado aun antes del refetch de inventario.
+    const [newIngredientNames, setNewIngredientNames] = useState({});
+
+    const [
+        newIngCategoryId,
+        setNewIngCategoryId,
+    ] =
+        useState("");
+
+    const [
+        savingRecipe,
+        setSavingRecipe,
+    ] =
+        useState(false);
+
+    const [
+        creatingIngredient,
+        setCreatingIngredient,
+    ] =
+        useState(false);
+
+
+    const normalizeQty = (
+        value
+    ) => {
+        const number =
+            Number(
+                value
+            );
+
+        if (
+            !Number.isFinite(
+                number
+            ) ||
+            number <=
+            0
+        ) {
+            return null;
         }
 
-        await onSave(payload);
+        return Number(
+            number.toFixed(
+                6
+            )
+        );
     };
 
+
+    React.useEffect(
+        () => {
+            if (
+                !open
+            ) {
+                return;
+            }
+
+            setCreateMode(
+                "new"
+            );
+
+            setSelectedDishId(
+                ""
+            );
+
+            setSelectedDishInventoryType(
+                "direct"
+            );
+
+            setForm({
+                name:
+                    item?.name ||
+                    "",
+
+                unit:
+                    item?.unit ||
+                    "unidad",
+
+                inventoryType:
+                    normalizeInventoryType(
+                        item?.inventoryType ||
+                        "ingredient"
+                    ),
+
+                allowNegativeStock:
+                    item?.allowNegativeStock !==
+                    false,
+
+                stockMin:
+                    item?.stockMin ??
+                    0,
+
+                lastCost:
+                    item?.lastCost ??
+                    "",
+
+                avgCost:
+                    item?.avgCost ??
+                    "",
+
+                inventoryCategoryId:
+                    item
+                        ?.inventoryCategoryId
+                        ?._id ||
+                    item
+                        ?.inventoryCategoryId ||
+                    "",
+
+                supplierId:
+                    item
+                        ?.supplierId
+                        ?._id ||
+                    item
+                        ?.supplierId ||
+                    "",
+            });
+        },
+        [
+            open,
+            item,
+        ]
+    );
+
+
+    React.useEffect(
+        () => {
+            if (
+                !open
+            ) {
+                return;
+            }
+
+            if (
+                !selectedDishId
+            ) {
+                setRecipeLines(
+                    []
+                );
+
+                return;
+            }
+
+            const raw =
+                selectedDish
+                    ?.recipe;
+
+            if (
+                Array.isArray(
+                    raw
+                )
+            ) {
+                const mapped =
+                    raw
+                        .map(
+                            (
+                                recipeItem
+                            ) => {
+                                const ingredientId =
+                                    recipeItem
+                                        ?.ingredientDishId ||
+                                    recipeItem
+                                        ?.ingredientId ||
+                                    recipeItem
+                                        ?.dishId ||
+                                    recipeItem
+                                        ?.inventoryItemId ||
+                                    recipeItem
+                                        ?._id ||
+                                    null;
+
+                                const qty =
+                                    recipeItem
+                                        ?.qty ??
+                                    recipeItem
+                                        ?.quantity ??
+                                    null;
+
+                                if (
+                                    !ingredientId ||
+                                    qty ==
+                                    null
+                                ) {
+                                    return null;
+                                }
+
+                                const normalizedQty =
+                                    normalizeQty(
+                                        qty
+                                    );
+
+                                if (
+                                    !normalizedQty
+                                ) {
+                                    return null;
+                                }
+
+                                return {
+                                    ingredientId:
+                                        String(
+                                            ingredientId
+                                        ),
+
+                                    qty:
+                                    normalizedQty,
+                                };
+                            }
+                        )
+                        .filter(
+                            Boolean
+                        );
+
+                setRecipeLines(
+                    mapped
+                );
+
+            } else {
+                setRecipeLines(
+                    []
+                );
+            }
+        },
+        [
+            open,
+            selectedDishId,
+            selectedDish,
+        ]
+    );
+
+
+    React.useEffect(
+        () => {
+            if (
+                !open
+            ) {
+                return;
+            }
+
+            if (
+                !isEdit &&
+                createMode ===
+                "fromDish" &&
+                selectedDish
+            ) {
+                setForm(
+                    (
+                        state
+                    ) => ({
+                        ...state,
+
+                        name:
+                            selectedDish.name ||
+                            state.name,
+                    })
+                );
+            }
+        },
+        [
+            open,
+            isEdit,
+            createMode,
+            selectedDish,
+        ]
+    );
+
+
+    const handleSaveInventory =
+        async () => {
+            const name =
+                String(
+                    form.name ||
+                    ""
+                ).trim();
+
+            if (
+                !name
+            ) {
+                enqueueSnackbar(
+                    t(
+                        "inventoryPage.itemModal.messages.nameRequired"
+                    ),
+                    {
+                        variant:
+                            "warning",
+                    }
+                );
+
+                return;
+            }
+
+            const normalizedType =
+                isEdit
+                    ? normalizeInventoryType(
+                        form.inventoryType
+                    )
+                    : createMode ===
+                    "fromDish"
+                        ? selectedDishInventoryType
+                        : "ingredient";
+
+
+            const payload = {
+                name,
+
+                unit:
+                form.unit,
+
+                inventoryType:
+                normalizedType,
+
+                allowNegativeStock:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? form.allowNegativeStock !==
+                        false
+                        : false,
+
+                stockMin:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? Number(
+                            form.stockMin ||
+                            0
+                        )
+                        : null,
+
+                lastCost:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? form.lastCost ===
+                        ""
+                            ? null
+                            : Number(
+                                form.lastCost
+                            )
+                        : null,
+
+                avgCost:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? form.avgCost ===
+                        ""
+                            ? null
+                            : Number(
+                                form.avgCost
+                            )
+                        : null,
+
+                inventoryCategoryId:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? form.inventoryCategoryId ||
+                        null
+                        : null,
+
+                supplierId:
+                    normalizedType ===
+                    "direct" ||
+                    normalizedType ===
+                    "ingredient"
+                        ? form.supplierId ||
+                        null
+                        : null,
+            };
+
+
+            if (
+                !isEdit &&
+                createMode ===
+                "fromDish"
+            ) {
+                if (
+                    !selectedDishId
+                ) {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.itemModal.messages.selectDish"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+
+                    return;
+                }
+
+                if (
+                    ![
+                        "direct",
+                        "recipe",
+                    ].includes(
+                        selectedDishInventoryType
+                    )
+                ) {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.itemModal.messages.selectDishInventoryType"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+
+                    return;
+                }
+
+                if (
+                    selectedDishInventoryType ===
+                    "recipe" &&
+                    recipeLines.length ===
+                    0
+                ) {
+                    enqueueSnackbar(
+                        t(
+                            "inventoryPage.itemModal.messages.recipeIngredientRequired"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    recipeLines.length >
+                    0
+                ) {
+                    try {
+                        setSavingRecipe(
+                            true
+                        );
+
+                        const recipePayload =
+                            (
+                                recipeLines ||
+                                []
+                            )
+                                .map(
+                                    (
+                                        recipeItem
+                                    ) => {
+                                        const id =
+                                            recipeItem
+                                                ?.dishId ||
+                                            recipeItem
+                                                ?.ingredientId ||
+                                            recipeItem
+                                                ?.ingredientDishId ||
+                                            recipeItem
+                                                ?.inventoryItemId ||
+                                            null;
+
+                                        const qty =
+                                            normalizeQty(
+                                                recipeItem
+                                                    ?.qty
+                                            );
+
+                                        if (
+                                            !id ||
+                                            !qty ||
+                                            qty <=
+                                            0
+                                        ) {
+                                            return null;
+                                        }
+
+                                        return {
+                                            ingredientDishId:
+                                                String(
+                                                    id
+                                                ),
+
+                                            dishId:
+                                                String(
+                                                    id
+                                                ),
+
+                                            inventoryItemId:
+                                                String(
+                                                    id
+                                                ),
+
+                                            qty,
+
+                                            unit:
+                                                recipeItem
+                                                    ?.unit ||
+                                                "unidad",
+                                        };
+                                    }
+                                )
+                                .filter(
+                                    Boolean
+                                );
+
+
+                        await api.put(
+                            `/api/dishes/${selectedDishId}/recipe`,
+                            {
+                                recipe:
+                                recipePayload,
+                            }
+                        );
+
+
+                        enqueueSnackbar(
+                            t(
+                                "inventoryPage.itemModal.messages.recipeSaved"
+                            ),
+                            {
+                                variant:
+                                    "success",
+                            }
+                        );
+
+                    } catch (
+                        error
+                        ) {
+                        const message =
+                            error
+                                ?.response
+                                ?.data
+                                ?.message ||
+                            error
+                                ?.message ||
+                            t(
+                                "inventoryPage.itemModal.messages.recipeSaveError"
+                            );
+
+                        enqueueSnackbar(
+                            message,
+                            {
+                                variant:
+                                    "error",
+                            }
+                        );
+
+                        return;
+
+                    } finally {
+                        setSavingRecipe(
+                            false
+                        );
+                    }
+                }
+
+
+                payload.inventoryType =
+                    selectedDishInventoryType;
+
+                payload.allowNegativeStock =
+                    selectedDishInventoryType ===
+                    "direct";
+
+                payload.existingDishId =
+                    selectedDishId;
+            }
+
+
+            await onSave(
+                payload
+            );
+        };
 
 
     return (
-        <Modal open={open} title={isEdit ? "Editar artículo" : "Nuevo artículo"} onClose={onClose}>
+        <Modal
+            open={
+                open
+            }
+            title={
+                isEdit
+                    ? t(
+                        "inventoryPage.itemModal.title.edit"
+                    )
+                    : t(
+                        "inventoryPage.itemModal.title.create"
+                    )
+            }
+            onClose={
+                onClose
+            }
+        >
+
             {!isEdit && (
+
                 <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+
                     <div className="text-white font-semibold mb-3">
-                        ¿Qué estás creando?
+                        {t(
+                            "inventoryPage.itemModal.createQuestion"
+                        )}
                     </div>
 
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
                         <button
                             type="button"
                             onClick={() => {
-                                setCreateMode("new");
-                                setSelectedDishInventoryType("direct");
-                                setForm((s) => ({
-                                    ...s,
-                                    inventoryType: "ingredient",
-                                    allowNegativeStock: true,
-                                }));
+                                setCreateMode(
+                                    "new"
+                                );
+
+                                setSelectedDishInventoryType(
+                                    "direct"
+                                );
+
+                                setForm(
+                                    (
+                                        state
+                                    ) => ({
+                                        ...state,
+
+                                        inventoryType:
+                                            "ingredient",
+
+                                        allowNegativeStock:
+                                            true,
+                                    })
+                                );
                             }}
                             className={`text-left rounded-2xl border p-4 transition-all ${
-                                createMode === "new"
+                                createMode ===
+                                "new"
                                     ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
                                     : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
                             }`}
                         >
-                            <div className="font-bold">Ingrediente / insumo</div>
-                            <div className="text-xs text-white/50 mt-1">
-                                Para recetas, compras, entradas y salidas de inventario.
+
+                            <div className="font-bold">
+                                {t(
+                                    "inventoryPage.itemTypes.ingredient.title"
+                                )}
                             </div>
+
+                            <div className="text-xs text-white/50 mt-1">
+                                {t(
+                                    "inventoryPage.itemModal.newIngredientDescription"
+                                )}
+                            </div>
+
                         </button>
+
 
                         <button
                             type="button"
-                            onClick={() => setCreateMode("fromDish")}
+                            onClick={() =>
+                                setCreateMode(
+                                    "fromDish"
+                                )
+                            }
                             className={`text-left rounded-2xl border p-4 transition-all ${
-                                createMode === "fromDish"
+                                createMode ===
+                                "fromDish"
                                     ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
                                     : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
                             }`}
                         >
-                            <div className="font-bold">Basado en plato existente</div>
-                            <div className="text-xs text-white/50 mt-1">
-                                Convierte un plato del menú en stock directo o plato con receta.
-                            </div>
-                        </button>
-                    </div>
-                </div>
-            )}
 
-            {!isEdit && createMode === "fromDish" && (
-                <div className="mb-4">
-                    <div className="text-white text-base font-semibold mb-2">                        Selecciona un plato</div>
-                    <select className={selectCls} value={selectedDishId} onChange={(e) => setSelectedDishId(e.target.value)}>
-                        <option value="">—</option>
-                        {dishTemplates.map((d) => (
-                            <option key={d._id} value={d._id}>
-                                {d.name}
-                            </option>
-                        ))}
-                    </select>
-                    {selectedDish && (
-                        <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
-                            <div className="text-sm font-semibold text-yellow-200">
-                                Plato seleccionado: {selectedDish.name}
-                            </div>
-                            <div className="text-xs text-gray-300 mt-1">
-                                Categoría: {selectedDish.category || "Sin categoría"} · Precio: RD${Number(selectedDish.price || 0).toFixed(2)}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="mt-4">
-                        <div className="text-white/70 text-xs mb-2">
-                            Tipo de inventario para este plato
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setSelectedDishInventoryType("direct")}
-                                className={`text-left rounded-2xl border p-4 transition-all ${
-                                    selectedDishInventoryType === "direct"
-                                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
-                                        : "bg-white/5 border-white/10 text-white/80"
-                                }`}
-                            >
-                                <div className="font-bold">Producto con Inventario</div>
-                                <div className="text-xs text-white/50 mt-1">
-                                    Se vende y descuenta su propio Inventario. Puede quedar negativo.
-                                </div>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setSelectedDishInventoryType("recipe")}
-                                className={`text-left rounded-2xl border p-4 transition-all ${
-                                    selectedDishInventoryType === "recipe"
-                                        ? "bg-blue-500/15 border-blue-500/30 text-blue-200"
-                                        : "bg-white/5 border-white/10 text-white/80"
-                                }`}
-                            >
-                                <div className="font-bold">Plato con receta</div>
-                                <div className="text-xs text-white/50 mt-1">
-                                    No tiene Inventario directo. Descuenta ingredientes.
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="text-white/40 text-[11px] mt-1">
-                        Esto habilita el MISMO plato para inventario (sin duplicar).
-                        <br />
-                        El stock se maneja con movimientos: usa el botón “Entrada” luego de guardar.
-                    </div>
-
-                    {/* ----------------------------- */}
-                    {/* Receta (Opcional) */}
-                    {selectedDishId && selectedDishInventoryType === "recipe" && (
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="text-white/80 text-sm font-semibold">Receta (opcional)</div>
-                                <div className="text-white/40 text-[11px]">
-                                    Se descuenta al vender si el backend usa receta.
-                                </div>
-                            </div>
-
-                            {/* Agregar ingrediente existente */}
-                            <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
-                                <div className="md:col-span-7">
-                                    <div className="text-white/60 text-xs mb-1">Ingrediente</div>
-                                    <select
-                                        className={selectCls}
-                                        value={pickedIngredientId}
-                                        onChange={(e) => setPickedIngredientId(e.target.value)}
-                                    >
-                                        <option value="">— Selecciona ingrediente —</option>
-                                        {availableIngredients.map((ing) => (
-                                            <option key={ing._id} value={ing._id}>
-                                                {ing.name} · {ing.unit || "unidad"} · Stock: {ing.stockCurrent ?? 0}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="md:col-span-3">
-                                    <div className="text-white/60 text-xs mb-1">Cantidad</div>
-                                    <input
-                                        className={inputCls}
-                                        value={pickedQty}
-                                        onChange={(e) => setPickedQty(e.target.value)}
-                                        placeholder="Ej: 1, 0.5"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-2 flex items-end">
-                                    <button
-                                        type="button"
-                                        className="w-full px-3 py-2 rounded-xl border border-yellow-500/30 bg-yellow-500/15 text-yellow-200 text-sm"
-                                        onClick={() => {
-                                            if (!pickedIngredientId) {
-                                                enqueueSnackbar("Selecciona un ingrediente.", { variant: "warning" });
-                                                return;
-                                            }
-                                            const q = normalizeQty(pickedQty);
-                                            if (!q) {
-                                                enqueueSnackbar("Cantidad inválida (debe ser > 0).", { variant: "warning" });
-                                                return;
-                                            }
-
-                                            setRecipeLines((prev) => {
-                                                const exists = prev.find((x) => String(x.ingredientId) === String(pickedIngredientId));
-                                                if (exists) {
-                                                    // suma qty si ya existe
-                                                    return prev.map((x) =>
-                                                        String(x.ingredientId) === String(pickedIngredientId)
-                                                            ? { ...x, qty: normalizeQty(Number(x.qty) + q) || x.qty }
-                                                            : x
-                                                    );
-                                                }
-                                                return [...prev, { ingredientId: String(pickedIngredientId), qty: q }];
-                                            });
-
-                                            setPickedIngredientId("");
-                                            setPickedQty("1");
-                                        }}
-                                    >
-                                        Agregar
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Crear ingrediente inline */}
-                            <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
-                                <div className="md:col-span-7">
-                                    <div className="text-white/60 text-xs mb-1">Crear ingrediente</div>
-                                    <input
-                                        className={inputCls}
-                                        value={newIngName}
-                                        onChange={(e) => setNewIngName(e.target.value)}
-                                        placeholder="Ej: Queso mozzarella"
-                                    />
-                                </div>
-
-                                <div className="md:col-span-3">
-                                    <div className="text-white/60 text-xs mb-1">Categoría inventario (opcional)</div>
-                                    <select
-                                        className={selectCls}
-                                        value={newIngCategoryId}
-                                        onChange={(e) => setNewIngCategoryId(e.target.value)}
-                                    >
-                                        <option value="">—</option>
-                                        {(categories || []).map((c) => (
-                                            <option key={c._id} value={c._id}>
-                                                {c.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="md:col-span-2 flex items-end">
-                                    <button
-                                        type="button"
-                                        disabled={creatingIngredient}
-                                        className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm disabled:opacity-50"
-                                        onClick={async () => {
-                                            const nm = String(newIngName || "").trim();
-                                            if (!nm) {
-                                                enqueueSnackbar("Escribe el nombre del ingrediente.", { variant: "warning" });
-                                                return;
-                                            }
-
-                                            try {
-                                                setCreatingIngredient(true);
-
-                                                const res = await api.post("/api/dishes/ingredients", {
-                                                    name: nm,
-                                                    inventoryCategoryId: newIngCategoryId || null,
-                                                    sellMode: "unit",
-                                                    weightUnit: "lb",
-                                                });
-
-                                                const created = res?.data?.data || res?.data;
-                                                enqueueSnackbar("Ingrediente creado.", { variant: "success" });
-
-
-                                                // refrescar ingredientes disponibles (viene de dishTemplates)
-                                                // Nota: esta queryKey existe arriba en Inventory.jsx
-                                                // y usa tenantId
-                                                // eslint-disable-next-line no-undef
-                                                // (no hace falta, solo invalida)
-                                                // queryClient.invalidateQueries({ queryKey: ["dish-templates", tenantId] });
-
-                                                setNewIngName("");
-                                                setNewIngCategoryId("");
-
-                                                // Si el backend devuelve el _id, lo agregamos automáticamente a la receta
-                                                if (created?._id) {
-                                                    setRecipeLines((prev) => [...prev, { ingredientId: String(created._id), qty: 1 }]);
-                                                }
-
-                                                // Invalida templates para que el nuevo ingrediente salga en el select
-                                                // (Esto requiere access a queryClient y tenantId; lo hacemos abajo en CAMBIO 5)
-                                            } catch (e) {
-                                                const msg =
-                                                    e?.response?.data?.message ||
-                                                    e?.message ||
-                                                    "No se pudo crear el ingrediente.";
-                                                enqueueSnackbar(msg, { variant: "error" });
-                                            } finally {
-                                                setCreatingIngredient(false);
-                                            }
-                                        }}
-                                    >
-                                        {creatingIngredient ? "Creando..." : "Crear"}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Lista de receta */}
-                            <div className="mt-3">
-                                <div className="text-white/60 text-xs mb-2">Ingredientes agregados</div>
-
-                                {recipeLines.length === 0 ? (
-                                    <div className="text-white/40 text-[12px]">Aún no has agregado ingredientes.</div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {recipeLines.map((r) => {
-                                            const ingName =
-                                                availableIngredients.find((x) => String(x._id) === String(r.ingredientId))?.name ||
-                                                "Ingrediente";
-                                            return (
-                                                <div
-                                                    key={r.ingredientId}
-                                                    className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
-                                                >
-                                                    <div className="min-w-0">
-                                                        <div className="text-white/80 text-sm truncate">{ingName}</div>
-                                                        <div className="text-white/40 text-[11px]">ID: {r.ingredientId}</div>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            className={inputCls}
-                                                            style={{ width: 110 }}
-                                                            value={String(r.qty)}
-                                                            onChange={(e) => {
-                                                                const q = normalizeQty(e.target.value);
-                                                                setRecipeLines((prev) =>
-                                                                    prev.map((x) =>
-                                                                        x.ingredientId === r.ingredientId
-                                                                            ? { ...x, qty: q || x.qty }
-                                                                            : x
-                                                                    )
-                                                                );
-                                                            }}
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm"
-                                                            onClick={() => setRecipeLines((prev) => prev.filter((x) => x.ingredientId !== r.ingredientId))}
-                                                        >
-                                                            Quitar
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                            <div className="font-bold">
+                                {t(
+                                    "inventoryPage.itemModal.fromExistingDish"
                                 )}
                             </div>
-                        </div>
-                    )}
+
+                            <div className="text-xs text-white/50 mt-1">
+                                {t(
+                                    "inventoryPage.itemModal.fromExistingDishDescription"
+                                )}
+                            </div>
+
+                        </button>
+
+                    </div>
+
                 </div>
+
             )}
 
+
+            {!isEdit &&
+                createMode ===
+                "fromDish" && (
+
+                    <div className="mb-4">
+
+                        <div className="text-white text-base font-semibold mb-2">
+                            {t(
+                                "inventoryPage.itemModal.selectDish"
+                            )}
+                        </div>
+
+                        <select
+                            className={
+                                selectCls
+                            }
+                            value={
+                                selectedDishId
+                            }
+                            onChange={(e) =>
+                                setSelectedDishId(
+                                    e.target.value
+                                )
+                            }
+                        >
+
+                            <option value="">
+                                —
+                            </option>
+
+                            {dishTemplates.map(
+                                (
+                                    dish
+                                ) => (
+                                    <option
+                                        key={
+                                            dish._id
+                                        }
+                                        value={
+                                            dish._id
+                                        }
+                                    >
+                                        {dish.name}
+                                    </option>
+                                )
+                            )}
+
+                        </select>
+
+
+                        {selectedDish && (
+
+                            <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+
+                                <div className="text-sm font-semibold text-yellow-200">
+
+                                    {t(
+                                        "inventoryPage.itemModal.selectedDish"
+                                    )}
+                                    :{" "}
+
+                                    {
+                                        selectedDish.name
+                                    }
+
+                                </div>
+
+                                <div className="text-xs text-gray-300 mt-1">
+
+                                    {t(
+                                        "inventoryPage.itemModal.category"
+                                    )}
+                                    :{" "}
+
+                                    {selectedDish.category ||
+                                        t(
+                                            "inventoryPage.common.noCategory"
+                                        )
+                                    }
+
+                                    {" · "}
+
+                                    {t(
+                                        "inventoryPage.itemModal.price"
+                                    )}
+                                    :{" "}
+
+                                    {money(
+                                        selectedDish.price ||
+                                        0
+                                    )}
+
+                                </div>
+
+                            </div>
+
+                        )}
+
+
+                        <div className="mt-4">
+
+                            <div className="text-white/70 text-xs mb-2">
+                                {t(
+                                    "inventoryPage.itemModal.inventoryTypeForDish"
+                                )}
+                            </div>
+
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setSelectedDishInventoryType(
+                                            "direct"
+                                        )
+                                    }
+                                    className={`text-left rounded-2xl border p-4 transition-all ${
+                                        selectedDishInventoryType ===
+                                        "direct"
+                                            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                                            : "bg-white/5 border-white/10 text-white/80"
+                                    }`}
+                                >
+
+                                    <div className="font-bold">
+                                        {t(
+                                            "inventoryPage.itemTypes.direct.title"
+                                        )}
+                                    </div>
+
+                                    <div className="text-xs text-white/50 mt-1">
+                                        {t(
+                                            "inventoryPage.itemModal.directDishDescription"
+                                        )}
+                                    </div>
+
+                                </button>
+
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setSelectedDishInventoryType(
+                                            "recipe"
+                                        )
+                                    }
+                                    className={`text-left rounded-2xl border p-4 transition-all ${
+                                        selectedDishInventoryType ===
+                                        "recipe"
+                                            ? "bg-blue-500/15 border-blue-500/30 text-blue-200"
+                                            : "bg-white/5 border-white/10 text-white/80"
+                                    }`}
+                                >
+
+                                    <div className="font-bold">
+                                        {t(
+                                            "inventoryPage.itemTypes.recipe.title"
+                                        )}
+                                    </div>
+
+                                    <div className="text-xs text-white/50 mt-1">
+                                        {t(
+                                            "inventoryPage.itemModal.recipeDishDescription"
+                                        )}
+                                    </div>
+
+                                </button>
+
+                            </div>
+
+                        </div>
+
+
+                        <div className="text-white/40 text-[11px] mt-1">
+
+                            {t(
+                                "inventoryPage.itemModal.sameDishHelp"
+                            )}
+
+                            <br />
+
+                            {t(
+                                "inventoryPage.itemModal.stockMovementHelp"
+                            )}
+
+                        </div>
+
+
+                        {selectedDishId &&
+                            selectedDishInventoryType ===
+                            "recipe" && (
+
+                                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+
+                                    <div className="flex items-center justify-between gap-2">
+
+                                        <div className="text-white/80 text-sm font-semibold">
+                                            {t(
+                                                "inventoryPage.itemModal.recipe.title"
+                                            )}
+                                        </div>
+
+                                        <div className="text-white/40 text-[11px]">
+                                            {t(
+                                                "inventoryPage.itemModal.recipe.description"
+                                            )}
+                                        </div>
+
+                                    </div>
+
+
+                                    <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+
+                                        <div className="md:col-span-7">
+
+                                            <div className="text-white/60 text-xs mb-1">
+                                                {t(
+                                                    "inventoryPage.itemModal.fields.ingredient"
+                                                )}
+                                            </div>
+
+                                            <select
+                                                className={
+                                                    selectCls
+                                                }
+                                                value={
+                                                    pickedIngredientId
+                                                }
+                                                onChange={(e) =>
+                                                    setPickedIngredientId(
+                                                        e.target.value
+                                                    )
+                                                }
+                                            >
+
+                                                <option value="">
+                                                    {t(
+                                                        "inventoryPage.itemModal.placeholders.selectIngredient"
+                                                    )}
+                                                </option>
+
+                                                {availableIngredients.map(
+                                                    (
+                                                        ingredient
+                                                    ) => (
+
+                                                        <option
+                                                            key={
+                                                                ingredient._id
+                                                            }
+                                                            value={
+                                                                ingredient._id
+                                                            }
+                                                        >
+
+                                                            {
+                                                                ingredient.name
+                                                            }
+                                                            {" · "}
+                                                            {getUnitLabel(
+                                                                ingredient.unit,
+                                                                t
+                                                            )}
+                                                            {" · "}
+
+                                                            {t(
+                                                                "inventoryPage.table.stock"
+                                                            )}
+                                                            :{" "}
+                                                            {
+                                                                ingredient.stockCurrent
+                                                            }
+
+                                                        </option>
+
+                                                    )
+                                                )}
+
+                                            </select>
+
+                                        </div>
+
+
+                                        <div className="md:col-span-3">
+
+                                            <div className="text-white/60 text-xs mb-1">
+                                                {t(
+                                                    "inventoryPage.itemModal.fields.quantity"
+                                                )}
+                                            </div>
+
+                                            <input
+                                                className={
+                                                    inputCls
+                                                }
+                                                value={
+                                                    pickedQty
+                                                }
+                                                onChange={(e) =>
+                                                    setPickedQty(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                placeholder={t(
+                                                    "inventoryPage.itemModal.placeholders.quantity"
+                                                )}
+                                            />
+
+                                        </div>
+
+
+                                        <div className="md:col-span-2 flex items-end">
+
+                                            <button
+                                                type="button"
+                                                className="w-full px-3 py-2 rounded-xl border border-yellow-500/30 bg-yellow-500/15 text-yellow-200 text-sm"
+                                                onClick={() => {
+                                                    if (
+                                                        !pickedIngredientId
+                                                    ) {
+                                                        enqueueSnackbar(
+                                                            t(
+                                                                "inventoryPage.itemModal.messages.selectIngredient"
+                                                            ),
+                                                            {
+                                                                variant:
+                                                                    "warning",
+                                                            }
+                                                        );
+
+                                                        return;
+                                                    }
+
+                                                    const quantity =
+                                                        normalizeQty(
+                                                            pickedQty
+                                                        );
+
+                                                    if (
+                                                        !quantity
+                                                    ) {
+                                                        enqueueSnackbar(
+                                                            t(
+                                                                "inventoryPage.itemModal.messages.invalidQuantity"
+                                                            ),
+                                                            {
+                                                                variant:
+                                                                    "warning",
+                                                            }
+                                                        );
+
+                                                        return;
+                                                    }
+
+                                                    setRecipeLines(
+                                                        (
+                                                            previous
+                                                        ) => {
+                                                            const exists =
+                                                                previous.find(
+                                                                    (
+                                                                        line
+                                                                    ) =>
+                                                                        String(
+                                                                            line.ingredientId
+                                                                        ) ===
+                                                                        String(
+                                                                            pickedIngredientId
+                                                                        )
+                                                                );
+
+                                                            if (
+                                                                exists
+                                                            ) {
+                                                                return previous.map(
+                                                                    (
+                                                                        line
+                                                                    ) =>
+                                                                        String(
+                                                                            line.ingredientId
+                                                                        ) ===
+                                                                        String(
+                                                                            pickedIngredientId
+                                                                        )
+                                                                            ? {
+                                                                                ...line,
+
+                                                                                qty:
+                                                                                    normalizeQty(
+                                                                                        Number(
+                                                                                            line.qty
+                                                                                        ) +
+                                                                                        quantity
+                                                                                    ) ||
+                                                                                    line.qty,
+                                                                            }
+                                                                            : line
+                                                                );
+                                                            }
+
+                                                            return [
+                                                                ...previous,
+                                                                {
+                                                                    ingredientId:
+                                                                        String(
+                                                                            pickedIngredientId
+                                                                        ),
+
+                                                                    qty:
+                                                                    quantity,
+                                                                },
+                                                            ];
+                                                        }
+                                                    );
+
+                                                    setPickedIngredientId(
+                                                        ""
+                                                    );
+
+                                                    setPickedQty(
+                                                        "1"
+                                                    );
+                                                }}
+                                            >
+
+                                                {t(
+                                                    "inventoryPage.itemModal.actions.add"
+                                                )}
+
+                                            </button>
+
+                                        </div>
+
+                                    </div>
+
+
+                                    <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+
+                                        <div className="md:col-span-7">
+
+                                            <div className="text-white/60 text-xs mb-1">
+                                                {t(
+                                                    "inventoryPage.itemModal.fields.createIngredient"
+                                                )}
+                                            </div>
+
+                                            <input
+                                                className={
+                                                    inputCls
+                                                }
+                                                value={
+                                                    newIngName
+                                                }
+                                                onChange={(e) =>
+                                                    setNewIngName(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                placeholder={t(
+                                                    "inventoryPage.itemModal.placeholders.ingredientName"
+                                                )}
+                                            />
+
+                                        </div>
+
+
+                                        <div className="md:col-span-3">
+
+                                            <div className="text-white/60 text-xs mb-1">
+                                                {t(
+                                                    "inventoryPage.itemModal.fields.inventoryCategoryOptional"
+                                                )}
+                                            </div>
+
+                                            <select
+                                                className={
+                                                    selectCls
+                                                }
+                                                value={
+                                                    newIngCategoryId
+                                                }
+                                                onChange={(e) =>
+                                                    setNewIngCategoryId(
+                                                        e.target.value
+                                                    )
+                                                }
+                                            >
+
+                                                <option value="">
+                                                    —
+                                                </option>
+
+                                                {(
+                                                    categories ||
+                                                    []
+                                                ).map(
+                                                    (
+                                                        category
+                                                    ) => (
+
+                                                        <option
+                                                            key={
+                                                                category._id
+                                                            }
+                                                            value={
+                                                                category._id
+                                                            }
+                                                        >
+                                                            {
+                                                                category.name
+                                                            }
+                                                        </option>
+
+                                                    )
+                                                )}
+
+                                            </select>
+
+                                        </div>
+
+
+                                        <div className="md:col-span-2 flex items-end">
+
+                                            <button
+                                                type="button"
+                                                disabled={
+                                                    creatingIngredient
+                                                }
+                                                className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm disabled:opacity-50"
+                                                onClick={async () => {
+                                                    const ingredientName =
+                                                        String(
+                                                            newIngName ||
+                                                            ""
+                                                        ).trim();
+
+                                                    if (
+                                                        !ingredientName
+                                                    ) {
+                                                        enqueueSnackbar(
+                                                            t(
+                                                                "inventoryPage.itemModal.messages.ingredientNameRequired"
+                                                            ),
+                                                            {
+                                                                variant:
+                                                                    "warning",
+                                                            }
+                                                        );
+
+                                                        return;
+                                                    }
+
+                                                    try {
+                                                        setCreatingIngredient(
+                                                            true
+                                                        );
+
+                                                        const res =
+                                                            await api.post(
+                                                                "/api/inventory/items",
+                                                                {
+                                                                    name:
+                                                                    ingredientName,
+
+                                                                    inventoryCategoryId:
+                                                                        newIngCategoryId ||
+                                                                        null,
+
+                                                                    sellMode:
+                                                                        "unit",
+
+                                                                    weightUnit:
+                                                                        "lb",
+                                                                }
+                                                            );
+
+                                                        const created = res?.data?.item || res?.data?.data || null;
+                                                        if (!created?._id || created.inventoryType !== "ingredient") {
+                                                            throw new Error("INGREDIENT_CREATE_INVALID_RESPONSE");
+                                                        }
+
+                                                        enqueueSnackbar(
+                                                            t(
+                                                                "inventoryPage.itemModal.messages.ingredientCreated"
+                                                            ),
+                                                            {
+                                                                variant:
+                                                                    "success",
+                                                            }
+                                                        );
+
+                                                        setNewIngName(
+                                                            ""
+                                                        );
+
+                                                        setNewIngCategoryId(
+                                                            ""
+                                                        );
+
+                                                        if (created?._id) {
+                                                            setNewIngredientNames((previous) => ({
+                                                                ...previous,
+                                                                [String(created._id)]: created.name,
+                                                            }));
+                                                            setRecipeLines(
+                                                                (
+                                                                    previous
+                                                                ) => [
+                                                                    ...previous,
+                                                                    {
+                                                                        ingredientId:
+                                                                            String(
+                                                                                created._id
+                                                                            ),
+
+                                                                        qty:
+                                                                            1,
+                                                                    },
+                                                                ]
+                                                            );
+                                                        }
+
+
+                                                        await queryClient
+                                                            ?.invalidateQueries
+                                                            ?.({
+                                                                queryKey: [
+                                                                    "ingredients",
+                                                                    tenantId,
+                                                                ],
+                                                            });
+
+
+                                                        await queryClient
+                                                            ?.invalidateQueries
+                                                            ?.({
+                                                                queryKey: [
+                                                                    "inventory/items",
+                                                                ],
+                                                            });
+
+                                                    } catch (
+                                                        error
+                                                        ) {
+                                                        const message =
+                                                            error
+                                                                ?.response
+                                                                ?.data
+                                                                ?.message ||
+                                                            error
+                                                                ?.message ||
+                                                            t(
+                                                                "inventoryPage.itemModal.messages.ingredientCreateError"
+                                                            );
+
+                                                        enqueueSnackbar(
+                                                            message,
+                                                            {
+                                                                variant:
+                                                                    "error",
+                                                            }
+                                                        );
+
+                                                    } finally {
+                                                        setCreatingIngredient(
+                                                            false
+                                                        );
+                                                    }
+                                                }}
+                                            >
+
+                                                {creatingIngredient
+                                                    ? t(
+                                                        "inventoryPage.itemModal.actions.creating"
+                                                    )
+                                                    : t(
+                                                        "inventoryPage.itemModal.actions.create"
+                                                    )
+                                                }
+
+                                            </button>
+
+                                        </div>
+
+                                    </div>
+
+
+                                    <div className="mt-3">
+
+                                        <div className="text-white/60 text-xs mb-2">
+                                            {t(
+                                                "inventoryPage.itemModal.recipe.addedIngredients"
+                                            )}
+                                        </div>
+
+
+                                        {recipeLines.length ===
+                                        0 ? (
+
+                                            <div className="text-white/40 text-[12px]">
+                                                {t(
+                                                    "inventoryPage.itemModal.recipe.empty"
+                                                )}
+                                            </div>
+
+                                        ) : (
+
+                                            <div className="space-y-2">
+
+                                                {recipeLines.map(
+                                                    (
+                                                        recipeItem
+                                                    ) => {
+                                                        const ingredientName =
+                                                            availableIngredients.find(
+                                                                (
+                                                                    ingredient
+                                                                ) =>
+                                                                    String(
+                                                                        ingredient._id
+                                                                    ) ===
+                                                                    String(
+                                                                        recipeItem.ingredientId
+                                                                    )
+                                                            )?.name ||
+                                                            newIngredientNames[String(recipeItem.ingredientId)] ||
+                                                            t(
+                                                                "inventoryPage.itemModal.fields.ingredient"
+                                                            );
+
+                                                        return (
+                                                            <div
+                                                                key={
+                                                                    recipeItem.ingredientId
+                                                                }
+                                                                className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+                                                            >
+
+                                                                <div className="min-w-0">
+
+                                                                    <div className="text-white/80 text-sm truncate">
+                                                                        {
+                                                                            ingredientName
+                                                                        }
+                                                                    </div>
+
+                                                                    <div className="text-white/40 text-[11px]">
+                                                                        {t("inventoryPage.export.columns.id")}:{" "}
+                                                                        {recipeItem.ingredientId}
+                                                                    </div>
+
+                                                                </div>
+
+
+                                                                <div className="flex items-center gap-2">
+
+                                                                    <input
+                                                                        className={
+                                                                            inputCls
+                                                                        }
+                                                                        style={{
+                                                                            width:
+                                                                                110,
+                                                                        }}
+                                                                        value={
+                                                                            String(
+                                                                                recipeItem.qty
+                                                                            )
+                                                                        }
+                                                                        onChange={(e) => {
+                                                                            const quantity =
+                                                                                normalizeQty(
+                                                                                    e
+                                                                                        .target
+                                                                                        .value
+                                                                                );
+
+                                                                            setRecipeLines(
+                                                                                (
+                                                                                    previous
+                                                                                ) =>
+                                                                                    previous.map(
+                                                                                        (
+                                                                                            line
+                                                                                        ) =>
+                                                                                            line.ingredientId ===
+                                                                                            recipeItem.ingredientId
+                                                                                                ? {
+                                                                                                    ...line,
+
+                                                                                                    qty:
+                                                                                                        quantity ||
+                                                                                                        line.qty,
+                                                                                                }
+                                                                                                : line
+                                                                                    )
+                                                                            );
+                                                                        }}
+                                                                    />
+
+
+                                                                    <button
+                                                                        type="button"
+                                                                        className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm"
+                                                                        onClick={() =>
+                                                                            setRecipeLines(
+                                                                                (
+                                                                                    previous
+                                                                                ) =>
+                                                                                    previous.filter(
+                                                                                        (
+                                                                                            line
+                                                                                        ) =>
+                                                                                            line.ingredientId !==
+                                                                                            recipeItem.ingredientId
+                                                                                    )
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        {t(
+                                                                            "inventoryPage.itemModal.actions.remove"
+                                                                        )}
+                                                                    </button>
+
+                                                                </div>
+
+                                                            </div>
+                                                        );
+                                                    }
+                                                )}
+
+                                            </div>
+
+                                        )}
+
+                                    </div>
+
+                                </div>
+
+                            )}
+
+                    </div>
+
+                )}
+
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <div className="text-white text-base font-semibold mb-2">Nombre</div>
-                    <input className={inputCls} value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
-                </div>
 
                 <div>
-                    <div className="text-white text-base font-semibold mb-2">Unidad</div>
-                    <select className={selectCls} value={form.unit} onChange={(e) => setForm((s) => ({ ...s, unit: e.target.value }))}>
-                        {UNIT_OPTIONS.map((u) => (
-                            <option key={u} value={u}>
-                                {u}
-                            </option>
-                        ))}
-                    </select>
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.name"
+                        )}
+                    </div>
+
+                    <input
+                        className={
+                            inputCls
+                        }
+                        value={
+                            form.name
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    name:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    />
+
                 </div>
 
+
                 <div>
-                    <div className="text-white text-base font-semibold mb-2">Categoría inventario</div>
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.unit"
+                        )}
+                    </div>
+
                     <select
-                        className={selectCls}
-                        value={form.inventoryCategoryId}
-                        onChange={(e) => setForm((s) => ({ ...s, inventoryCategoryId: e.target.value }))}
+                        className={
+                            selectCls
+                        }
+                        value={
+                            form.unit
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    unit:
+                                    e.target.value,
+                                })
+                            )
+                        }
                     >
-                        <option value="">—</option>
-                        {categories.map((c) => (
-                            <option key={c._id} value={c._id}>
-                                {c.name}
-                            </option>
-                        ))}
+
+                        {UNIT_OPTIONS.map(
+                            (
+                                unit
+                            ) => (
+
+                                <option
+                                    key={
+                                        unit
+                                    }
+                                    value={
+                                        unit
+                                    }
+                                >
+                                    {getUnitLabel(
+                                        unit,
+                                        t
+                                    )}
+                                </option>
+
+                            )
+                        )}
+
                     </select>
+
                 </div>
 
+
                 <div>
-                    <div className="text-white text-base font-semibold mb-2">Proveedor actual (opcional)</div>
-                    <select className={selectCls} value={form.supplierId} onChange={(e) => setForm((s) => ({ ...s, supplierId: e.target.value }))}>
-                        <option value="">Sin proveedor</option>
-                        {suppliers.map((sp) => (
-                            <option key={sp._id} value={sp._id}>
-                                {sp.name || sp.companyName || "Proveedor"}
-                            </option>
-                        ))}
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.inventoryCategory"
+                        )}
+                    </div>
+
+                    <select
+                        className={
+                            selectCls
+                        }
+                        value={
+                            form.inventoryCategoryId
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    inventoryCategoryId:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    >
+
+                        <option value="">
+                            —
+                        </option>
+
+                        {categories.map(
+                            (
+                                category
+                            ) => (
+
+                                <option
+                                    key={
+                                        category._id
+                                    }
+                                    value={
+                                        category._id
+                                    }
+                                >
+                                    {
+                                        category.name
+                                    }
+                                </option>
+
+                            )
+                        )}
+
                     </select>
+
                 </div>
 
-                <div>
-                    <div className="text-white text-base font-semibold mb-2">Stock mínimo</div>
-                    <input type="number" className={inputCls} value={form.stockMin} onChange={(e) => setForm((s) => ({ ...s, stockMin: e.target.value }))} />
-                </div>
 
                 <div>
-                    <div className="text-white text-base font-semibold mb-2">Último costo</div>
-                    <input type="number" className={inputCls} value={form.lastCost} onChange={(e) => setForm((s) => ({ ...s, lastCost: e.target.value }))} />
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.currentSupplierOptional"
+                        )}
+                    </div>
+
+                    <select
+                        className={
+                            selectCls
+                        }
+                        value={
+                            form.supplierId
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    supplierId:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    >
+
+                        <option value="">
+                            {t(
+                                "inventoryPage.common.noSupplier"
+                            )}
+                        </option>
+
+                        {suppliers.map(
+                            (
+                                supplier
+                            ) => (
+
+                                <option
+                                    key={
+                                        supplier._id
+                                    }
+                                    value={
+                                        supplier._id
+                                    }
+                                >
+
+                                    {supplier.name ||
+                                        supplier.companyName ||
+                                        t(
+                                            "inventoryPage.common.supplier"
+                                        )
+                                    }
+
+                                </option>
+
+                            )
+                        )}
+
+                    </select>
+
                 </div>
 
+
                 <div>
-                    <div className="text-white text-base font-semibold mb-2">Costo promedio</div>
-                    <input type="number" className={inputCls} value={form.avgCost} onChange={(e) => setForm((s) => ({ ...s, avgCost: e.target.value }))} />
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.minimumStock"
+                        )}
+                    </div>
+
+                    <input
+                        type="number"
+                        className={
+                            inputCls
+                        }
+                        value={
+                            form.stockMin
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    stockMin:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    />
+
                 </div>
+
+
+                <div>
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.lastCost"
+                        )}
+                    </div>
+
+                    <input
+                        type="number"
+                        className={
+                            inputCls
+                        }
+                        value={
+                            form.lastCost
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    lastCost:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    />
+
+                </div>
+
+
+                <div>
+
+                    <div className="text-white text-base font-semibold mb-2">
+                        {t(
+                            "inventoryPage.itemModal.fields.averageCost"
+                        )}
+                    </div>
+
+                    <input
+                        type="number"
+                        className={
+                            inputCls
+                        }
+                        value={
+                            form.avgCost
+                        }
+                        onChange={(e) =>
+                            setForm(
+                                (
+                                    state
+                                ) => ({
+                                    ...state,
+
+                                    avgCost:
+                                    e.target.value,
+                                })
+                            )
+                        }
+                    />
+
+                </div>
+
             </div>
 
+
             <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 justify-end">
-                <button onClick={onClose} className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80">
-                    Cancelar
+
+                <button
+                    type="button"
+                    onClick={
+                        onClose
+                    }
+                    className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80"
+                >
+                    {t(
+                        "common.cancel"
+                    )}
                 </button>
 
                 <button
                     type="button"
-                    onClick={handleSaveInventory}
-                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200"
+                    onClick={
+                        handleSaveInventory
+                    }
+                    disabled={
+                        savingRecipe
+                    }
+                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 disabled:opacity-60"
                 >
-                    Guardar
+
+                    {savingRecipe
+                        ? t(
+                            "inventoryPage.itemModal.actions.saving"
+                        )
+                        : t(
+                            "inventoryPage.itemModal.actions.save"
+                        )
+                    }
+
                 </button>
+
             </div>
+
         </Modal>
     );
 }
+function MovementModal({
+                           open,
+                           type,
+                           item,
+                           defaultYield = false,
+                           money,
+                           saving = false,
+                           onClose,
+                           onSave,
+                           onSaveYield,
+                       }) {
+    const { t } =
+        useTranslation();
 
-function MovementModal({ open, type, item, defaultYield = false, saving = false, onClose, onSave, onSaveYield }) {
-    const [qty, setQty] = useState("");
-    const [unitCost, setUnitCost] = useState("");
-    const [direction, setDirection] = useState("out"); // adjust
-    const [note, setNote] = useState("");
-    const { enqueueSnackbar } = useSnackbar();
-    const [negativeConfirmOpen, setNegativeConfirmOpen] = useState(false);
-    const [negativeConfirmData, setNegativeConfirmData] = useState(null);
-    const [pendingMovementPayload, setPendingMovementPayload] = useState(null);
+    const [
+        qty,
+        setQty,
+    ] =
+        useState("");
 
-    const saveLockRef = useRef(false);
-    const requestIdRef = useRef("");
-    const [localSaving, setLocalSaving] = useState(false);
+    const [
+        unitCost,
+        setUnitCost,
+    ] =
+        useState("");
 
-    const isSaving = Boolean(localSaving || saving);
+    const [
+        direction,
+        setDirection,
+    ] =
+        useState(
+            "out"
+        );
 
-    const createRequestId = () => {
-        try {
-            return window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        } catch {
-            return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        }
-    };
+    const [
+        note,
+        setNote,
+    ] =
+        useState("");
 
-    const unlockSave = () => {
-        saveLockRef.current = false;
-        setLocalSaving(false);
-    };
+    const {
+        enqueueSnackbar,
+    } =
+        useSnackbar();
 
-    const submitMovement = async (payload) => {
-        if (saveLockRef.current) return;
+    const [
+        negativeConfirmOpen,
+        setNegativeConfirmOpen,
+    ] =
+        useState(false);
 
-        saveLockRef.current = true;
-        setLocalSaving(true);
+    const [
+        negativeConfirmData,
+        setNegativeConfirmData,
+    ] =
+        useState(null);
 
-        try {
-            await onSave(payload);
+    const [
+        pendingMovementPayload,
+        setPendingMovementPayload,
+    ] =
+        useState(null);
 
-            setNegativeConfirmOpen(false);
-            setNegativeConfirmData(null);
-            setPendingMovementPayload(null);
 
-            onClose?.();
-        } catch (error) {
-            unlockSave();
-        }
-    };
-    // Yield
-    const [useYield, setUseYield] = useState(false);
-    const [totalCost, setTotalCost] = useState("");
-    const [finalQty, setFinalQty] = useState("");
-    const [steps, setSteps] = useState([
-        { label: "Hervido", qtyAfter: "" },
-        { label: "Cocido", qtyAfter: "" },
-    ]);
+    const saveLockRef =
+        useRef(false);
 
-    React.useEffect(() => {
-        if (!open) return;
+    const requestIdRef =
+        useRef("");
 
-        saveLockRef.current = false;
-        requestIdRef.current = createRequestId();
-        setLocalSaving(false);
+    const [
+        localSaving,
+        setLocalSaving,
+    ] =
+        useState(false);
 
-        setQty("");
-        setUnitCost("");
-        setDirection("out");
-        setNote("");
 
-        setUseYield(Boolean(defaultYield));
-        setTotalCost("");
-        setFinalQty("");
-        setSteps([
-            { label: "Hervido", qtyAfter: "" },
-            { label: "Cocido", qtyAfter: "" },
-        ]);
-    }, [open, type, item, defaultYield]);
+    const isSaving =
+        Boolean(
+            localSaving ||
+            saving
+        );
 
-    const title =
-        type === "purchase"
-            ? useYield
-                ? "Proceso de merma (yield)"
-                : "Entrada de inventario"
-            : type === "sale"
-                ? "Salida de inventario"
-                : type === "waste"
-                    ? "Merma"
-                    : "Ajuste de inventario";
-    const canYield = type === "purchase";
 
-    const parseN = (v) => {
-        const n = Number(String(v).replace(/[^\d.-]/g, ""));
-        return Number.isFinite(n) ? n : 0;
-    };
+    const getDefaultSteps =
+        () => [
+            {
+                label:
+                    t(
+                        "inventoryPage.movementModal.yield.defaultSteps.boiled"
+                    ),
 
-    const handleSave = async () => {
-        if (saveLockRef.current) return;
+                qtyAfter:
+                    "",
+            },
 
-        if (!item?._id) {
-            return enqueueSnackbar("Artículo inválido", { variant: "error" });
-        }
+            {
+                label:
+                    t(
+                        "inventoryPage.movementModal.yield.defaultSteps.cooked"
+                    ),
 
-        if (useYield) {
-            const qtyNum = parseN(qty);
-            const totalCostNum = parseN(totalCost);
-            const finalQtyNum = parseN(finalQty);
+                qtyAfter:
+                    "",
+            },
+        ];
 
-            if (qtyNum <= 0) {
-                return enqueueSnackbar("Cantidad comprada inválida", { variant: "warning" });
-            }
 
-            if (finalQtyNum <= 0) {
-                return enqueueSnackbar("Cantidad final inválida", { variant: "warning" });
-            }
-
-            if (totalCostNum < 0) {
-                return enqueueSnackbar("Costo total inválido", { variant: "warning" });
-            }
-
-            const cleanedSteps = (steps || [])
-                .map((s) => ({
-                    label: String(s.label || "").trim(),
-                    qty: parseN(s.qtyAfter),
-                }))
-                .filter((s) => s.label && s.qty > 0);
-
-            saveLockRef.current = true;
-            setLocalSaving(true);
-
+    const createRequestId =
+        () => {
             try {
-                await onSaveYield({
-                    itemId: item._id,
-                    purchasedQty: qtyNum,
-                    totalCost: totalCostNum,
-                    finalQty: finalQtyNum,
-                    steps: cleanedSteps,
-                    note: String(note || "").trim() || null,
-                    idempotencyKey: requestIdRef.current,
-                });
+                return (
+                    window.crypto
+                        ?.randomUUID
+                        ?.() ||
+                    `${Date.now()}-${Math.random()
+                        .toString(36)
+                        .slice(2)}`
+                );
 
-                onClose?.();
-            } catch (error) {
-                unlockSave();
+            } catch {
+                return `${Date.now()}-${Math.random()
+                    .toString(36)
+                    .slice(2)}`;
             }
-
-            return;
-        }
-
-        const qtyNum = parseN(qty);
-
-        if (qtyNum <= 0) {
-            return enqueueSnackbar("Cantidad inválida", { variant: "warning" });
-        }
-
-        const currentStock = parseN(item?.stockCurrent ?? 0);
-
-        const reducesStock =
-            type === "sale" ||
-            type === "waste" ||
-            (type === "adjust" && direction === "out");
-
-        const nextStock = reducesStock ? currentStock - qtyNum : currentStock;
-
-        const payload = {
-            itemId: item._id,
-            type,
-            qty: qtyNum,
-            note: String(note || "").trim() || null,
-            idempotencyKey: requestIdRef.current,
         };
 
-        if (type === "purchase") {
-            const unitCostNum = parseN(unitCost);
-            payload.unitCost = unitCost === "" ? null : unitCostNum;
-        }
 
-        if (type === "adjust") {
-            payload.direction = direction;
-        }
+    const unlockSave =
+        () => {
+            saveLockRef.current =
+                false;
 
-        if (reducesStock && nextStock < 0) {
-            setPendingMovementPayload(payload);
-            setNegativeConfirmData({
-                itemName: item?.name || "—",
-                currentStock,
-                qty: qtyNum,
-                nextStock,
-            });
-            setNegativeConfirmOpen(true);
-            return;
-        }
+            setLocalSaving(
+                false
+            );
+        };
 
-        await submitMovement(payload);
+
+    const submitMovement =
+        async (
+            payload
+        ) => {
+            if (
+                saveLockRef.current
+            ) {
+                return;
+            }
+
+            saveLockRef.current =
+                true;
+
+            setLocalSaving(
+                true
+            );
+
+            try {
+                await onSave(
+                    payload
+                );
+
+                setNegativeConfirmOpen(
+                    false
+                );
+
+                setNegativeConfirmData(
+                    null
+                );
+
+                setPendingMovementPayload(
+                    null
+                );
+
+                onClose?.();
+
+            } catch (
+                error
+                ) {
+                unlockSave();
+            }
+        };
+
+
+    const [
+        useYield,
+        setUseYield,
+    ] =
+        useState(false);
+
+    const [
+        totalCost,
+        setTotalCost,
+    ] =
+        useState("");
+
+    const [
+        finalQty,
+        setFinalQty,
+    ] =
+        useState("");
+
+    const [
+        steps,
+        setSteps,
+    ] =
+        useState(
+            () =>
+                getDefaultSteps()
+        );
+
+
+    React.useEffect(
+        () => {
+            if (
+                !open
+            ) {
+                return;
+            }
+
+            saveLockRef.current =
+                false;
+
+            requestIdRef.current =
+                createRequestId();
+
+            setLocalSaving(
+                false
+            );
+
+            setQty(
+                ""
+            );
+
+            setUnitCost(
+                ""
+            );
+
+            setDirection(
+                "out"
+            );
+
+            setNote(
+                ""
+            );
+
+            setUseYield(
+                Boolean(
+                    defaultYield
+                )
+            );
+
+            setTotalCost(
+                ""
+            );
+
+            setFinalQty(
+                ""
+            );
+
+            setSteps(
+                getDefaultSteps()
+            );
+        },
+        [
+            open,
+            type,
+            item,
+            defaultYield,
+            t,
+        ]
+    );
+
+
+    const title =
+        type ===
+        "purchase"
+            ? useYield
+                ? t(
+                    "inventoryPage.movementModal.title.yield"
+                )
+                : t(
+                    "inventoryPage.movementModal.title.purchase"
+                )
+            : type ===
+            "sale"
+                ? t(
+                    "inventoryPage.movementModal.title.sale"
+                )
+                : type ===
+                "waste"
+                    ? t(
+                        "inventoryPage.movementModal.title.waste"
+                    )
+                    : t(
+                        "inventoryPage.movementModal.title.adjust"
+                    );
+
+
+    const canYield =
+        type ===
+        "purchase";
+
+
+    const parseN = (
+        value
+    ) => {
+        const number =
+            Number(
+                String(
+                    value
+                ).replace(
+                    /[^\d.-]/g,
+                    ""
+                )
+            );
+
+        return Number.isFinite(
+            number
+        )
+            ? number
+            : 0;
     };
-    const handleClose = () => {
-        if (isSaving) return;
-        onClose?.();
-    };
+
+
+    const handleSave =
+        async () => {
+            if (
+                saveLockRef.current
+            ) {
+                return;
+            }
+
+            if (
+                !item?._id
+            ) {
+                return enqueueSnackbar(
+                    t(
+                        "inventoryPage.movementModal.messages.invalidItem"
+                    ),
+                    {
+                        variant:
+                            "error",
+                    }
+                );
+            }
+
+
+            if (
+                useYield
+            ) {
+                const qtyNum =
+                    parseN(
+                        qty
+                    );
+
+                const totalCostNum =
+                    parseN(
+                        totalCost
+                    );
+
+                const finalQtyNum =
+                    parseN(
+                        finalQty
+                    );
+
+
+                if (
+                    qtyNum <=
+                    0
+                ) {
+                    return enqueueSnackbar(
+                        t(
+                            "inventoryPage.movementModal.messages.invalidPurchasedQuantity"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+                }
+
+
+                if (
+                    finalQtyNum <=
+                    0
+                ) {
+                    return enqueueSnackbar(
+                        t(
+                            "inventoryPage.movementModal.messages.invalidFinalQuantity"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+                }
+
+
+                if (
+                    totalCostNum <
+                    0
+                ) {
+                    return enqueueSnackbar(
+                        t(
+                            "inventoryPage.movementModal.messages.invalidTotalCost"
+                        ),
+                        {
+                            variant:
+                                "warning",
+                        }
+                    );
+                }
+
+
+                const cleanedSteps =
+                    (
+                        steps ||
+                        []
+                    )
+                        .map(
+                            (
+                                step
+                            ) => ({
+                                label:
+                                    String(
+                                        step.label ||
+                                        ""
+                                    ).trim(),
+
+                                qty:
+                                    parseN(
+                                        step.qtyAfter
+                                    ),
+                            })
+                        )
+                        .filter(
+                            (
+                                step
+                            ) =>
+                                step.label &&
+                                step.qty >
+                                0
+                        );
+
+
+                saveLockRef.current =
+                    true;
+
+                setLocalSaving(
+                    true
+                );
+
+
+                try {
+                    await onSaveYield({
+                        itemId:
+                        item._id,
+
+                        purchasedQty:
+                        qtyNum,
+
+                        totalCost:
+                        totalCostNum,
+
+                        finalQty:
+                        finalQtyNum,
+
+                        steps:
+                        cleanedSteps,
+
+                        note:
+                            String(
+                                note ||
+                                ""
+                            ).trim() ||
+                            null,
+
+                        idempotencyKey:
+                        requestIdRef.current,
+                    });
+
+                    onClose?.();
+
+                } catch (
+                    error
+                    ) {
+                    unlockSave();
+                }
+
+                return;
+            }
+
+
+            const qtyNum =
+                parseN(
+                    qty
+                );
+
+
+            if (
+                qtyNum <=
+                0
+            ) {
+                return enqueueSnackbar(
+                    t(
+                        "inventoryPage.movementModal.messages.invalidQuantity"
+                    ),
+                    {
+                        variant:
+                            "warning",
+                    }
+                );
+            }
+
+
+            const currentStock =
+                parseN(
+                    item?.stockCurrent ??
+                    0
+                );
+
+
+            const reducesStock =
+                type ===
+                "sale" ||
+                type ===
+                "waste" ||
+                (
+                    type ===
+                    "adjust" &&
+                    direction ===
+                    "out"
+                );
+
+
+            const nextStock =
+                reducesStock
+                    ? currentStock -
+                    qtyNum
+                    : currentStock;
+
+
+            const payload = {
+                itemId:
+                item._id,
+
+                type,
+
+                qty:
+                qtyNum,
+
+                note:
+                    String(
+                        note ||
+                        ""
+                    ).trim() ||
+                    null,
+
+                idempotencyKey:
+                requestIdRef.current,
+            };
+
+
+            if (
+                type ===
+                "purchase"
+            ) {
+                const unitCostNum =
+                    parseN(
+                        unitCost
+                    );
+
+                payload.unitCost =
+                    unitCost ===
+                    ""
+                        ? null
+                        : unitCostNum;
+            }
+
+
+            if (
+                type ===
+                "adjust"
+            ) {
+                payload.direction =
+                    direction;
+            }
+
+
+            if (
+                reducesStock &&
+                nextStock <
+                0
+            ) {
+                setPendingMovementPayload(
+                    payload
+                );
+
+                setNegativeConfirmData({
+                    itemName:
+                        item?.name ||
+                        "—",
+
+                    currentStock,
+
+                    qty:
+                    qtyNum,
+
+                    nextStock,
+                });
+
+                setNegativeConfirmOpen(
+                    true
+                );
+
+                return;
+            }
+
+
+            await submitMovement(
+                payload
+            );
+        };
+
+
+    const handleClose =
+        () => {
+            if (
+                isSaving
+            ) {
+                return;
+            }
+
+            onClose?.();
+        };
+
 
     return (
-        <Modal open={open} title={title} onClose={handleClose}>
+        <Modal
+            open={
+                open
+            }
+            title={
+                title
+            }
+            onClose={
+                handleClose
+            }
+        >
+
             <div className="mb-5 rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+
                 <div className="text-white/70 text-sm">
-                    Artículo
+                    {t(
+                        "inventoryPage.movementModal.fields.item"
+                    )}
                 </div>
 
                 <div className="text-white font-semibold text-lg mt-1">
-                    {item?.name || "—"}
+                    {item?.name ||
+                        "—"
+                    }
                 </div>
+
             </div>
 
+
             {canYield && (
+
                 <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
                     <div className="text-white/70 text-sm">
-                        {useYield ? "Aplicando rendimiento (merma por proceso)" : "Entrada normal"}
+
+                        {useYield
+                            ? t(
+                                "inventoryPage.movementModal.yield.activeDescription"
+                            )
+                            : t(
+                                "inventoryPage.movementModal.yield.normalEntry"
+                            )
+                        }
+
                     </div>
+
+
                     <button
                         type="button"
                         onClick={() => {
-                            if (isSaving) return;
-                            setUseYield((v) => !v);
+                            if (
+                                isSaving
+                            ) {
+                                return;
+                            }
+
+                            setUseYield(
+                                (
+                                    value
+                                ) =>
+                                    !value
+                            );
                         }}
-                        disabled={isSaving}
+                        disabled={
+                            isSaving
+                        }
                         className={`px-3 py-2 rounded-xl border text-sm ${
                             isSaving
                                 ? "opacity-50 cursor-not-allowed bg-white/5 border-white/10 text-white/50"
@@ -3333,265 +8119,702 @@ function MovementModal({ open, type, item, defaultYield = false, saving = false,
                                     : "bg-white/5 border-white/10 text-white/80"
                         }`}
                     >
-                        {useYield ? "Desactivar" : "Activar"} proceso de merma
+
+                        {useYield
+                            ? t(
+                                "inventoryPage.movementModal.yield.disable"
+                            )
+                            : t(
+                                "inventoryPage.movementModal.yield.enable"
+                            )
+                        }
+                        {" "}
+
+                        {t(
+                            "inventoryPage.movementModal.yield.process"
+                        )}
+
                     </button>
+
                 </div>
+
             )}
+
 
             {!useYield && (
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
                     <div>
+
                         <div className="text-white text-base font-semibold mb-2">
-                            Cantidad
+                            {t(
+                                "inventoryPage.movementModal.fields.quantity"
+                            )}
                         </div>
 
                         <input
-                            className={inputCls}
+                            className={
+                                inputCls
+                            }
                             type="number"
-                            value={qty}
-                            onChange={(e) => setQty(e.target.value)}
+                            value={
+                                qty
+                            }
+                            onChange={(e) =>
+                                setQty(
+                                    e.target.value
+                                )
+                            }
                         />
+
                     </div>
 
-                    {type === "purchase" && (
-                        <div>
-                            <div className="text-white text-base font-semibold mb-2">
-                                Costo unitario
+
+                    {type ===
+                        "purchase" && (
+
+                            <div>
+
+                                <div className="text-white text-base font-semibold mb-2">
+                                    {t(
+                                        "inventoryPage.movementModal.fields.unitCost"
+                                    )}
+                                </div>
+
+                                <input
+                                    className={
+                                        inputCls
+                                    }
+                                    type="number"
+                                    value={
+                                        unitCost
+                                    }
+                                    onChange={(e) =>
+                                        setUnitCost(
+                                            e.target.value
+                                        )
+                                    }
+                                />
+
                             </div>
 
-                            <input
-                                className={inputCls}
-                                type="number"
-                                value={unitCost}
-                                onChange={(e) => setUnitCost(e.target.value)}
-                            />
-                        </div>
-                    )}
+                        )}
 
-                    {type === "adjust" && (
-                        <div>
-                            <div className="text-white text-base font-semibold mb-2">
-                                Dirección
+
+                    {type ===
+                        "adjust" && (
+
+                            <div>
+
+                                <div className="text-white text-base font-semibold mb-2">
+                                    {t(
+                                        "inventoryPage.movementModal.fields.direction"
+                                    )}
+                                </div>
+
+                                <select
+                                    className={
+                                        selectCls
+                                    }
+                                    value={
+                                        direction
+                                    }
+                                    onChange={(e) =>
+                                        setDirection(
+                                            e.target.value
+                                        )
+                                    }
+                                >
+
+                                    <option value="out">
+                                        {t(
+                                            "inventoryPage.movementModal.direction.reduce"
+                                        )}
+                                    </option>
+
+                                    <option value="in">
+                                        {t(
+                                            "inventoryPage.movementModal.direction.increase"
+                                        )}
+                                    </option>
+
+                                </select>
+
                             </div>
-                            <select className={selectCls} value={direction} onChange={(e) => setDirection(e.target.value)}>
-                                <option value="out">Reducir</option>
-                                <option value="in">Aumentar</option>
-                            </select>
-                        </div>
-                    )}
+
+                        )}
+
 
                     <div className="md:col-span-2">
+
                         <div className="text-white text-base font-semibold mb-2">
-                            Nota
+                            {t(
+                                "inventoryPage.movementModal.fields.note"
+                            )}
                         </div>
 
                         <input
-                            className={inputCls}
-                            value={note}
-                            onChange={(e) => setNote(e.target.value)}
+                            className={
+                                inputCls
+                            }
+                            value={
+                                note
+                            }
+                            onChange={(e) =>
+                                setNote(
+                                    e.target.value
+                                )
+                            }
                         />
+
                     </div>
+
                 </div>
+
             )}
 
+
             {useYield && (
+
                 <div className="space-y-3">
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
                         <div>
+
                             <div className="text-white text-base font-semibold mb-2">
-                                Cantidad comprada (ej: 44.60)
-                            </div>
-                            <input className={inputCls} type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
-                        </div>
-
-                        <div>
-                            <div className="text-white text-base font-semibold mb-2">Costo total compra (ej: 7136)</div>
-                            <input className={inputCls} type="number" value={totalCost} onChange={(e) => setTotalCost(e.target.value)} />
-                        </div>
-
-                        <div>
-                            <div className="text-white text-base font-semibold mb-2">Cantidad final usable (ej: 28)</div>
-                            <input className={inputCls} type="number" value={finalQty} onChange={(e) => setFinalQty(e.target.value)} />
-                        </div>
-
-                        <div>
-                            <div className="text-white text-base font-semibold mb-2">
-                                Nota
+                                {t(
+                                    "inventoryPage.movementModal.yield.purchasedQuantity"
+                                )}
                             </div>
 
                             <input
-                                className={inputCls}
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
+                                className={
+                                    inputCls
+                                }
+                                type="number"
+                                value={
+                                    qty
+                                }
+                                onChange={(e) =>
+                                    setQty(
+                                        e.target.value
+                                    )
+                                }
                             />
+
                         </div>
+
+
+                        <div>
+
+                            <div className="text-white text-base font-semibold mb-2">
+                                {t(
+                                    "inventoryPage.movementModal.yield.totalPurchaseCost"
+                                )}
+                            </div>
+
+                            <input
+                                className={
+                                    inputCls
+                                }
+                                type="number"
+                                value={
+                                    totalCost
+                                }
+                                onChange={(e) =>
+                                    setTotalCost(
+                                        e.target.value
+                                    )
+                                }
+                            />
+
+                        </div>
+
+
+                        <div>
+
+                            <div className="text-white text-base font-semibold mb-2">
+                                {t(
+                                    "inventoryPage.movementModal.yield.finalUsableQuantity"
+                                )}
+                            </div>
+
+                            <input
+                                className={
+                                    inputCls
+                                }
+                                type="number"
+                                value={
+                                    finalQty
+                                }
+                                onChange={(e) =>
+                                    setFinalQty(
+                                        e.target.value
+                                    )
+                                }
+                            />
+
+                        </div>
+
+
+                        <div>
+
+                            <div className="text-white text-base font-semibold mb-2">
+                                {t(
+                                    "inventoryPage.movementModal.fields.note"
+                                )}
+                            </div>
+
+                            <input
+                                className={
+                                    inputCls
+                                }
+                                value={
+                                    note
+                                }
+                                onChange={(e) =>
+                                    setNote(
+                                        e.target.value
+                                    )
+                                }
+                            />
+
+                        </div>
+
                     </div>
+
 
                     <div className="text-white/60 text-sm">
-                        Pasos intermedios (opcional). Ej: hervido 32.8, cocido 28.
+                        {t(
+                            "inventoryPage.movementModal.yield.intermediateStepsHelp"
+                        )}
                     </div>
+
 
                     <div className="space-y-2">
-                        {steps.map((s, idx) => (
-                            <div key={`${s.label}-${idx}`} className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                <input
-                                    className={inputCls}
-                                    value={s.label}
-                                    onChange={(e) =>
-                                        setSteps((arr) => arr.map((x, i) => (i === idx ? { ...x, label: e.target.value } : x)))
-                                    }
-                                />
-                                <input
-                                    className={inputCls}
-                                    type="number"
-                                    placeholder="Cantidad después"
-                                    value={s.qtyAfter}
-                                    onChange={(e) =>
-                                        setSteps((arr) => arr.map((x, i) => (i === idx ? { ...x, qtyAfter: e.target.value } : x)))
-                                    }
-                                />
-                                <button
-                                    onClick={() => setSteps((arr) => arr.filter((_, i) => i !== idx))}
-                                    className="w-full px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+
+                        {steps.map(
+                            (
+                                step,
+                                idx
+                            ) => (
+
+                                <div
+                                    key={`${step.label}-${idx}`}
+                                    className="grid grid-cols-1 md:grid-cols-3 gap-2"
                                 >
-                                    Quitar
-                                </button>
-                            </div>
-                        ))}
+
+                                    <input
+                                        className={
+                                            inputCls
+                                        }
+                                        value={
+                                            step.label
+                                        }
+                                        onChange={(e) =>
+                                            setSteps(
+                                                (
+                                                    items
+                                                ) =>
+                                                    items.map(
+                                                        (
+                                                            current,
+                                                            index
+                                                        ) =>
+                                                            index ===
+                                                            idx
+                                                                ? {
+                                                                    ...current,
+
+                                                                    label:
+                                                                    e
+                                                                        .target
+                                                                        .value,
+                                                                }
+                                                                : current
+                                                    )
+                                            )
+                                        }
+                                    />
+
+
+                                    <input
+                                        className={
+                                            inputCls
+                                        }
+                                        type="number"
+                                        placeholder={t(
+                                            "inventoryPage.movementModal.yield.quantityAfter"
+                                        )}
+                                        value={
+                                            step.qtyAfter
+                                        }
+                                        onChange={(e) =>
+                                            setSteps(
+                                                (
+                                                    items
+                                                ) =>
+                                                    items.map(
+                                                        (
+                                                            current,
+                                                            index
+                                                        ) =>
+                                                            index ===
+                                                            idx
+                                                                ? {
+                                                                    ...current,
+
+                                                                    qtyAfter:
+                                                                    e
+                                                                        .target
+                                                                        .value,
+                                                                }
+                                                                : current
+                                                    )
+                                            )
+                                        }
+                                    />
+
+
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setSteps(
+                                                (
+                                                    items
+                                                ) =>
+                                                    items.filter(
+                                                        (
+                                                            _,
+                                                            index
+                                                        ) =>
+                                                            index !==
+                                                            idx
+                                                    )
+                                            )
+                                        }
+                                        className="w-full px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
+                                    >
+                                        {t(
+                                            "inventoryPage.movementModal.actions.remove"
+                                        )}
+                                    </button>
+
+                                </div>
+
+                            )
+                        )}
+
 
                         <button
-                            onClick={() => setSteps((arr) => [...arr, { label: "Paso", qtyAfter: "" }])}
+                            type="button"
+                            onClick={() =>
+                                setSteps(
+                                    (
+                                        items
+                                    ) => [
+                                        ...items,
+                                        {
+                                            label:
+                                                t(
+                                                    "inventoryPage.movementModal.yield.defaultSteps.step"
+                                                ),
+
+                                            qtyAfter:
+                                                "",
+                                        },
+                                    ]
+                                )
+                            }
                             className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
                         >
-                            + Agregar paso
+                            {t(
+                                "inventoryPage.movementModal.actions.addStep"
+                            )}
                         </button>
+
                     </div>
+
 
                     <div className="text-white/60 text-sm mt-2">
-                        Costo final por unidad (estimado):{" "}
+
+                        {t(
+                            "inventoryPage.movementModal.yield.estimatedFinalUnitCost"
+                        )}
+                        :{" "}
+
                         <b className="text-white">
+
                             {(() => {
-                                const tc = parseN(totalCost);
-                                const fq = parseN(finalQty);
-                                if (fq <= 0) return "—";
-                                return moneyRD(tc / fq);
+                                const parsedTotalCost =
+                                    parseN(
+                                        totalCost
+                                    );
+
+                                const parsedFinalQty =
+                                    parseN(
+                                        finalQty
+                                    );
+
+                                if (
+                                    parsedFinalQty <=
+                                    0
+                                ) {
+                                    return "—";
+                                }
+
+                                return money(
+                                    parsedTotalCost /
+                                    parsedFinalQty
+                                );
                             })()}
+
                         </b>
+
                     </div>
+
                 </div>
+
             )}
 
+
             <div className="mt-5 flex gap-2 justify-end">
+
                 <button
                     type="button"
                     onClick={() => {
-                        if (isSaving) return;
+                        if (
+                            isSaving
+                        ) {
+                            return;
+                        }
+
                         onClose?.();
                     }}
-                    disabled={isSaving}
+                    disabled={
+                        isSaving
+                    }
                     className={`px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/80 ${
-                        isSaving ? "opacity-50 cursor-not-allowed pointer-events-none" : "hover:bg-white/10"
+                        isSaving
+                            ? "opacity-50 cursor-not-allowed pointer-events-none"
+                            : "hover:bg-white/10"
                     }`}
                 >
-                    Cancelar
+                    {t(
+                        "common.cancel"
+                    )}
                 </button>
+
 
                 <button
                     type="button"
-                    onClick={handleSave}
-                    disabled={isSaving}
+                    onClick={
+                        handleSave
+                    }
+                    disabled={
+                        isSaving
+                    }
                     className={`px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 ${
-                        isSaving ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-yellow-500/20"
+                        isSaving
+                            ? "opacity-60 cursor-not-allowed pointer-events-none"
+                            : "hover:bg-yellow-500/20"
                     }`}
                 >
-                    {isSaving ? "Guardando..." : "Guardar"}
+
+                    {isSaving
+                        ? t(
+                            "inventoryPage.movementModal.actions.saving"
+                        )
+                        : t(
+                            "inventoryPage.movementModal.actions.save"
+                        )
+                    }
+
                 </button>
+
             </div>
-            {negativeConfirmOpen && negativeConfirmData && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-                    <div className="w-full max-w-md rounded-2xl border border-yellow-500/20 bg-[#111111] shadow-2xl overflow-hidden">
-                        <div className="px-5 py-4 border-b border-white/10">
-                            <div className="flex items-start gap-3">
-                                <div className="h-11 w-11 rounded-xl bg-yellow-500/15 border border-yellow-500/20 flex items-center justify-center shrink-0">
-                                    <span className="text-yellow-400 text-xl">!</span>
+
+
+            {negativeConfirmOpen &&
+                negativeConfirmData && (
+
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+
+                        <div className="w-full max-w-md rounded-2xl border border-yellow-500/20 bg-[#111111] shadow-2xl overflow-hidden">
+
+                            <div className="px-5 py-4 border-b border-white/10">
+
+                                <div className="flex items-start gap-3">
+
+                                    <div className="h-11 w-11 rounded-xl bg-yellow-500/15 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                                    <span className="text-yellow-400 text-xl">
+                                        !
+                                    </span>
+                                    </div>
+
+                                    <div>
+
+                                        <h3 className="text-white text-lg font-semibold">
+                                            {t(
+                                                "inventoryPage.movementModal.negative.title"
+                                            )}
+                                        </h3>
+
+                                        <p className="text-sm text-gray-400 mt-1">
+                                            {t(
+                                                "inventoryPage.movementModal.negative.description"
+                                            )}
+                                        </p>
+
+                                    </div>
+
                                 </div>
 
-                                <div>
-                                    <h3 className="text-white text-lg font-semibold">
-                                        Inventario quedará en negativo
-                                    </h3>
-                                    <p className="text-sm text-gray-400 mt-1">
-                                        Este movimiento reducirá el stock por debajo de cero. Verifica si deseas continuar.
+                            </div>
+
+
+                            <div className="px-5 py-4 space-y-3">
+
+                                <div className="rounded-xl bg-[#181818] border border-white/5 p-4">
+
+                                    <div className="flex items-center justify-between py-1">
+
+                                    <span className="text-gray-400 text-sm">
+                                        {t(
+                                            "inventoryPage.movementModal.fields.item"
+                                        )}
+                                    </span>
+
+                                        <span className="text-white text-sm font-medium">
+                                        {
+                                            negativeConfirmData.itemName
+                                        }
+                                    </span>
+
+                                    </div>
+
+
+                                    <div className="flex items-center justify-between py-1">
+
+                                    <span className="text-gray-400 text-sm">
+                                        {t(
+                                            "inventoryPage.movementModal.negative.currentStock"
+                                        )}
+                                    </span>
+
+                                        <span className="text-white text-sm font-medium">
+                                        {
+                                            negativeConfirmData.currentStock
+                                        }
+                                    </span>
+
+                                    </div>
+
+
+                                    <div className="flex items-center justify-between py-1">
+
+                                    <span className="text-gray-400 text-sm">
+                                        {t(
+                                            "inventoryPage.movementModal.negative.outputQuantity"
+                                        )}
+                                    </span>
+
+                                        <span className="text-white text-sm font-medium">
+                                        {
+                                            negativeConfirmData.qty
+                                        }
+                                    </span>
+
+                                    </div>
+
+
+                                    <div className="flex items-center justify-between py-1">
+
+                                    <span className="text-gray-400 text-sm">
+                                        {t(
+                                            "inventoryPage.movementModal.negative.newStock"
+                                        )}
+                                    </span>
+
+                                        <span className="text-red-400 text-sm font-semibold">
+                                        {
+                                            negativeConfirmData.nextStock
+                                        }
+                                    </span>
+
+                                    </div>
+
+                                </div>
+
+
+                                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+
+                                    <p className="text-sm text-red-300">
+                                        {t(
+                                            "inventoryPage.movementModal.negative.warning"
+                                        )}
                                     </p>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div className="px-5 py-4 space-y-3">
-                            <div className="rounded-xl bg-[#181818] border border-white/5 p-4">
-                                <div className="flex items-center justify-between py-1">
-                                    <span className="text-gray-400 text-sm">Artículo</span>
-                                    <span className="text-white text-sm font-medium">
-                            {negativeConfirmData.itemName}
-                        </span>
                                 </div>
 
-                                <div className="flex items-center justify-between py-1">
-                                    <span className="text-gray-400 text-sm">Stock actual</span>
-                                    <span className="text-white text-sm font-medium">
-                            {negativeConfirmData.currentStock}
-                        </span>
-                                </div>
-
-                                <div className="flex items-center justify-between py-1">
-                                    <span className="text-gray-400 text-sm">Cantidad de salida</span>
-                                    <span className="text-white text-sm font-medium">
-                            {negativeConfirmData.qty}
-                        </span>
-                                </div>
-
-                                <div className="flex items-center justify-between py-1">
-                                    <span className="text-gray-400 text-sm">Nuevo stock</span>
-                                    <span className="text-red-400 text-sm font-semibold">
-                            {negativeConfirmData.nextStock}
-                        </span>
-                                </div>
                             </div>
 
-                            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
-                                <p className="text-sm text-red-300">
-                                    Si continúas, el producto quedará con existencia negativa. Esto puede afectar tus reportes y conteos.
-                                </p>
+
+                            <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-3">
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setNegativeConfirmOpen(
+                                            false
+                                        );
+
+                                        setNegativeConfirmData(
+                                            null
+                                        );
+
+                                        setPendingMovementPayload(
+                                            null
+                                        );
+                                    }}
+                                    className="px-4 py-2 rounded-xl border border-white/10 bg-[#1b1b1b] text-white hover:bg-[#232323] transition"
+                                >
+                                    {t(
+                                        "common.cancel"
+                                    )}
+                                </button>
+
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (
+                                            !pendingMovementPayload
+                                        ) {
+                                            return;
+                                        }
+
+                                        submitMovement(
+                                            pendingMovementPayload
+                                        );
+                                    }}
+                                    className="px-4 py-2 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition"
+                                >
+                                    {t(
+                                        "inventoryPage.movementModal.negative.continueAnyway"
+                                    )}
+                                </button>
+
                             </div>
+
                         </div>
 
-                        <div className="px-5 py-4 border-t border-white/10 flex items-center justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setNegativeConfirmOpen(false);
-                                    setNegativeConfirmData(null);
-                                    setPendingMovementPayload(null);
-                                }}
-                                className="px-4 py-2 rounded-xl border border-white/10 bg-[#1b1b1b] text-white hover:bg-[#232323] transition"
-                            >
-                                Cancelar
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (!pendingMovementPayload) return;
-                                    submitMovement(pendingMovementPayload);
-                                }}
-                                className="px-4 py-2 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition"
-                            >
-                                Continuar de todos modos
-                            </button>
-                        </div>
                     </div>
-                </div>
-            )}
+
+                )}
+
         </Modal>
     );
 }

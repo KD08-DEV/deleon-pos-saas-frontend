@@ -5,6 +5,11 @@ const SuperAdminTenants = () => {
     const [tenants, setTenants] = useState([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState({ open: false, message: "", type: "error" });
+    const [deletePreview, setDeletePreview] = useState(null);
+    const [deleteConfirmText, setDeleteConfirmText] = useState("");
+    const [backupConfirmed, setBackupConfirmed] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
 
     const showToast = (message, type = "error") => {
         setToast({ open: true, message, type });
@@ -42,6 +47,14 @@ const SuperAdminTenants = () => {
         }
     };
 
+    const changeLocalization = async (t, patch) => {
+        try {
+            await api.patch(`/api/superadmin/tenants/${t.tenantId}/localization`, patch);
+            fetchTenants();
+        } catch (err) {
+            showToast(err?.response?.data?.message || "Could not change country/language");
+        }
+    };
     const changePlan = async (tenantId, plan) => {
         try {
             await api.patch(`/api/superadmin/tenants/${tenantId}/plan`, {
@@ -65,6 +78,35 @@ const SuperAdminTenants = () => {
     };
 
 
+    const requestDeletePreview = async (tenant) => {
+        setDeletePreview(null); setDeleteConfirmText(""); setBackupConfirmed(false);
+        try {
+            const res = await api.get(`/api/superadmin/tenants/${encodeURIComponent(tenant.tenantId)}/delete-preview`);
+            setDeletePreview({ ...res.data.data, deletionEnabled: res.data.deletionEnabled });
+        } catch (e) {
+            const code = e?.response?.data?.code;
+            const detail = e?.response?.data?.message || e?.message || "Unable to preview tenant deletion";
+            showToast(`${e?.response?.status || "Network"}: ${code || detail}`);
+        }
+    };
+    const confirmPermanentDeletion = async () => {
+        const target = deletePreview?.tenant;
+        if (!target || target.status !== "suspended" || !deletePreview.deletionEnabled || !backupConfirmed) return;
+        if (deleteConfirmText !== `BORRAR ${target.name}`) return;
+        setIsDeleting(true);
+        try {
+            const res = await api.delete(`/api/superadmin/tenants/${encodeURIComponent(target.tenantId)}`, {
+                data: { tenantId: target.tenantId, tenantName: target.name,
+                    confirmation: deleteConfirmText, backupConfirmed: true },
+            });
+            const remaining = res.data?.data?.storage?.errors || [];
+            setDeletePreview(null);
+            await fetchTenants();
+            showToast(remaining.length ? "MongoDB eliminado; quedan archivos externos pendientes de revisar." : "Tenant eliminado permanentemente.", remaining.length ? "error" : "success");
+        } catch (e) { showToast(e.response?.data?.code || e.response?.data?.message || "Deletion failed"); }
+        finally { setIsDeleting(false); }
+    };
+
     if (loading) return <p className="p-6">Loading tenants...</p>;
 
     return (
@@ -77,6 +119,7 @@ const SuperAdminTenants = () => {
                     <th className="p-3 w-[180px]">Company</th>
                     <th className="p-3">Tenant ID</th>
                     <th className="p-3 w-[140px]">Plan</th>
+                    <th className="p-3 w-[160px]">Country / Language</th>
                     <th className="p-3 w-[120px]">Status</th>
                     <th className="p-3 w-[260px]">Features</th>
                     <th className="p-3 w-[220px]">Actions</th>
@@ -96,6 +139,14 @@ const SuperAdminTenants = () => {
                         </td>
 
                         <td className="p-3 capitalize text-gray-100">{t.plan}</td>
+                        <td className="p-3 text-gray-100">
+                            <select aria-label="Country" value={t.localization?.countryCode || "DO"} onChange={(e) => changeLocalization(t, { countryCode: e.target.value })} className="bg-gray-800 w-full rounded mb-1">
+                                <option value="DO">🇩🇴 DO</option><option value="US">🇺🇸 US</option><option value="GB">🇬🇧 GB</option><option value="CA">🇨🇦 CA</option><option value="AU">🇦🇺 AU</option>
+                            </select>
+                            <select aria-label="Language" value={t.localization?.language || "es"} onChange={(e) => changeLocalization(t, { language: e.target.value })} className="bg-gray-800 w-full rounded">
+                                <option value="es">Español</option><option value="en">English</option>
+                            </select>
+                        </td>
 
                         <td className="p-3 capitalize">
           <span
@@ -120,7 +171,7 @@ const SuperAdminTenants = () => {
                                             updateFeatures(t.tenantId, { taxEnabled: e.target.checked })
                                         }
                                     />
-                                    <span>ITBIS</span>
+                                    <span>{(t.localization?.countryCode || "DO") === "DO" ? "ITBIS" : "Tax"}</span>
                                 </label>
 
                                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -134,7 +185,7 @@ const SuperAdminTenants = () => {
                                     <span>Descuento</span>
                                 </label>
 
-                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                {(t.localization?.countryCode || "DO") === "DO" && <label className="flex items-center gap-2 cursor-pointer select-none">
                                     <input
                                         type="checkbox"
                                         checked={t?.features?.fiscal?.enabled !== false}
@@ -143,7 +194,7 @@ const SuperAdminTenants = () => {
                                         }
                                     />
                                     <span>NCF</span>
-                                </label>
+                                </label>}
                             </div>
                         </td>
 
@@ -176,6 +227,10 @@ const SuperAdminTenants = () => {
                                     <option value="premium">premium</option>
                                     <option value="pro">pro</option>
                                 </select>
+                                <button type="button" onClick={() => requestDeletePreview(t)}
+                                    className="px-2 py-1 rounded border border-red-700 text-red-300 hover:bg-red-900 text-sm">
+                                    Borrar tenant
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -183,6 +238,28 @@ const SuperAdminTenants = () => {
 
                 </tbody>
             </table>
+            {deletePreview && <div className="fixed inset-0 z-[100000] bg-black/85 flex items-center justify-center p-4">
+                <div role="dialog" aria-modal="true" aria-label="Eliminar tenant" className="bg-[#181818] text-white border border-red-700 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-auto space-y-3">
+                    <h2 className="text-xl font-bold text-red-300">Eliminar empresa y todos sus datos</h2>
+                    <p><strong>{deletePreview.tenant.name}</strong> ({deletePreview.tenant.tenantId})</p>
+                    <p className="text-sm text-red-200">Irreversible: usuarios, platos, facturas, cajas, inventarios, ventas y demás registros de esta empresa. No afecta otros tenants.</p>
+                    <p className="text-sm">MongoDB: <strong>{deletePreview.totalDocuments}</strong> documentos detectados.</p>
+                    {Object.entries(deletePreview.counts || {}).filter(([, n]) => n > 0).map(([collection, n]) => <div key={collection} className="flex justify-between text-xs text-gray-400"><span>{collection}</span><span>{n}</span></div>)}
+                    {deletePreview.unknownCollections?.length > 0 && <p className="text-red-400">Bloqueado: hay colecciones de esta empresa pendientes de auditar.</p>}
+                    {deletePreview.tenant.status !== "suspended" && <p className="text-amber-300">Primero debes suspender la empresa.</p>}
+                    {!deletePreview.deletionEnabled && <p className="text-amber-300">El borrado permanente está desactivado en el servidor. Requiere ENABLE_PERMANENT_TENANT_DELETE=true.</p>}
+                    <p className="text-xs text-gray-400">Se requiere respaldo probado. Los archivos en almacenamiento externo pueden necesitar verificación adicional; el servidor informará si no pudo limpiarlos.</p>
+                    <label className="flex gap-2 text-sm"><input type="checkbox" checked={backupConfirmed} onChange={e => setBackupConfirmed(e.target.checked)} /> He respaldado los datos y revisado las obligaciones legales de conservación.</label>
+                    <label className="block text-sm">Escribe exactamente: <strong>BORRAR {deletePreview.tenant.name}</strong></label>
+                    <input className="w-full bg-gray-800 rounded p-2" autoComplete="off" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)} />
+                    <div className="flex gap-3 justify-end">
+                        <button type="button" className="bg-gray-600 px-4 py-2 rounded" onClick={() => setDeletePreview(null)}>Cancelar</button>
+                        <button type="button" className="bg-red-600 px-4 py-2 rounded disabled:opacity-30" disabled={isDeleting || !backupConfirmed || deletePreview.tenant.status !== "suspended" || !deletePreview.deletionEnabled || Boolean(deletePreview.unknownCollections?.length) || deleteConfirmText !== `BORRAR ${deletePreview.tenant.name}`} onClick={confirmPermanentDeletion}>
+                            {isDeleting ? "Eliminando…" : "Eliminar definitivamente"}
+                        </button>
+                    </div>
+                </div>
+            </div>}
             {toast.open && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999]">
                     <div

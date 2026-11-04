@@ -9,6 +9,9 @@ const SuperAdminCreateTenant = () => {
         // Tenant info
         tenantName: "",
         plan: "emprendedor",
+        countryCode: "DO",
+        language: "es",
+        timezone: "America/Santo_Domingo",
 
         // Admin info
         adminName: "",
@@ -36,9 +39,17 @@ const SuperAdminCreateTenant = () => {
 
     const handleChange = (e) => {
         const { name, type, value, checked } = e.target;
+        const presets = {
+            DO: ["es", "America/Santo_Domingo"],
+            US: ["en", "America/New_York"],
+            GB: ["en", "Europe/London"],
+            CA: ["en", "America/Toronto"],
+            AU: ["en", "Australia/Sydney"],
+        };
         setFormData((prev) => ({
             ...prev,
             [name]: type === "checkbox" ? checked : value,
+            ...(name === "countryCode" ? { language: presets[value][0], timezone: presets[value][1], fiscalEnabled: false } : {}),
         }));
     };
 
@@ -62,6 +73,7 @@ const SuperAdminCreateTenant = () => {
                 // Tenant Info
                 tenantName: formData.tenantName,
                 plan: formData.plan,
+                localization: { countryCode: formData.countryCode, language: formData.language, timezone: formData.timezone },
 
                 // Business Info
                 business: {
@@ -73,7 +85,7 @@ const SuperAdminCreateTenant = () => {
 
                 // Fiscal Info (nuevo)
                 fiscal: {
-                    enabled: Boolean(formData.fiscalEnabled),
+                    enabled: formData.countryCode === "DO" && Boolean(formData.fiscalEnabled),
                     nextInvoiceNumber: 1,
                     ncfConfig: {
                         B01: {
@@ -98,7 +110,7 @@ const SuperAdminCreateTenant = () => {
                 payload.fiscal.ncfConfig.B02.active = false;
             }
 
-            const res = await api.post("/api/user/register", payload);
+            const res = await api.post("/api/superadmin/tenants", payload);
 
             if (res.data.success) {
                 alert("Tenant + Admin created successfully!");
@@ -139,9 +151,26 @@ const SuperAdminCreateTenant = () => {
                         <option value="emprendedor">emprendedor</option>
                         <option value="premium">premium</option>
                         <option value="estandar">estandar</option>
+                        <option value="pro">pro</option>
                     </select>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label>Country
+                        <select name="countryCode" value={formData.countryCode} onChange={handleChange} className="w-full p-2 border rounded bg-white text-black">
+                            <option value="DO">República Dominicana</option><option value="US">United States</option>
+                            <option value="GB">United Kingdom</option><option value="CA">Canada</option><option value="AU">Australia</option>
+                        </select>
+                    </label>
+                    <label>System language
+                        <select name="language" value={formData.language} onChange={handleChange} className="w-full p-2 border rounded bg-white text-black">
+                            <option value="es">Español</option><option value="en">English</option>
+                        </select>
+                    </label>
+                    <label>Timezone
+                        <input name="timezone" value={formData.timezone} onChange={handleChange} className="w-full p-2 border rounded bg-white text-black" required />
+                    </label>
+                </div>
                 <hr className="my-5 border-gray-600" />
 
                 {/* Business Info */}
@@ -158,8 +187,8 @@ const SuperAdminCreateTenant = () => {
                     />
                 </div>
 
-                <div>
-                    <label className="block font-semibold">RNC (optional)</label>
+                {formData.countryCode === "DO" && <div>
+                    <label className="block font-semibold">RNC (opcional)</label>
                     <input
                         type="text"
                         name="rnc"
@@ -167,7 +196,7 @@ const SuperAdminCreateTenant = () => {
                         onChange={handleChange}
                         className="w-full p-2 border rounded bg-white text-black"
                     />
-                </div>
+                </div>}
 
                 <div>
                     <label className="block font-semibold">Business Address</label>
@@ -194,9 +223,9 @@ const SuperAdminCreateTenant = () => {
                 <hr className="my-5 border-gray-600" />
 
                 {/* Fiscal Info */}
-                <h2 className="text-xl font-bold mt-4">Fiscal Information</h2>
+                {formData.countryCode === "DO" && <h2 className="text-xl font-bold mt-4">Configuración fiscal dominicana (DGII / NCF / e-CF)</h2>}
 
-                <label className="flex items-center gap-2">
+                {formData.countryCode === "DO" && <label className="flex items-center gap-2">
                     <input
                         type="checkbox"
                         name="fiscalEnabled"
@@ -204,9 +233,9 @@ const SuperAdminCreateTenant = () => {
                         onChange={handleChange}
                     />
                     <span className="font-semibold">Habilitar comprobante fiscal (NCF)</span>
-                </label>
+                </label>}
 
-                {formData.fiscalEnabled && (
+                {formData.countryCode === "DO" && formData.fiscalEnabled && (
                     <div className="space-y-6 mt-3">
                         {/* B01 */}
                         <div className="p-3 border rounded">

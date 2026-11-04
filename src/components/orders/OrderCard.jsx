@@ -8,11 +8,19 @@ import React, {
 } from "react";
 import { useSnackbar } from "notistack";
 import { useSelector } from "react-redux";
-import { formatDateAndTime } from "../../utils";
+import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
+
 import { updateOrder } from "../../https";
 import api from "../../lib/api";
+import {
+    formatDateTime,
+    getTenantLocalization,
+} from "../../lib/localization";
 import Invoice from "../invoice/Invoice";
 import SplitBillModal from "./SplitBillModal";
+import OrderCorrectionEditor from "./OrderCorrectionEditor";
+import OrderCorrectionHistory from "./OrderCorrectionHistory";
 import SplitInvoicesModal from "./SplitInvoicesModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, X, Circle, ArrowLeft, ArrowRight, Receipt, CreditCard, Clock, User, Hash, MoreVertical, Table2, Users, Package, Calendar, MessageSquareText  } from "lucide-react";
@@ -76,15 +84,15 @@ const normalizeDisplayOrderNumber = (value) => {
     return raw.replace(/^#/, "");
 };
 
-const getShortOrderId = (order) => {
-    if (!order) return "#Sin número";
+const getShortOrderId = (order, t) => {
+    if (!order) {
+        return `#${t("orderCard.noNumber")}`;
+    }
 
     const candidates = [
-        // ✅ Número de orden / operación para Ticket y Actualizar
         order?.operationNumber,
         order?.operationSeq,
 
-        // Otros posibles números internos de orden
         order?.displayOrderNumber,
         order?.displayNumber,
         order?.queueNumber,
@@ -95,7 +103,6 @@ const getShortOrderId = (order) => {
         order?.sequenceNumber,
         order?.serialNumber,
 
-        // ✅ Factura real, solo cuando ya fue facturada
         order?.facturaNo,
         order?.invoiceNumber,
         order?.invoiceNo,
@@ -105,22 +112,63 @@ const getShortOrderId = (order) => {
         order?.fiscal?.invoiceNumber,
         order?.fiscal?.invoiceNo,
 
-        // Último fallback visual si la orden vieja no tiene número
-        order?._id ? String(order._id).slice(-6).toUpperCase() : null,
+        order?._id
+            ? String(order._id)
+                .slice(-6)
+                .toUpperCase()
+            : null,
     ];
 
     for (const candidate of candidates) {
-        const normalized = normalizeDisplayOrderNumber(candidate);
+        const normalized =
+            normalizeDisplayOrderNumber(
+                candidate
+            );
+
         if (normalized) {
             return `#${normalized}`;
         }
     }
 
-    return "#Sin número";
+    return `#${t("orderCard.noNumber")}`;
 };
+const getOrderTypeLabel = (orderType, t) => {
+    if (!orderType) {
+        return t(
+            "orderCard.dineIn"
+        );
+    }
 
-const getOrderTypeLabel = (orderType) => {
-    if (!orderType) return "Dine in";
+    const normalized =
+        String(
+            orderType ||
+            ""
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        [
+            "restaurante",
+            "restaurant",
+            "dine in",
+            "dine-in",
+            "dine_in",
+        ].includes(
+            normalized
+        )
+    ) {
+        return t(
+            "orderCard.dineIn"
+        );
+    }
+
+
+    /*
+     * Si es un tipo personalizado creado
+     * por el negocio, no lo traducimos.
+     */
     return orderType;
 };
 
@@ -179,22 +227,51 @@ const getAddonQuantity = (addon) => {
         : 1;
 };
 
-const normalizeRemovedIngredientName = (value) => {
-    const name = String(value || "").trim();
+const normalizeRemovedIngredientName = (
+    value,
+    t
+) => {
+    const name =
+        String(
+            value ||
+            ""
+        ).trim();
 
-    if (!name) return "";
 
-    return /^sin\s+/i.test(name)
-        ? name
-        : `Sin ${name}`;
+    if (!name) {
+        return "";
+    }
+
+
+    const cleanName =
+        name
+            .replace(
+                /^(sin|without)\s+/i,
+                ""
+            )
+            .trim();
+
+
+    return t(
+        "orderCard.withoutIngredient",
+        {
+            name:
+                cleanName ||
+                name,
+        }
+    );
 };
 
-const buildOrderItemSummary = (item, index) => {
+const buildOrderItemSummary = (
+    item,
+    index,
+    t
+) => {
     const name =
         item?.dishName ||
         item?.dish?.name ||
         item?.name ||
-        "Item";
+        t("orderCard.itemFallback");
 
     const quantity =
         Number(
@@ -226,7 +303,7 @@ const buildOrderItemSummary = (item, index) => {
             .map((addon) => {
                 const addonName = getCustomizationName(
                     addon,
-                    "Extra"
+                    t("orderCard.extraFallback")
                 );
 
                 if (!addonName) return null;
@@ -245,14 +322,15 @@ const buildOrderItemSummary = (item, index) => {
                 const modifierName =
                     getCustomizationName(
                         modifier,
-                        "Ingrediente"
+                        t("orderCard.ingredientFallback")
                     );
 
                 if (!modifierName) return null;
 
                 return {
                     name: normalizeRemovedIngredientName(
-                        modifierName
+                        modifierName,
+                        t
                     ),
                 };
             })
@@ -279,52 +357,188 @@ const buildOrderItemSummary = (item, index) => {
         ).trim(),
     };
 };
-const getWaitTimeConfig = (order, currentTime = Date.now()) => {
-    const status = String(order?.orderStatus || "");
-    if (["Completado", "Cancelado"].includes(status)) return null;
+const getWaitTimeConfig = (
+    order,
+    currentTime = Date.now(),
+    t
+) => {
+    const status =
+        String(
+            order?.orderStatus ||
+            ""
+        );
 
-    const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
-    if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
 
-    const minutes = Math.max(0, Math.floor((currentTime - createdAt.getTime()) / 60000));
-    if (minutes < 5) {
+    if (
+        [
+            "Completado",
+            "Cancelado",
+        ].includes(
+            status
+        )
+    ) {
+        return null;
+    }
+
+
+    const createdAt =
+        order?.createdAt
+            ? new Date(
+                order.createdAt
+            )
+            : null;
+
+
+    if (
+        !createdAt ||
+        Number.isNaN(
+            createdAt.getTime()
+        )
+    ) {
+        return null;
+    }
+
+
+    const minutes =
+        Math.max(
+            0,
+            Math.floor(
+                (
+                    currentTime -
+                    createdAt.getTime()
+                ) /
+                60000
+            )
+        );
+
+
+    if (
+        minutes <
+        5
+    ) {
         return {
-            label: "Recién entró",
-            elapsed: `${minutes} min`,
-            badge: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
-            cardBorder: "border-emerald-500/25",
+            label:
+                t(
+                    "orderCard.waitTime.justArrived"
+                ),
+
+            elapsed:
+                `${minutes} min`,
+
+            badge:
+                "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+
+            cardBorder:
+                "border-emerald-500/25",
         };
     }
 
-    if (minutes < 12) {
+
+    if (
+        minutes <
+        12
+    ) {
         return {
-            label: "Lleva tiempo",
-            elapsed: `${minutes} min`,
-            badge: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
-            cardBorder: "border-amber-500/25",
+            label:
+                t(
+                    "orderCard.waitTime.waiting"
+                ),
+
+            elapsed:
+                `${minutes} min`,
+
+            badge:
+                "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+
+            cardBorder:
+                "border-amber-500/25",
         };
     }
+
 
     return {
-        label: "Está tardando",
-        elapsed: `${minutes} min`,
-        badge: "bg-red-500/15 text-red-300 border border-red-500/30",
-        cardBorder: "border-red-500/30",
+        label:
+            t(
+                "orderCard.waitTime.delayed"
+            ),
+
+        elapsed:
+            `${minutes} min`,
+
+        badge:
+            "bg-red-500/15 text-red-300 border border-red-500/30",
+
+        cardBorder:
+            "border-red-500/30",
     };
 };
+const getHistoryActorLabel = (
+    entry,
+    t
+) => {
+    const raw =
+        entry
+            ?.changedBy
+            ?.name ||
+        entry
+            ?.updatedBy
+            ?.name ||
+        entry
+            ?.user
+            ?.name ||
+        entry
+            ?.userName ||
+        entry
+            ?.updatedByName ||
+        entry
+            ?.name ||
+        "";
 
-const getHistoryActorLabel = (entry) =>
-    entry?.changedBy?.name ||
-    entry?.updatedBy?.name ||
-    entry?.user?.name ||
-    entry?.userName ||
-    entry?.updatedByName ||
-    entry?.name ||
-    "Usuario";
 
-const getHistoryDateLabel = (entry) => {
-    const raw = entry?.changedAt || entry?.updatedAt || entry?.createdAt || entry?.at;
-    return raw ? formatDateAndTime(raw) : "N/A";
+    /*
+     * Esto es solo representación visual.
+     * No modifica statusHistory.
+     */
+    if (
+        [
+            "usuario",
+            "user",
+        ].includes(
+            String(raw)
+                .trim()
+                .toLowerCase()
+        )
+    ) {
+        return t(
+            "orderCard.userFallback"
+        );
+    }
+
+
+    return (
+        raw ||
+        t(
+            "orderCard.userFallback"
+        )
+    );
+};
+
+const getHistoryDateLabel = (
+    entry,
+    localization
+) => {
+    const raw =
+        entry?.changedAt ||
+        entry?.updatedAt ||
+        entry?.createdAt ||
+        entry?.at;
+
+    return raw
+        ? formatDateTime(
+            raw,
+            localization
+        )
+        : "N/A";
 };
 
 const buildNextStatusHistory = (history, nextStatus, actor) => {
@@ -431,6 +645,8 @@ const OrderCard = ({
                        viewMode = "comfortable",
                        tenantInfo,
                    }) => {
+    const { t, i18n } =
+        useTranslation();
     const isCompactView = viewMode === "compact";
     const isListView = viewMode === "list";
     const isDisplayView = viewMode === "display";
@@ -451,6 +667,14 @@ const OrderCard = ({
                 ? "max-h-none"
                 : "max-h-none";
     const { enqueueSnackbar } = useSnackbar();
+    const localization =
+        useMemo(
+            () =>
+                getTenantLocalization(
+                    tenantInfo
+                ),
+            [tenantInfo]
+        );
 
     const userState = useSelector((state) => state.user);
     const currentUser = userState?.userData || userState?.user || userState;
@@ -472,6 +696,16 @@ const OrderCard = ({
         currentUser?.id ||
         currentUser?.userId ||
         null;
+    // Consultar permiso efectivo del servidor; no confiar solo en la copia de Redux.
+    const { data: correctionPermission } = useQuery({
+        queryKey: ["order-correction-access", String(currentUserId || ""), String(tenantInfo?.tenantId || ""), String(localStorage.getItem("clientId") || "default")],
+        enabled: Boolean(currentUserId),
+        queryFn: async () => (await api.get("/api/order/correction/access")).data,
+        staleTime: 3_000,
+        refetchOnWindowFocus: true,
+        retry: false,
+    });
+    const canCorrectOrder = correctionPermission?.data?.canEdit === true;
     // mantenemos copia local para poder refrescar la tarjeta cuando emitimos NCF
     const [localOrder, setLocalOrder] = useState(order);
 
@@ -505,6 +739,8 @@ const OrderCard = ({
     const [showOrderDetails, setShowOrderDetails] = useState(false);
     const [showCancelNoteModal, setShowCancelNoteModal] = useState(false);
     const [cancelOrderNote, setCancelOrderNote] = useState("");
+    const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+    const [showCorrectionHistory, setShowCorrectionHistory] = useState(false);
 
 
 
@@ -553,12 +789,26 @@ const OrderCard = ({
             setLastSplitBills(billsToUse);
             setShowSplitInvoices(true);
 
-            enqueueSnackbar("Split guardado. Selecciona una cuenta para imprimir.", {
-                variant: "success",
-            });
+            enqueueSnackbar(
+                t(
+                    "orderCard.messages.splitSaved"
+                ),
+                {
+                    variant:
+                        "success",
+                }
+            );
         } catch (err) {
             console.error("handleSaveSplit error:", err);
-            enqueueSnackbar("No se pudo guardar el split.", { variant: "error" });
+            enqueueSnackbar(
+                t(
+                    "orderCard.messages.splitSaveFailed"
+                ),
+                {
+                    variant:
+                        "error",
+                }
+            );
         } finally {
             setSavingSplit(false);
         }
@@ -598,7 +848,13 @@ const OrderCard = ({
 
               setInvoiceOrderOverride(orderForInvoice);
           setInvoiceItemsOverride(itemsOverride);
-        setInvoiceTitle(bill?.accountName || bill?.name || "Factura");
+        setInvoiceTitle(
+            bill?.accountName ||
+            bill?.name ||
+            t(
+                "orderCard.invoice"
+            )
+        );
         setSelectedBillForInvoice(bill);
 
 
@@ -624,11 +880,55 @@ const OrderCard = ({
     }, [tenantInfo]);
 
     const currentStatus = localOrder?.orderStatus || "En Progreso";
+    const getCustomerDisplayName = (
+        value
+    ) => {
+        const raw =
+            String(
+                value ||
+                ""
+            ).trim();
 
-    const createdAtLabel = useMemo(
-        () => (localOrder?.createdAt ? formatDateAndTime(localOrder.createdAt) : "N/A"),
-        [localOrder?.createdAt]
-    );
+
+        const normalized =
+            raw.toLowerCase();
+
+
+        if (
+            [
+                "consumidor final",
+                "final consumer",
+            ].includes(
+                normalized
+            )
+        ) {
+            return t(
+                "customerInfo.finalConsumer"
+            );
+        }
+
+
+        return (
+            raw ||
+            t(
+                "orderCard.customerFallback"
+            )
+        );
+    };
+    const createdAtLabel =
+        useMemo(
+            () =>
+                localOrder?.createdAt
+                    ? formatDateTime(
+                        localOrder.createdAt,
+                        localization
+                    )
+                    : "N/A",
+            [
+                localOrder?.createdAt,
+                localization,
+            ]
+        );
 
     const itemsSummary = useMemo(() => {
         if (
@@ -640,9 +940,16 @@ const OrderCard = ({
 
         return localOrder.items.map(
             (item, index) =>
-                buildOrderItemSummary(item, index)
+                buildOrderItemSummary(
+                    item,
+                    index,
+                    t
+                )
         );
-    }, [localOrder?.items]);
+    }, [
+        localOrder?.items,
+        t,
+    ]);
 
     const totalItems = useMemo(() => {
         if (!localOrder?.items || localOrder.items.length === 0) return 0;
@@ -695,11 +1002,21 @@ const OrderCard = ({
         : "text-sm";
 
     const productTypes = useMemo(() => getOrderProductTypes(localOrder), [localOrder]);
-    const waitTimeConfig = useMemo(
-        () => getWaitTimeConfig(localOrder, currentTime),
-        [localOrder?.createdAt, localOrder?.orderStatus, currentTime]
-    );
-    const statusHistory = useMemo(() => {
+    const waitTimeConfig =
+        useMemo(
+            () =>
+                getWaitTimeConfig(
+                    localOrder,
+                    currentTime,
+                    t
+                ),
+            [
+                localOrder?.createdAt,
+                localOrder?.orderStatus,
+                currentTime,
+                t,
+            ]
+        );    const statusHistory = useMemo(() => {
         const safeHistory = Array.isArray(localOrder?.statusHistory) ? [...localOrder.statusHistory] : [];
         return safeHistory.sort((a, b) => {
             const aTime = new Date(a?.changedAt || a?.updatedAt || a?.createdAt || a?.at || 0).getTime();
@@ -722,59 +1039,35 @@ const OrderCard = ({
 
     const canShowNormalInvoiceBtn =
         !isFiscalOrder && String(localOrder?.orderStatus || "") === "Completado";
-    // ✅ Factura normal (NO fiscal): se muestra solo si NO hay NCF solicitado/emitido
-    const hasNormalInvoice = Boolean(localOrder?.invoiceUrl || localOrder?.invoicePath) && !existingFiscal;
 
+    const canOpenCorrection = canCorrectOrder &&
+        !isFiscalOrder && !localOrder?.ecf?.exists && !localOrder?.accountReceivableId &&
+        localOrder?.paymentMethod !== "Credito" &&
+        !["Cancelado", "Cancelled", "Canceled"].includes(localOrder?.orderStatus);
+
+    const openCorrection = () => {
+        setShowOrderDetails(false);
+        setShowCorrectionModal(true);
+    };
+    // ✅ Factura normal (NO fiscal): se muestra solo si NO hay NCF solicitado/emitido
+    // Orden guardada = fuente de verdad del comprobante normal.
+    // No se sube un PDF a Storage al visualizar o imprimir.
     const openNormalInvoice = async () => {
         try {
             setShowOrderDetails(false);
-
-            // refrescamos por si el invoiceUrl se generó luego de completar
             const fresh = await fetchFreshOrder(localOrder?._id);
-            if (fresh?._id) setLocalOrder(fresh);
-
-            const url = fresh?.invoiceUrl || localOrder?.invoiceUrl;
-
-            if (!url) {
-                enqueueSnackbar("Esta orden no tiene factura disponible.", { variant: "warning" });
-                return;
-            }
-
-            window.open(url, "_blank", "noopener,noreferrer");
-        } catch (e) {
-            console.error("[OrderCard] openNormalInvoice error:", e);
-            enqueueSnackbar("No se pudo abrir la factura.", { variant: "error" });
+            if (!fresh?._id) throw Error("ORDER_NOT_FOUND");
+            setLocalOrder(fresh);
+            setInvoiceOrderSnapshot(fresh);
+            setInvoiceOrderOverride(null);
+            setInvoiceItemsOverride(null);
+            setShowInvoice(true);
+        } catch (error) {
+            console.error("[OrderCard] normal invoice", error);
+            enqueueSnackbar(t("orderCard.messages.invoiceOpenFailed"), { variant: "error" });
         }
     };
-
-    const openOrGenerateInvoice = async () => {
-        try {
-            // 1) Si ya existe, abre
-            const existing = localOrder?.invoiceUrl;
-            if (existing && String(existing).trim()) {
-                window.open(existing, "_blank", "noopener,noreferrer");
-                return;
-            }
-
-            // 2) Si no existe, generarla on-demand
-            // tu invoiceController usa createInvoice con { orderId } y retorna invoiceUrl:contentReference[oaicite:4]{index=4}
-            const res = await api.post("/api/invoice", { orderId: localOrder?._id });
-
-            const url = res?.data?.invoiceUrl || res?.data?.url;
-            if (!url) {
-                enqueueSnackbar("No se pudo generar la factura.", { variant: "error" });
-                return;
-            }
-
-            // refresca estado local (opcional)
-            setLocalOrder((prev) => ({ ...(prev || {}), invoiceUrl: url }));
-
-            window.open(url, "_blank", "noopener,noreferrer");
-        } catch (e) {
-            console.error("[openOrGenerateInvoice]", e);
-            enqueueSnackbar("Error abriendo/generando la factura.", { variant: "error" });
-        }
-    };
+    const openOrGenerateInvoice = openNormalInvoice;
 
     const [showFiscalModal, setShowFiscalModal] = useState(false);
     const [showInvoice, setShowInvoice] = useState(false);
@@ -853,15 +1146,26 @@ const OrderCard = ({
                 role: currentUser?.role || "",
             });
 
-            const res = await updateOrder(localOrder._id, {
+            // Solo estado: no reenviar items/bills/paymentMethod de una orden pagada.
+            // Esos campos requieren el endpoint de corrección financiera auditada.
+            const statusPayload = {
                 orderStatus: nextStatus,
-                bills: localOrder.bills || [],
-                items: localOrder.items || [],
-                orderNote: extraPayload?.orderNote ?? localOrder?.orderNote ?? "",
                 statusHistory: nextStatusHistory,
                 lastStatusChangeAt: new Date().toISOString(),
                 registerId: getActiveRegisterId(),
-            });
+            };
+            if (extraPayload?.orderNote !== undefined) {
+                // Una nota sobre una venta ya pagada NO se modifica sin auditoría.
+                if (String(localOrder?.paymentStatus || "").toLowerCase() === "pagado") {
+                    enqueueSnackbar("La nota de una venta pagada requiere corrección auditada.", {
+                        variant: "warning",
+                    });
+                    return;
+                }
+                statusPayload.orderNote = String(extraPayload.orderNote);
+            }
+
+            const res = await updateOrder(localOrder._id, statusPayload);
 
             const updated = unwrapOrder(res);
             const safeUpdatedOrder = {
@@ -878,6 +1182,11 @@ const OrderCard = ({
 
         } catch (err) {
             console.error("Error updating status:", err);
+            const serverCode = err?.response?.data?.code || err?.response?.data?.message;
+            enqueueSnackbar(
+                serverCode ? `No se pudo cambiar el estado: ${serverCode}` : "No se pudo cambiar el estado de la orden.",
+                { variant: "error" }
+            );
         } finally {
             setIsUpdating(false);
         }
@@ -907,9 +1216,15 @@ const OrderCard = ({
         if (currentStatus === "Cancelado") return;
 
         if (!canCancelOrder) {
-            enqueueSnackbar("No tienes permiso para cancelar órdenes.", {
-                variant: "warning",
-            });
+            enqueueSnackbar(
+                t(
+                    "orderCard.messages.cancelNotAllowed"
+                ),
+                {
+                    variant:
+                        "warning",
+                }
+            );
             return;
         }
 
@@ -953,11 +1268,27 @@ const OrderCard = ({
             if (updated) {
                 setLocalOrder(updated);
                 onStatusChanged?.(updated);
-                enqueueSnackbar("Orden cobrada correctamente.", { variant: "success" });
+                enqueueSnackbar(
+                    t(
+                        "orderCard.messages.paymentSuccess"
+                    ),
+                    {
+                        variant:
+                            "success",
+                    }
+                );
             }
         } catch (err) {
             console.error("Error cobrando orden:", err);
-            enqueueSnackbar("No se pudo cobrar la orden.", { variant: "error" });
+            enqueueSnackbar(
+                t(
+                    "orderCard.messages.paymentFailed"
+                ),
+                {
+                    variant:
+                        "error",
+                }
+            );
         } finally {
             setIsUpdating(false);
         }
@@ -981,11 +1312,19 @@ const OrderCard = ({
         STATUS_FLOW.indexOf(currentStatus) < STATUS_FLOW.length - 1;
 
     const primaryButtonLabel =
-        currentStatus === "En Progreso"
-            ? "Marcar como Listo"
-            : currentStatus === "Listo"
-                ? "Marcar como Completo"
-                : "Siguiente";
+        currentStatus ===
+        "En Progreso"
+            ? t(
+                "orderCard.actions.markReady"
+            )
+            : currentStatus ===
+            "Listo"
+                ? t(
+                    "orderCard.actions.markComplete"
+                )
+                : t(
+                    "orderCard.actions.next"
+                );
 
     const openFiscal = async () => {
         setShowOrderDetails(false);
@@ -1097,6 +1436,70 @@ const OrderCard = ({
         }
     };
 
+    const getStatusDisplayLabel = (
+        status
+    ) => {
+        const normalized =
+            String(
+                status ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+
+        const statusKeys = {
+            "en progreso":
+                "inProgress",
+
+            "in progress":
+                "inProgress",
+
+            listo:
+                "ready",
+
+            ready:
+                "ready",
+
+            completado:
+                "completed",
+
+            completed:
+                "completed",
+
+            cancelado:
+                "cancelled",
+
+            cancelled:
+                "cancelled",
+
+            canceled:
+                "cancelled",
+
+            pendiente:
+                "pending",
+
+            pending:
+                "pending",
+        };
+
+
+        const key =
+            statusKeys[
+                normalized
+                ];
+
+
+        return key
+            ? t(
+                `orderCard.status.${key}`
+            )
+            : status ||
+            t(
+                "orderCard.status.inProgress"
+            );
+    };
+
     const statusConfig = getStatusConfig(currentStatus);
     const StatusIcon = statusConfig.icon;
 
@@ -1116,7 +1519,13 @@ const OrderCard = ({
                             whileHover={{ scale: 1.1, rotate: 5 }}
                             className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
                         >
-                            {getAvatarInitial(localOrder?.customerDetails?.name || "Cliente")}
+                            {getAvatarInitial(
+                                getCustomerDisplayName(
+                                    localOrder
+                                        ?.customerDetails
+                                        ?.name
+                                )
+                            )}
                         </motion.div>
 
                         <div className="flex flex-col min-w-0 flex-1">
@@ -1124,7 +1533,11 @@ const OrderCard = ({
                             <div className="flex items-center gap-2 mb-1">
                                 <User className="text-blue-400 w-3.5 h-3.5 shrink-0" />
                                 <span className="text-sm font-semibold text-[#f5f5f5] truncate">
-                                    {localOrder?.customerDetails?.name || "Cliente"}
+                                    {getCustomerDisplayName(
+                                        localOrder
+                                            ?.customerDetails
+                                            ?.name
+                                    )}
                                 </span>
                             </div>
 
@@ -1132,20 +1545,43 @@ const OrderCard = ({
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#ababab]">
                                 <div className="flex items-center gap-1">
                                     <Hash className="w-3 h-3" />
-                                    <span className="font-mono">{getShortOrderId(localOrder)}</span>
+                                    <span className="font-mono">
+                                    {getShortOrderId(
+                                            localOrder,
+                                            t
+                                        )}
+                                    </span>
                                 </div>
                                 
                                 {localOrder?.table && (
                                     <>
                                         <span className="text-[#666]">•</span>
-                                        <span>Mesa #{localOrder.table.tableNo}</span>
+                                        <span>
+                                            {t(
+                                                "orderCard.table"
+                                            )}{" "}#{localOrder.table.tableNo}
+                                        </span>
                                     </>
                                 )}
-                                
+
                                 {localOrder?.customerDetails?.guests !== undefined && (
                                     <>
                                         <span className="text-[#666]">•</span>
-                                        <span>{localOrder.customerDetails.guests} {localOrder.customerDetails.guests === 1 ? 'invitado' : 'invitados'}</span>
+
+                                        <span>
+                                        {t(
+                                            "orderCard.guestCount",
+                                            {
+                                                count:
+                                                    Number(
+                                                        localOrder
+                                                            ?.customerDetails
+                                                            ?.guests ||
+                                                        0
+                                                    ),
+                                            }
+                                        )}
+                                    </span>
                                     </>
                                 )}
                             </div>
@@ -1176,7 +1612,18 @@ const OrderCard = ({
                                 {localOrder?.bills?.split?.enabled && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-medium">
                                         <CreditCard className="w-3 h-3" />
-                                        {localOrder?.bills?.split?.accounts?.length || 0} cuentas
+                                        {t(
+                                            "orderCard.accountCount",
+                                            {
+                                                count:
+                                                    localOrder
+                                                        ?.bills
+                                                        ?.split
+                                                        ?.accounts
+                                                        ?.length ||
+                                                    0,
+                                            }
+                                        )}
                                     </span>
                                 )}
                             </div>
@@ -1189,7 +1636,11 @@ const OrderCard = ({
                         className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold bg-gradient-to-r ${statusConfig.bg} ${statusConfig.border} ${statusConfig.text} shrink-0 shadow-lg`}
                     >
                         <StatusIcon className="w-3.5 h-3.5" />
-                        <span>{currentStatus}</span>
+                        <span>
+                            {getStatusDisplayLabel(
+                                currentStatus
+                            )}
+                        </span>
                     </motion.div>
                 </div>
 
@@ -1199,16 +1650,32 @@ const OrderCard = ({
                     <div className={`bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-lg p-3 border border-[#2a2a2a]/50 ${isDisplayView ? "flex-1" : ""}`}>
                         <div className="flex items-center justify-between gap-3 mb-2">
                             <span className="uppercase tracking-wide text-xs text-[#ababab] font-semibold">
-                                Items
+                             {t("orderCard.items")}
                             </span>
                             <div className="flex items-center gap-2 shrink-0">
                                 {isDisplayView && totalItemPages > 1 && (
                                     <span className="text-[10px] sm:text-xs font-semibold bg-cyan-500/15 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/25">
-                                        Página {itemPage + 1}/{totalItemPages}
+                                   {t(
+                                       "orderCard.page",
+                                       {
+                                           current:
+                                               itemPage +
+                                               1,
+
+                                           total:
+                                           totalItemPages,
+                                       }
+                                   )}
                                     </span>
                                 )}
                                 <span className="text-xs text-[#f5f5f5] font-semibold bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
-                                    {totalItems} {totalItems === 1 ? 'item' : 'items'}
+                                    {t(
+                                        "orderCard.itemCount",
+                                        {
+                                            count:
+                                            totalItems,
+                                        }
+                                    )}
                                 </span>
                             </div>
                         </div>
@@ -1267,7 +1734,9 @@ const OrderCard = ({
 
                                         {itemSummary.note && (
                                             <p className="mt-1 text-xs text-amber-300">
-                                                Nota: {itemSummary.note}
+                                                {t(
+                                                    "orderCard.note"
+                                                )}: {itemSummary.note}
                                             </p>
                                         )}
                                     </div>
@@ -1278,7 +1747,28 @@ const OrderCard = ({
                         {isDisplayView && totalItemPages > 1 && (
                             <div className="mt-2 flex items-center justify-between gap-3 text-[10px] sm:text-xs text-[#ababab]">
                                 <span>
-                                    Mostrando {itemPage * displayPageSize + 1}-{Math.min((itemPage + 1) * displayPageSize, itemsSummary.length)} de {itemsSummary.length} líneas
+                                    {t(
+                                        "orderCard.showingLines",
+                                        {
+                                            start:
+                                                itemPage *
+                                                displayPageSize +
+                                                1,
+
+                                            end:
+                                                Math.min(
+                                                    (
+                                                        itemPage +
+                                                        1
+                                                    ) *
+                                                    displayPageSize,
+                                                    itemsSummary.length
+                                                ),
+
+                                            total:
+                                            itemsSummary.length,
+                                        }
+                                    )}
                                 </span>
                                 <div className="flex items-center gap-1">
                                     {Array.from({ length: totalItemPages }).map((_, idx) => (
@@ -1298,7 +1788,11 @@ const OrderCard = ({
                             <div className="flex items-center gap-2 mb-1">
                                 <MessageSquareText className="w-4 h-4 text-amber-300 shrink-0" />
                                 <span className="uppercase tracking-wide text-xs text-amber-300 font-semibold">
-                                Nota
+                              <span>
+                                    {t(
+                                        "orderCard.note"
+                                    )}
+                                </span>
                               </span>
                             </div>
                             <p className="text-sm text-[#f5f5f5] whitespace-pre-line leading-snug">
@@ -1337,7 +1831,7 @@ const OrderCard = ({
                         }`}
                     >
                         <ArrowLeft className="w-3.5 h-3.5" />
-                        <span>Atras</span>
+                        <span>{t("orderCard.actions.back")}</span>
                     </motion.button>
 
 
@@ -1350,7 +1844,11 @@ const OrderCard = ({
                             className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-green-500/30 transition-all duration-200"
                         >
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Completar</span>
+                            <span>
+                                {t(
+                                    "orderCard.actions.complete"
+                                )}
+                            </span>
                         </motion.button>
                     )}
 
@@ -1363,7 +1861,11 @@ const OrderCard = ({
                         className="flex items-center justify-center gap-1.5 flex-1 min-w-[100px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-blue-500/30 transition-all duration-200"
                     >
                         <MoreVertical className="w-3.5 h-3.5" />
-                        <span>Opciones</span>
+                        <span>
+                            {t(
+                                "orderCard.actions.options"
+                            )}
+                        </span>
                     </motion.button>
                 </div>
             </motion.div>
@@ -1397,14 +1899,21 @@ const OrderCard = ({
                                             whileHover={{ scale: 1.1, rotate: 5 }}
                                             className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
                                         >
-                                            {getAvatarInitial(localOrder?.customerDetails?.name || "Cliente")}
-                                        </motion.div>
+                                            {getAvatarInitial(
+                                                getCustomerDisplayName(
+                                                    localOrder
+                                                        ?.customerDetails
+                                                        ?.name
+                                                )
+                                            )}                                        </motion.div>
                                         <div>
                                             <h2 className="text-lg font-bold text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
-                                                Detalles de la Orden
-                                            </h2>
+                                                {t("orderCard.details.title")}                                            </h2>
                                             <p className="text-sm text-[#ababab] dark:text-[#ababab] text-gray-600">
-                                                {getShortOrderId(localOrder)}
+                                                {getShortOrderId(
+                                                    localOrder,
+                                                    t
+                                                )}
                                             </p>
                                         </div>
                                     </div>
@@ -1422,12 +1931,16 @@ const OrderCard = ({
                                 <div className="p-6 space-y-6">
                                     {/* Información del Cliente */}
                                     <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
-                                        <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">Cliente</h3>
+                                        <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">{t("orderCard.customer")}</h3>
                                         <div className="space-y-2">
                                             <div className="flex items-center gap-2">
                                                 <User className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
                                                 <span className="text-sm font-medium text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
-                                                    {localOrder?.customerDetails?.name || "Cliente"}
+                                                    {getCustomerDisplayName(
+                                                        localOrder
+                                                            ?.customerDetails
+                                                            ?.name
+                                                    )}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2 flex-wrap">
@@ -1435,22 +1948,40 @@ const OrderCard = ({
                                                     <>
                                                         <Table2 className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
                                                         <span className="text-xs text-[#ababab] dark:text-[#ababab] text-gray-600">
-                                                            Mesa #{localOrder.table.tableNo}
+                                                             {t(
+                                                                 "orderCard.table"
+                                                             )}{" "}
+                                                            #{localOrder.table.tableNo}
                                                         </span>
                                                     </>
                                                 )}
                                                 {localOrder?.customerDetails?.guests !== undefined && (
                                                     <>
                                                         <Users className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600 ml-2" />
+
                                                         <span className="text-xs text-[#ababab] dark:text-[#ababab] text-gray-600">
-                                                            {localOrder.customerDetails.guests} {localOrder.customerDetails.guests === 1 ? 'invitado' : 'invitados'}
+                                                            {t(
+                                                                "orderCard.guestCount",
+                                                                {
+                                                                    count:
+                                                                        Number(
+                                                                            localOrder
+                                                                                ?.customerDetails
+                                                                                ?.guests ||
+                                                                            0
+                                                                        ),
+                                                                }
+                                                            )}
                                                         </span>
                                                     </>
                                                 )}
                                                 <div className="flex items-center gap-1 ml-2">
                                                     <Hash className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
                                                     <span className="text-xs font-mono text-[#ababab] dark:text-[#ababab] text-gray-600">
-                                                        {getShortOrderId(localOrder)}
+                                                        {getShortOrderId(
+                                                            localOrder,
+                                                            t
+                                                        )}
                                                     </span>
                                                 </div>
                                             </div>
@@ -1459,20 +1990,24 @@ const OrderCard = ({
 
                                     {/* Estado */}
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">Estado</span>
+                                        <span className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">{t("orderCard.statusLabel")}</span>
                                         <motion.div
                                             whileHover={{ scale: 1.05 }}
                                             className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold bg-gradient-to-r ${statusConfig.bg} ${statusConfig.border} ${statusConfig.text} shadow-lg`}
                                         >
                                             <StatusIcon className="w-3.5 h-3.5" />
-                                            <span>{currentStatus}</span>
+                                            <span>
+                                                {getStatusDisplayLabel(
+                                                    currentStatus
+                                                )}
+                                            </span>
                                         </motion.div>
                                     </div>
 
                                     {productTypes.length > 0 && (
                                         <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
                                             <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">
-                                                Tipos de producto
+                                                {t("orderCard.productTypes")}
                                             </h3>
                                             <div className="flex flex-wrap gap-2">
                                                 {productTypes.map((type) => (
@@ -1491,8 +2026,7 @@ const OrderCard = ({
                                     {statusHistory.length > 0 && (
                                         <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
                                             <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 mb-3 uppercase tracking-wide">
-                                                Historial de estados
-                                            </h3>
+                                                {t("orderCard.statusHistory")}                                            </h3>
                                             <div className="space-y-2 max-h-48 overflow-y-auto">
                                                 {statusHistory.map((entry, idx) => (
                                                     <div
@@ -1502,15 +2036,29 @@ const OrderCard = ({
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className="text-sm font-semibold text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
-                                                                    {entry?.status || "Estado"}
+                                                                    {getStatusDisplayLabel(
+                                                                        entry?.status
+                                                                    )}
                                                                 </span>
                                                                 <span className="text-xs text-[#ababab] dark:text-[#ababab] text-gray-600">
-                                                                    por {getHistoryActorLabel(entry)}
+                                                                    {t(
+                                                                        "orderCard.changedBy",
+                                                                        {
+                                                                            name:
+                                                                                getHistoryActorLabel(
+                                                                                    entry,
+                                                                                    t
+                                                                                ),
+                                                                        }
+                                                                    )}
                                                                 </span>
                                                             </div>
                                                         </div>
                                                         <span className="text-[11px] text-[#ababab] dark:text-[#ababab] text-gray-600 shrink-0">
-                                                            {getHistoryDateLabel(entry)}
+                                                            {getHistoryDateLabel(
+                                                                entry,
+                                                                localization
+                                                            )}
                                                         </span>
                                                     </div>
                                                 ))}
@@ -1523,16 +2071,28 @@ const OrderCard = ({
                                         <div className="flex items-center justify-between mb-3">
                                             <div className="flex items-center gap-2">
                                                 <Package className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
-                                                <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">Items</h3>
+                                                <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">
+                                                    {t(
+                                                        "orderCard.items"
+                                                    )}
+                                                </h3>
                                             </div>
                                             <span className="text-xs font-semibold bg-blue-500/20 text-blue-400 dark:text-blue-400 text-blue-600 px-2 py-1 rounded border border-blue-500/30">
-                                                {totalItems} {totalItems === 1 ? 'item' : 'items'}
+                                                {t(
+                                                    "orderCard.itemCount",
+                                                    {
+                                                        count:
+                                                        totalItems,
+                                                    }
+                                                )}
                                             </span>
                                         </div>
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
                                             {itemsSummary.length === 0 ? (
                                                 <p className="text-sm text-[#ababab]">
-                                                    No hay productos.
+                                                    {t(
+                                                        "orderCard.noProducts"
+                                                    )}
                                                 </p>
                                             ) : (
                                                 itemsSummary.map((itemSummary, idx) => (
@@ -1591,7 +2151,9 @@ const OrderCard = ({
 
                                                                 {itemSummary.note && (
                                                                     <p className="mt-2 text-xs text-amber-300">
-                                                                        Nota: {itemSummary.note}
+                                                                        {t(
+                                                                            "orderCard.note"
+                                                                        )}: {itemSummary.note}
                                                                     </p>
                                                                 )}
                                                             </div>
@@ -1607,21 +2169,27 @@ const OrderCard = ({
                                         <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
                                             <div className="flex items-center gap-2 mb-2">
                                                 <Calendar className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
-                                                <span className="text-xs font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">Creado en</span>
+                                                <span className="text-xs font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">{t("orderCard.createdAt")}</span>
                                             </div>
                                             <p className="text-sm text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">{createdAtLabel}</p>
                                         </div>
                                         <div className="bg-gradient-to-r from-[#1f1f1f] to-[#252525] dark:from-[#1f1f1f] dark:to-[#252525] from-gray-100 to-gray-200 rounded-xl p-4 border border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50">
                                             <div className="flex items-center gap-2 mb-2">
                                                 <Receipt className="w-4 h-4 text-blue-400 dark:text-blue-400 text-blue-600" />
-                                                <span className="text-xs font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">Tipo</span>
+                                                <span className="text-xs font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide">{t("orderCard.type")}</span>
                                             </div>
                                             <p className="text-sm text-[#f5f5f5] dark:text-[#f5f5f5] text-gray-900">
                                                 {getOrderTypeLabel(
-                                                    localOrder?.orderType?.label ||
-                                                    localOrder?.orderType?.name ||
-                                                    localOrder?.orderType ||
-                                                    "Restaurante"
+                                                    localOrder
+                                                        ?.orderType
+                                                        ?.label ||
+                                                    localOrder
+                                                        ?.orderType
+                                                        ?.name ||
+                                                    localOrder
+                                                        ?.orderType ||
+                                                    "",
+                                                    t
                                                 )}
                                             </p>
                                         </div>
@@ -1639,7 +2207,18 @@ const OrderCard = ({
                                             {localOrder?.bills?.split?.enabled && (
                                                 <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium">
                                                     <CreditCard className="w-3.5 h-3.5" />
-                                                    Cuenta dividida: {localOrder?.bills?.split?.accounts?.length || 0} cuentas
+                                                    {t(
+                                                        "orderCard.splitAccountBadge",
+                                                        {
+                                                            count:
+                                                                localOrder
+                                                                    ?.bills
+                                                                    ?.split
+                                                                    ?.accounts
+                                                                    ?.length ||
+                                                                0,
+                                                        }
+                                                    )}
                                                 </span>
                                             )}
                                         </div>
@@ -1647,7 +2226,7 @@ const OrderCard = ({
 
                                     {/* Acciones */}
                                     <div className="pt-4 border-t border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50 space-y-3">
-                                        <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide mb-3">Acciones</h3>
+                                        <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide mb-3">{t("orderCard.actionsLabel")}</h3>
                                         
                                         <div className="grid grid-cols-2 gap-3">
                                             {/* Atrás */}
@@ -1664,7 +2243,7 @@ const OrderCard = ({
                                                 }`}
                                             >
                                                 <ArrowLeft className="w-4 h-4" />
-                                                <span>Atrás</span>
+                                                <span>{t("orderCard.actions.back")}</span>
                                             </motion.button>
 
                                             {/* Siguiente */}
@@ -1693,7 +2272,9 @@ const OrderCard = ({
                                                 className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30"
                                             >
                                                 <CheckCircle2 className="w-4 h-4" />
-                                                <span>Marcar como completado</span>
+                                                <span>{t(
+                                                    "orderCard.actions.markCompleted"
+                                                )}</span>
                                             </motion.button>
                                         )}
 
@@ -1707,7 +2288,9 @@ const OrderCard = ({
                                                     className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
                                                 >
                                                     <ArrowRight className="w-4 h-4" />
-                                                    <span>Reactivar orden</span>
+                                                    <span>{t(
+                                                        "orderCard.actions.reactivate"
+                                                    )}</span>
                                                 </motion.button>
 
                                                 <motion.button
@@ -1718,14 +2301,27 @@ const OrderCard = ({
                                                     className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-blue-500/30"
                                                 >
                                                     <CheckCircle2 className="w-4 h-4" />
-                                                    <span>Marcar como completada</span>
+                                                    <span>{t(
+                                                        "orderCard.actions.markCompleted"
+                                                    )}</span>
                                                 </motion.button>
                                             </div>
                                         )}
 
-                                        <div className={`grid grid-cols-1 sm:grid-cols-${hasNormalInvoice ? "3" : "2"} gap-3`}>
-                                            {/* ✅ Ver factura normal (solo si NO es fiscal) */}
+                                        <div
+                                            className={`grid grid-cols-1 ${
+                                                canShowNormalInvoiceBtn &&
+                                                fiscalCapable
+                                                    ? "sm:grid-cols-3"
+                                                    : canShowNormalInvoiceBtn ||
+                                                    fiscalCapable
+                                                        ? "sm:grid-cols-2"
+                                                        : "sm:grid-cols-1"
+                                            } gap-3`}
+                                        >
+                                            {/* Factura normal: solo orden completada y NO fiscal */}
 
+                                            {canShowNormalInvoiceBtn && (
                                                 <motion.button
                                                     type="button"
                                                     onClick={openOrGenerateInvoice}
@@ -1734,8 +2330,11 @@ const OrderCard = ({
                                                     className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-slate-500/20 to-slate-700/20 text-slate-200 border border-slate-500/30 hover:bg-slate-500/30"
                                                 >
                                                     <Receipt className="w-4 h-4" />
-                                                    <span>{localOrder?.invoiceUrl ? "Ver factura" : "Generar factura"}</span>
+                                                    <span>
+                                                        {t("orderCard.actions.viewInvoice")}
+                                                    </span>
                                                 </motion.button>
+                                            )}
                                             
 
 
@@ -1772,9 +2371,27 @@ const OrderCard = ({
                                                 }`}
                                             >
                                                 <CreditCard className="w-4 h-4" />
-                                                <span>Dividir Pago</span>
+                                                <span>{t(
+                                                    "orderCard.actions.splitPayment"
+                                                )}</span>
                                             </motion.button>
                                         </div>
+
+                                        {/* Corrección auditada de órdenes normales */}
+                                        {canOpenCorrection && (
+                                            <button type="button" onClick={openCorrection}
+                                                className="w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-200 hover:bg-amber-400/20">
+                                                {t("orderCard.correction.action")}
+                                            </button>
+                                        )}
+
+                                        {canCorrectOrder && (
+                                            <button type="button" onClick={() => {setShowOrderDetails(false);setShowCorrectionHistory(true);}}
+                                              className="w-full rounded-xl border border-slate-400/30 bg-slate-400/10 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-400/20">
+                                              {String(t("orderCard.correction.history")) === "orderCard.correction.history"
+                                                ? (String(i18n.resolvedLanguage || i18n.language).startsWith("en") ? "Correction history" : "Historial de correcciones") : t("orderCard.correction.history")}
+                                            </button>
+                                        )}
 
                                         {/* Cancelar */}
                                         <motion.button
@@ -1790,7 +2407,10 @@ const OrderCard = ({
                                             }`}
                                         >
                                             <X className="w-4 h-4" />
-                                            <span>Cancelar Orden</span>
+                                            <span>{t(
+                                                "orderCard.actions.cancelOrder"
+                                            )}
+                                            </span>
                                         </motion.button>
                                     </div>
                                 </div>
@@ -1799,6 +2419,31 @@ const OrderCard = ({
                     </>
                 )}
             </AnimatePresence>
+
+            {showCorrectionModal && (
+                <OrderCorrectionEditor
+                    key={localOrder?._id}
+                    order={localOrder}
+                    onClose={() => setShowCorrectionModal(false)}
+                    onSaved={(corrected, options = {}) => {
+                        setLocalOrder(corrected);
+                        onStatusChanged?.(corrected);
+                        setShowCorrectionModal(false);
+                        if (options.openInvoice) {
+                            setInvoiceOrderSnapshot(corrected);
+                            setInvoiceOrderOverride(null);
+                            setInvoiceItemsOverride(null);
+                            setShowInvoice(true);
+                        }
+                        if (options.openHistory) setShowCorrectionHistory(true);
+                        enqueueSnackbar(t("orderCard.correction.saved"), {variant: "success"});
+                    }}
+                />
+            )}
+
+            {showCorrectionHistory && localOrder?._id && (
+                <OrderCorrectionHistory orderId={localOrder._id} onClose={() => setShowCorrectionHistory(false)}/>
+            )}
 
             {/* MODAL NOTA AL CANCELAR */}
             {showCancelNoteModal && (
@@ -1816,10 +2461,14 @@ const OrderCard = ({
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <h3 className="text-white text-lg font-semibold">
-                                    Cancelar orden
+                                    {t(
+                                        "orderCard.cancelModal.title"
+                                    )}
                                 </h3>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    Puedes agregar o editar la nota antes de cancelar esta orden.
+                                    {t(
+                                        "orderCard.cancelModal.description"
+                                    )}
                                 </p>
                             </div>
 
@@ -1834,7 +2483,9 @@ const OrderCard = ({
 
                         <div className="mt-4">
                             <label className="block text-xs text-gray-400 mb-1">
-                                Nota de la orden
+                                {t(
+                                    "orderCard.cancelModal.noteLabel"
+                                )}
                             </label>
 
                             <textarea
@@ -1842,7 +2493,11 @@ const OrderCard = ({
                                 onChange={(e) => setCancelOrderNote(e.target.value)}
                                 rows={5}
                                 className="w-full rounded-xl border border-gray-800/70 bg-[#111111] px-4 py-3 text-sm text-white outline-none resize-none focus:border-red-500/40"
-                                placeholder="Ej: Cliente canceló, producto no disponible, pedido duplicado..."
+                                placeholder={
+                                    t(
+                                        "orderCard.cancelModal.notePlaceholder"
+                                    )
+                                }
                                 autoFocus
                             />
                         </div>
@@ -1853,7 +2508,9 @@ const OrderCard = ({
                                 onClick={() => setShowCancelNoteModal(false)}
                                 className="rounded-xl border border-white/10 bg-[#1f1f1f] px-4 py-3 text-sm font-semibold text-gray-300 hover:bg-[#2b2b2b] hover:text-white"
                             >
-                                Volver
+                                {t(
+                                    "orderCard.actions.back"
+                                )}
                             </button>
 
                             <button
@@ -1866,7 +2523,14 @@ const OrderCard = ({
                                         : "bg-gradient-to-r from-red-500 to-red-600 hover:shadow-lg hover:shadow-red-500/30"
                                 }`}
                             >
-                                {isUpdating ? "Cancelando..." : "Cancelar orden"}
+                                {isUpdating
+                                    ? t(
+                                        "orderCard.cancelModal.cancelling"
+                                    )
+                                    : t(
+                                        "orderCard.actions.cancelOrder"
+                                    )
+                                }
                             </button>
                         </div>
                     </motion.div>
@@ -1969,7 +2633,11 @@ const OrderCard = ({
                          setInvoiceOrderSnapshot(null);
                          setInvoiceOrderOverride(null);
                          setInvoiceItemsOverride(null);
-                         setInvoiceTitle("Factura");
+                         setInvoiceTitle(
+                             t(
+                                 "orderCard.invoice"
+                             )
+                         );
                          setSelectedBillForInvoice(null);
                      }}
                  />

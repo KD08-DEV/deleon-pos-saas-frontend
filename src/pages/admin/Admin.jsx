@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import AccountsReceivable from "./AccountsReceivable";
+import BranchesManagement from "./BranchesManagement";
 import {
     FileText,
     Users,
@@ -16,6 +17,7 @@ import {
     ChevronRight,
     BarChart3,
     DollarSign,
+    Percent,
     ShoppingBag,
     Settings,
     UtensilsCrossed,
@@ -29,15 +31,19 @@ import {
     HelpCircle,
     LayoutDashboard,
     Wallet,
-    X
+    Globe2,
+    X,
 } from "lucide-react";
+
 import ExpenseCategories from "./ExpenseCategories";
 import Expenses from "./Expenses";
 import PayrollRuns from "./PayrollRuns";
 import FinanceSummary from "./FinanceSummary";
-import PrintersConfig   from "./PrintersConfig.jsx";
+import PrintersConfig from "./PrintersConfig.jsx";
+import useTenant from "../../hooks/useTenant";
+import { useTranslation } from "react-i18next";
+import TaxIdentityConfig from "./TaxIdentityConfig";
 
-import Reports from "./Reports";
 import Employees from "./Employees";
 import api from "../../lib/api";
 import Inventory from "./Inventory";
@@ -51,1104 +57,3586 @@ import TablesManagement from "./TablesManagement";
 import Suppliers from "./Suppliers";
 import InventoryCategories from "./InventoryCategories";
 import Notifications from "./Notifications";
-
 import HelpAndSupport from "./HelpAndSupport";
 
 
+const LEGACY_ADMIN_TAB_MAP = {
+    fiscal: "billing-config",
+};
+
+
+const BILLING_CONFIG_TAB_IDS =
+    new Set([
+        "regional-config",
+        "tax-config",
+        "service-charge-config",
+        "billing-config",
+        "delivery-config",
+        "tax-identity-config",
+        "ncf-config",
+        "ecf-config",
+        "printersconfig",
+    ]);
+
+
+const normalizeAdminTab = (
+    value
+) => {
+    const tab =
+        String(
+            value ||
+            ""
+        ).trim();
+
+
+    return (
+        LEGACY_ADMIN_TAB_MAP[
+            tab
+            ] ||
+        tab
+    );
+};
+
+
 const Admin = () => {
-    const [searchParams] = useSearchParams();
-    const tabFromUrl = searchParams.get("tab");
-    const [tab, setTab] = useState("cash-register");
-    const location = useLocation();
-    const [expandedMenu, setExpandedMenu] = useState("reportes");
-    const [showPlanDetails, setShowPlanDetails] = useState(false);
+    const {
+        t,
+    } =
+        useTranslation();
 
-    const navigate = useNavigate();
-    const { userData, isAuth } = useSelector((state) => state.user);
-    useEffect(() => {
-        if (tabFromUrl === "cash-register") {
-            setTab("cash-register");
-        }
-    }, [tabFromUrl]);
 
-    // 📊 Traer resumen de uso del plan + permisos actuales del membership
-    const { data: usageData } = useQuery({
-        queryKey: ["admin-usage-summary"],
-        queryFn: async () => {
-            const res = await api.get("/api/admin/usage");
-            return res.data?.data;
-        },
-        enabled: Boolean(isAuth && userData),
-        staleTime: 0,
-        refetchOnMount: "always",
-        refetchOnReconnect: true,
-    });
+    const [
+        searchParams,
+    ] =
+        useSearchParams();
 
-    const normalizePlanKey = (value) => {
-        const normalized = String(value || "emprendedor")
+
+    const tabFromUrl =
+        searchParams.get(
+            "tab"
+        );
+
+
+    const [
+        tab,
+        setTab,
+    ] =
+        useState(
+            "cash-register"
+        );
+
+
+    const location =
+        useLocation();
+
+
+    const [
+        expandedMenu,
+        setExpandedMenu,
+    ] =
+        useState(
+            "reportes"
+        );
+
+
+    const [
+        showPlanDetails,
+        setShowPlanDetails,
+    ] =
+        useState(
+            false
+        );
+
+
+    const navigate =
+        useNavigate();
+
+
+    const {
+        userData,
+        isAuth,
+    } =
+        useSelector(
+            (
+                state
+            ) =>
+                state.user
+        );
+
+
+    const {
+        tenantInfo,
+    } =
+        useTenant();
+
+
+    const tenantCountryCode =
+        String(
+            tenantInfo
+                ?.localization
+                ?.countryCode ||
+            ""
+        )
             .trim()
-            .toLowerCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "");
+            .toUpperCase();
 
-        if (normalized === "standard") return "estandar";
-        if (normalized === "premium") return "premium";
-        if (normalized === "pro") return "pro";
-        if (normalized === "emprendedor") return "emprendedor";
+
+    const isDominicanTenant =
+        tenantCountryCode ===
+        "DO";
+
+
+    /*
+     * ==========================================
+     * TAB DESDE URL
+     * ==========================================
+     */
+
+    useEffect(
+        () => {
+            if (
+                !tabFromUrl
+            ) {
+                return;
+            }
+
+
+            const nextTab =
+                normalizeAdminTab(
+                    tabFromUrl
+                );
+
+
+            setTab(
+                nextTab
+            );
+
+
+            if (
+                BILLING_CONFIG_TAB_IDS.has(
+                    nextTab
+                )
+            ) {
+                setExpandedMenu(
+                    "facturacion-config"
+                );
+            }
+        },
+        [
+            tabFromUrl,
+        ]
+    );
+
+
+    /*
+     * ==========================================
+     * USO DEL PLAN + PERMISOS
+     * ==========================================
+     */
+
+    const {
+        data:
+            usageData,
+    } =
+        useQuery({
+            queryKey: [
+                "admin-usage-summary",
+            ],
+
+            queryFn:
+                async () => {
+                    const res =
+                        await api.get(
+                            "/api/admin/usage"
+                        );
+
+
+                    return res
+                        .data
+                        ?.data;
+                },
+
+            enabled:
+                Boolean(
+                    isAuth &&
+                    userData
+                ),
+
+            staleTime:
+                0,
+
+            refetchOnMount:
+                "always",
+
+            refetchOnReconnect:
+                true,
+        });
+
+
+    /*
+     * Valores internos del plan.
+     * NO traducir.
+     */
+    const normalizePlanKey = (
+        value
+    ) => {
+        const normalized =
+            String(
+                value ||
+                "emprendedor"
+            )
+                .trim()
+                .toLowerCase()
+                .normalize(
+                    "NFD"
+                )
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ""
+                );
+
+
+        if (
+            normalized ===
+            "standard"
+        ) {
+            return "estandar";
+        }
+
+
+        if (
+            normalized ===
+            "premium"
+        ) {
+            return "premium";
+        }
+
+
+        if (
+            normalized ===
+            "pro"
+        ) {
+            return "pro";
+        }
+
+
+        if (
+            normalized ===
+            "emprendedor"
+        ) {
+            return "emprendedor";
+        }
+
 
         return normalized;
     };
 
-    const rawPlan = normalizePlanKey(usageData?.plan);
-    const plan = rawPlan.toUpperCase();
 
-    const limits = usageData?.limits || {};
-    const usage = usageData?.usage || {};
-    const remaining = usageData?.remaining || {};
+    const rawPlan =
+        normalizePlanKey(
+            usageData?.plan
+        );
 
-    const currentUserFromUsage = usageData?.currentUser || {};
 
-    const role = currentUserFromUsage?.role || userData?.role || "";
-    const isCashier = role === "Cajera";
-    const isOwnerOrAdmin = ["Owner", "Admin"].includes(role);
+    /*
+     * Se conserva la forma actual
+     * de mostrar el nombre del plan.
+     */
+    const plan =
+        rawPlan.toUpperCase();
 
-    const userPermissions =
-        currentUserFromUsage?.permissions ||
-        userData?.permissions ||
+
+    const limits =
+        usageData?.limits ||
         {};
 
-    const hasUserPermission = (permissionPath) => {
-        return String(permissionPath || "")
-            .split(".")
-            .reduce(
-                (acc, key) =>
-                    acc && acc[key] !== undefined ? acc[key] : undefined,
-                userPermissions
-            ) === true;
+
+    const usage =
+        usageData?.usage ||
+        {};
+
+
+    const remaining =
+        usageData?.remaining ||
+        {};
+
+
+    const currentUserFromUsage =
+        usageData
+            ?.currentUser ||
+        {};
+
+
+    /*
+     * ==========================================
+     * ROLES / PERMISOS
+     * ==========================================
+     *
+     * Estos son valores internos.
+     * NO traducir.
+     */
+
+    const role =
+        currentUserFromUsage
+            ?.role ||
+        userData?.role ||
+        "";
+
+
+    const isCashier =
+        role ===
+        "Cajera";
+
+
+    const isOwnerOrAdmin =
+        [
+            "Owner",
+            "Admin",
+        ].includes(
+            role
+        );
+
+
+    const userPermissions =
+        currentUserFromUsage
+            ?.permissions ||
+        userData
+            ?.permissions ||
+        {};
+
+
+    const hasUserPermission = (
+        permissionPath
+    ) => {
+        return String(
+                permissionPath ||
+                ""
+            )
+                .split(
+                    "."
+                )
+                .reduce(
+                    (
+                        acc,
+                        key
+                    ) =>
+                        acc &&
+                        acc[
+                            key
+                            ] !==
+                        undefined
+                            ? acc[
+                                key
+                                ]
+                            : undefined,
+                    userPermissions
+                ) ===
+            true;
     };
+
+
+    const hasAccountsReceivablePermission =
+        hasUserPermission(
+            "accountsReceivable.view"
+        );
+
 
     const canCreateProductsByPermission =
-        isOwnerOrAdmin || hasUserPermission("products.create");
+        isOwnerOrAdmin ||
+        hasUserPermission(
+            "products.create"
+        );
+
 
     const canInventoryEntryByPermission =
-        isOwnerOrAdmin || hasUserPermission("inventory.entry");
+        isOwnerOrAdmin ||
+        hasUserPermission(
+            "inventory.entry"
+        );
+
+
     const effectiveUser = {
-        ...(userData || {}),
+        ...(
+            userData ||
+            {}
+        ),
+
         role,
-        permissions: userPermissions,
+
+        permissions:
+        userPermissions,
     };
 
-    // 🔐 Redirección segura
-    useEffect(() => {
-        if (!isAuth) {
-            navigate("/");
-            return;
+
+    /*
+     * ==========================================
+     * REDIRECCIÓN SEGURA
+     * ==========================================
+     */
+
+    useEffect(
+        () => {
+            if (
+                !isAuth
+            ) {
+                navigate(
+                    "/"
+                );
+
+                return;
+            }
+
+
+            if (
+                !userData
+            ) {
+                return;
+            }
+
+
+            const canEnterAdminPanel =
+                isOwnerOrAdmin ||
+                isCashier ||
+                canCreateProductsByPermission ||
+                canInventoryEntryByPermission ||
+                hasAccountsReceivablePermission;
+
+
+            if (
+                !canEnterAdminPanel
+            ) {
+                navigate(
+                    "/"
+                );
+
+                return;
+            }
+
+
+            if (
+                role ===
+                "Cajera"
+            ) {
+                if (
+                    canCreateProductsByPermission
+                ) {
+                    if (
+                        tabFromUrl ===
+                        "cash-register"
+                    ) {
+                        setTab(
+                            "cash-register"
+                        );
+
+                        return;
+                    }
+
+
+                    setTab(
+                        "menu-management"
+                    );
+
+                    setExpandedMenu(
+                        "restaurante"
+                    );
+
+                } else if (
+                    canInventoryEntryByPermission
+                ) {
+                    setTab(
+                        "inventory-stock"
+                    );
+
+                    setExpandedMenu(
+                        "inventario"
+                    );
+
+                } else {
+                    setTab(
+                        "cash-register"
+                    );
+
+                    setExpandedMenu(
+                        "reportes"
+                    );
+                }
+            }
+        },
+        [
+            userData,
+            isAuth,
+            navigate,
+            role,
+            isOwnerOrAdmin,
+            isCashier,
+            canCreateProductsByPermission,
+            canInventoryEntryByPermission,
+            hasAccountsReceivablePermission,
+            tabFromUrl,
+        ]
+    );
+
+
+    /*
+     * ==========================================
+     * TAB DESDE LOCATION.STATE
+     * ==========================================
+     */
+
+    useEffect(
+        () => {
+            const requestedTab =
+                location
+                    .state
+                    ?.tab;
+
+
+            if (
+                !requestedTab
+            ) {
+                return;
+            }
+
+
+            const nextTab =
+                normalizeAdminTab(
+                    requestedTab
+                );
+
+
+            setTab(
+                nextTab
+            );
+
+
+            if (
+                BILLING_CONFIG_TAB_IDS.has(
+                    nextTab
+                )
+            ) {
+                setExpandedMenu(
+                    "facturacion-config"
+                );
+            }
+
+
+            navigate(
+                "/admin",
+                {
+                    replace:
+                        true,
+
+                    state:
+                        {},
+                }
+            );
+        },
+        [
+            location.state,
+            navigate,
+        ]
+    );
+
+
+    /*
+     * ==========================================
+     * FEATURES POR PLAN
+     * ==========================================
+     */
+
+    const PLAN_FEATURES_FALLBACK = {
+        emprendedor: {
+            basicReports:
+                true,
+
+            advancedReports:
+                false,
+
+            productReports:
+                false,
+
+            financialAnalysis:
+                false,
+
+            employees:
+                true,
+
+            payroll:
+                false,
+
+            menu:
+                true,
+
+            tables:
+                true,
+
+            fiscal:
+                false,
+
+            printers:
+                true,
+
+            inventory:
+                false,
+
+            suppliers:
+                false,
+
+            inventoryCategories:
+                false,
+
+            expenses:
+                false,
+
+            financeSummary:
+                false,
+
+            notifications:
+                false,
+
+            accountsReceivable:
+                false,
+        },
+
+        estandar: {
+            basicReports:
+                true,
+
+            advancedReports:
+                true,
+
+            productReports:
+                true,
+
+            financialAnalysis:
+                false,
+
+            employees:
+                true,
+
+            payroll:
+                false,
+
+            menu:
+                true,
+
+            tables:
+                true,
+
+            fiscal:
+                false,
+
+            printers:
+                true,
+
+            inventory:
+                true,
+
+            suppliers:
+                true,
+
+            inventoryCategories:
+                true,
+
+            expenses:
+                false,
+
+            financeSummary:
+                false,
+
+            notifications:
+                false,
+
+            accountsReceivable:
+                true,
+        },
+
+        premium: {
+            basicReports:
+                true,
+
+            advancedReports:
+                true,
+
+            productReports:
+                true,
+
+            financialAnalysis:
+                true,
+
+            employees:
+                true,
+
+            payroll:
+                false,
+
+            menu:
+                true,
+
+            tables:
+                true,
+
+            fiscal:
+                true,
+
+            printers:
+                true,
+
+            inventory:
+                true,
+
+            suppliers:
+                true,
+
+            inventoryCategories:
+                true,
+
+            expenses:
+                true,
+
+            financeSummary:
+                true,
+
+            notifications:
+                false,
+
+            accountsReceivable:
+                true,
+        },
+
+        pro: {
+            basicReports:
+                true,
+
+            advancedReports:
+                true,
+
+            productReports:
+                true,
+
+            financialAnalysis:
+                true,
+
+            employees:
+                true,
+
+            payroll:
+                true,
+
+            menu:
+                true,
+
+            tables:
+                true,
+
+            fiscal:
+                true,
+
+            printers:
+                true,
+
+            inventory:
+                true,
+
+            suppliers:
+                true,
+
+            inventoryCategories:
+                true,
+
+            expenses:
+                true,
+
+            financeSummary:
+                true,
+
+            notifications:
+                true,
+
+            accountsReceivable:
+                true,
+        },
+    };
+
+
+    const fallbackFeatures =
+        PLAN_FEATURES_FALLBACK[
+            rawPlan
+            ] ||
+        PLAN_FEATURES_FALLBACK
+            .emprendedor;
+
+
+    const planFeatures = {
+        ...fallbackFeatures,
+
+        ...(
+            usageData
+                ?.features ||
+            {}
+        ),
+
+        /*
+         * Seguridad visual:
+         * Premium debe tener Registro de gastos
+         * y Reporte de gastos.
+         */
+        ...(
+            rawPlan ===
+            "premium"
+                ? {
+                    expenses:
+                        true,
+
+                    financeSummary:
+                        true,
+                }
+                : {}
+        ),
+    };
+
+
+    const canUseFeature = (
+        feature
+    ) =>
+        Boolean(
+            planFeatures?.[
+                feature
+                ]
+        );
+
+
+    const canInventory =
+        canUseFeature(
+            "inventory"
+        );
+
+
+    const canAccessCashRegister =
+        isOwnerOrAdmin ||
+        isCashier;
+
+
+    const canAccountsReceivable =
+        canUseFeature(
+            "accountsReceivable"
+        ) &&
+        (
+            isOwnerOrAdmin ||
+            hasAccountsReceivablePermission
+        );
+
+
+    /*
+     * ==========================================
+     * MENSAJE DE UPGRADE
+     * ==========================================
+     */
+
+    const planUpgradeMessage = {
+            emprendedor:
+                t(
+                    "admin.plan.upgradeMessages.emprendedor"
+                ),
+
+            estandar:
+                t(
+                    "admin.plan.upgradeMessages.estandar"
+                ),
+
+            premium:
+                t(
+                    "admin.plan.upgradeMessages.premium"
+                ),
+
+            pro:
+                "",
+        }[
+            rawPlan
+            ] ||
+        "";
+
+
+    const totalUsersLimit =
+        limits.maxUsers ===
+        null ||
+        limits.maxUsers ===
+        undefined
+            ? "∞"
+            : limits.maxUsers;
+
+
+    const dishesLimit =
+        limits.maxDishes ===
+        null ||
+        limits.maxDishes ===
+        undefined
+            ? "∞"
+            : limits.maxDishes;
+
+
+    const tablesLimit =
+        limits.maxTables ===
+        null ||
+        limits.maxTables ===
+        undefined
+            ? "∞"
+            : limits.maxTables;
+
+
+    const progress = (
+        used,
+        max
+    ) => {
+        if (
+            max ===
+            null ||
+            max ===
+            undefined ||
+            max ===
+            "∞"
+        ) {
+            return 0;
         }
 
-        if (!userData) return;
 
-        const canEnterAdminPanel =
-            ["Owner", "Admin", "Cajera", "Camarero", "Cocina"].includes(role) ||
-            canCreateProductsByPermission ||
-            canInventoryEntryByPermission;
-
-        if (!canEnterAdminPanel) {
-            navigate("/");
-            return;
+        if (
+            max ===
+            0
+        ) {
+            return 0;
         }
 
-        if (role === "Cajera") {
-            if (canCreateProductsByPermission) {
-                if (tabFromUrl === "cash-register") {
-                    setTab("cash-register");
-                    return;
+
+        return Math.min(
+            100,
+            Math.round(
+                (
+                    used /
+                    max
+                ) *
+                100
+            )
+        );
+    };
+
+
+    const isNearLimit = (
+        used,
+        max
+    ) => {
+        if (
+            max ===
+            null ||
+            max ===
+            undefined ||
+            max ===
+            "∞"
+        ) {
+            return false;
+        }
+
+
+        return (
+            used /
+            max >=
+            0.8
+        );
+    };
+
+
+    /*
+     * ==========================================
+     * CONFIGURACIÓN DEL MENÚ
+     * ==========================================
+     */
+
+    const menuSectionsBase = [
+        {
+            id:
+                "reportes",
+
+            label:
+                t(
+                    "admin.menu.sections.reportsAnalysis"
+                ),
+
+            icon:
+            BarChart3,
+
+            color:
+                "text-blue-400",
+
+            bgColor:
+                "bg-blue-500/10",
+
+            borderColor:
+                "border-blue-500/20",
+
+            items: [
+                ...(
+                    canAccessCashRegister
+                        ? [
+                            {
+                                id:
+                                    "cash-register",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.cashRegister.label"
+                                    ),
+
+                                icon:
+                                Wallet,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.cashRegister.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+
+                ...(
+                    canAccountsReceivable
+                        ? [
+                            {
+                                id:
+                                    "accounts-receivable",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.accountsReceivable.label"
+                                    ),
+
+                                icon:
+                                CreditCard,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.accountsReceivable.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+
+                {
+                    id:
+                        "sales-reports",
+
+                    label:
+                        t(
+                            "admin.menu.items.salesReports.label"
+                        ),
+
+                    icon:
+                    DollarSign,
+
+                    description:
+                        t(
+                            "admin.menu.items.salesReports.description"
+                        ),
+                },
+
+                ...(
+                    canUseFeature(
+                        "productReports"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "product-reports",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.productReports.label"
+                                    ),
+
+                                icon:
+                                PieChart,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.productReports.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+
+                ...(
+                    canUseFeature(
+                        "financialAnalysis"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "financial-analysis",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.financialAnalysis.label"
+                                    ),
+
+                                icon:
+                                TrendingUp,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.financialAnalysis.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+            ],
+        },
+
+        {
+            id:
+                "personal",
+
+            label:
+                t(
+                    "admin.menu.sections.staffManagement"
+                ),
+
+            icon:
+            Users,
+
+            color:
+                "text-green-400",
+
+            bgColor:
+                "bg-green-500/10",
+
+            borderColor:
+                "border-green-500/20",
+
+            items: [
+                {
+                    id:
+                        "employees",
+
+                    label:
+                        t(
+                            "admin.menu.items.employees.label"
+                        ),
+
+                    icon:
+                    Users,
+
+                    description:
+                        t(
+                            "admin.menu.items.employees.description"
+                        ),
+                },
+
+                ...(
+                    canUseFeature(
+                        "payroll"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "payroll",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.payroll.label"
+                                    ),
+
+                                icon:
+                                Users,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.payroll.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+
+                {
+                    id:
+                        "schedules",
+
+                    label:
+                        t(
+                            "admin.menu.items.schedules.label"
+                        ),
+
+                    icon:
+                    Calendar,
+
+                    description:
+                        t(
+                            "admin.menu.items.schedules.description"
+                        ),
+
+                    comingSoon:
+                        true,
+                },
+
+                {
+                    id:
+                        "attendance",
+
+                    label:
+                        t(
+                            "admin.menu.items.attendance.label"
+                        ),
+
+                    icon:
+                    Clock,
+
+                    description:
+                        t(
+                            "admin.menu.items.attendance.description"
+                        ),
+
+                    comingSoon:
+                        true,
+                },
+            ],
+        },
+
+        {
+            id:
+                "restaurante",
+
+            label:
+                t(
+                    "admin.menu.sections.restaurant"
+                ),
+
+            icon:
+            UtensilsCrossed,
+
+            color:
+                "text-purple-400",
+
+            bgColor:
+                "bg-purple-500/10",
+
+            borderColor:
+                "border-purple-500/20",
+
+            items: [
+                ...(isOwnerOrAdmin ? [{
+                    id: "branches",
+                    label: t("admin.menu.items.branches.label"),
+                    icon: Store,
+                    description: t("admin.menu.items.branches.description"),
+                }] : []),
+                {
+                    id:
+                        "menu-management",
+
+                    label:
+                        t(
+                            "admin.menu.items.menuManagement.label"
+                        ),
+
+                    icon:
+                    ShoppingBag,
+
+                    description:
+                        t(
+                            "admin.menu.items.menuManagement.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "tables-management",
+
+                    label:
+                        t(
+                            "admin.menu.items.tablesManagement.label"
+                        ),
+
+                    icon:
+                    Table2,
+
+                    description:
+                        t(
+                            "admin.menu.items.tablesManagement.description"
+                        ),
+                },
+
+                ...(
+                    canUseFeature(
+                        "inventoryCategories"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "categories-inv",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.inventoryCategories.label"
+                                    ),
+
+                                icon:
+                                ShoppingBag,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.inventoryCategories.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+            ],
+        },
+
+        {
+            id:
+                "facturacion-config",
+
+            label:
+                t(
+                    "admin.menu.sections.billingConfiguration"
+                ),
+
+            icon:
+            Receipt,
+
+            color:
+                "text-orange-400",
+
+            bgColor:
+                "bg-orange-500/10",
+
+            borderColor:
+                "border-orange-500/20",
+
+            items: [
+                {
+                    id:
+                        "regional-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.regionalConfig.label"
+                        ),
+
+                    icon:
+                    Globe2,
+
+                    description:
+                        t(
+                            "admin.menu.items.regionalConfig.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "tax-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.taxConfig.label"
+                        ),
+
+                    icon:
+                    Percent,
+
+                    description:
+                        t(
+                            "admin.menu.items.taxConfig.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "service-charge-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.serviceCharges.label"
+                        ),
+
+                    icon:
+                    DollarSign,
+
+                    description:
+                        t(
+                            "admin.menu.items.serviceCharges.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "billing-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.billingGeneral.label"
+                        ),
+
+                    icon:
+                    Receipt,
+
+                    description:
+                        t(
+                            "admin.menu.items.billingGeneral.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "delivery-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.deliveryChannels.label"
+                        ),
+
+                    icon:
+                    Store,
+
+                    description:
+                        t(
+                            "admin.menu.items.deliveryChannels.description"
+                        ),
+                },
+
+                {
+                    id:
+                        "tax-identity-config",
+
+                    label:
+                        t(
+                            "admin.menu.items.taxIdentity.label"
+                        ),
+
+                    icon:
+                    FileText,
+
+                    description:
+                        t(
+                            "admin.menu.items.taxIdentity.description"
+                        ),
+                },
+
+                /*
+                 * ======================================
+                 * FISCAL RD
+                 * ======================================
+                 *
+                 * Se mantiene en español.
+                 */
+
+                ...(
+                    isDominicanTenant &&
+                    canUseFeature(
+                        "fiscal"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "ncf-config",
+
+                                label:
+                                    "NCF / Comprobantes RD",
+
+                                icon:
+                                Receipt,
+
+                                description:
+                                    "Configuración de NCF B01 y B02",
+                            },
+
+                            {
+                                id:
+                                    "ecf-config",
+
+                                label:
+                                    "e-CF / DGII",
+
+                                icon:
+                                Shield,
+
+                                description:
+                                    "Facturación electrónica, certificado y DGII",
+                            },
+                        ]
+                        : []
+                ),
+
+                ...(
+                    canUseFeature(
+                        "printers"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "printersconfig",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.printers.label"
+                                    ),
+
+                                icon:
+                                Receipt,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.printers.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+            ],
+        },
+
+        ...(
+            canInventory
+                ? [
+                    {
+                        id:
+                            "inventario",
+
+                        label:
+                            t(
+                                "admin.menu.sections.inventory"
+                            ),
+
+                        icon:
+                        Package,
+
+                        color:
+                            "text-cyan-400",
+
+                        bgColor:
+                            "bg-cyan-500/10",
+
+                        borderColor:
+                            "border-cyan-500/20",
+
+                        items: [
+                            ...(
+                                canUseFeature(
+                                    "suppliers"
+                                )
+                                    ? [
+                                        {
+                                            id:
+                                                "suppliers",
+
+                                            label:
+                                                t(
+                                                    "admin.menu.items.suppliers.label"
+                                                ),
+
+                                            icon:
+                                            Store,
+
+                                            description:
+                                                t(
+                                                    "admin.menu.items.suppliers.description"
+                                                ),
+                                        },
+                                    ]
+                                    : []
+                            ),
+
+                            {
+                                id:
+                                    "inventory-stock",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.stockControl.label"
+                                    ),
+
+                                icon:
+                                Package,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.stockControl.description"
+                                    ),
+                            },
+                        ],
+                    },
+                ]
+                : []
+        ),
+
+        ...(
+            canUseFeature(
+                "expenses"
+            ) ||
+            canUseFeature(
+                "financeSummary"
+            )
+                ? [
+                    {
+                        id:
+                            "gestion-financiera",
+
+                        label:
+                            t(
+                                "admin.menu.sections.financialManagement"
+                            ),
+
+                        icon:
+                        Wallet,
+
+                        color:
+                            "text-emerald-400",
+
+                        bgColor:
+                            "bg-emerald-500/10",
+
+                        borderColor:
+                            "border-emerald-500/20",
+
+                        items: [
+                            ...(
+                                canUseFeature(
+                                    "expenses"
+                                )
+                                    ? [
+                                        {
+                                            id:
+                                                "expense-categories",
+
+                                            label:
+                                                t(
+                                                    "admin.menu.items.expenseCategories.label"
+                                                ),
+
+                                            icon:
+                                            FileText,
+
+                                            description:
+                                                t(
+                                                    "admin.menu.items.expenseCategories.description"
+                                                ),
+                                        },
+
+                                        {
+                                            id:
+                                                "expenses",
+
+                                            label:
+                                                t(
+                                                    "admin.menu.items.expenses.label"
+                                                ),
+
+                                            icon:
+                                            Receipt,
+
+                                            description:
+                                                t(
+                                                    "admin.menu.items.expenses.description"
+                                                ),
+                                        },
+                                    ]
+                                    : []
+                            ),
+
+                            ...(
+                                canUseFeature(
+                                    "financeSummary"
+                                )
+                                    ? [
+                                        {
+                                            id:
+                                                "expenses-summary",
+
+                                            label:
+                                                t(
+                                                    "admin.menu.items.expenseSummary.label"
+                                                ),
+
+                                            icon:
+                                            TrendingUp,
+
+                                            description:
+                                                t(
+                                                    "admin.menu.items.expenseSummary.description"
+                                                ),
+                                        },
+                                    ]
+                                    : []
+                            ),
+                        ],
+                    },
+                ]
+                : []
+        ),
+
+        {
+            id:
+                "configuracion",
+
+            label:
+                t(
+                    "admin.menu.sections.settings"
+                ),
+
+            icon:
+            Settings,
+
+            color:
+                "text-gray-400",
+
+            bgColor:
+                "bg-gray-500/10",
+
+            borderColor:
+                "border-gray-500/20",
+
+            items: [
+                ...(
+                    canUseFeature(
+                        "notifications"
+                    )
+                        ? [
+                            {
+                                id:
+                                    "notifications",
+
+                                label:
+                                    t(
+                                        "admin.menu.items.notifications.label"
+                                    ),
+
+                                icon:
+                                Bell,
+
+                                description:
+                                    t(
+                                        "admin.menu.items.notifications.description"
+                                    ),
+                            },
+                        ]
+                        : []
+                ),
+
+                {
+                    id:
+                        "help",
+
+                    label:
+                        t(
+                            "admin.menu.items.help.label"
+                        ),
+
+                    icon:
+                    HelpCircle,
+
+                    description:
+                        t(
+                            "admin.menu.items.help.description"
+                        ),
+                },
+            ],
+        },
+    ].filter(
+        (
+            section
+        ) =>
+            Array.isArray(
+                section.items
+            ) &&
+            section.items.length >
+            0
+    );
+
+
+    /*
+     * ==========================================
+     * MENÚ SEGÚN PERMISOS
+     * ==========================================
+     */
+
+    const menuSections =
+        useMemo(
+            () => {
+                if (
+                    isOwnerOrAdmin
+                ) {
+                    return menuSectionsBase;
                 }
 
-                setTab("menu-management");
-                setExpandedMenu("restaurante");
-            } else if (canInventoryEntryByPermission) {
-                setTab("inventory-stock");
-                setExpandedMenu("inventario");
-            } else {
-                setTab("cash-register");
-                setExpandedMenu("reportes");
+
+                const sections =
+                    [];
+
+
+                const reportes =
+                    menuSectionsBase.find(
+                        (
+                            section
+                        ) =>
+                            section.id ===
+                            "reportes"
+                    );
+
+
+                if (
+                    reportes
+                ) {
+                    const allowedReportItems = [
+                        ...(
+                            canAccessCashRegister
+                                ? [
+                                    "cash-register",
+                                ]
+                                : []
+                        ),
+
+                        ...(
+                            canAccountsReceivable
+                                ? [
+                                    "accounts-receivable",
+                                ]
+                                : []
+                        ),
+                    ];
+
+
+                    const reportItems =
+                        (
+                            reportes.items ||
+                            []
+                        ).filter(
+                            (
+                                item
+                            ) =>
+                                allowedReportItems.includes(
+                                    item.id
+                                )
+                        );
+
+
+                    if (
+                        reportItems.length >
+                        0
+                    ) {
+                        sections.push({
+                            ...reportes,
+
+                            items:
+                            reportItems,
+                        });
+                    }
+                }
+
+
+                if (
+                    canCreateProductsByPermission
+                ) {
+                    const restaurante =
+                        menuSectionsBase.find(
+                            (
+                                section
+                            ) =>
+                                section.id ===
+                                "restaurante"
+                        );
+
+
+                    if (
+                        restaurante
+                    ) {
+                        sections.push({
+                            ...restaurante,
+
+                            items:
+                                (
+                                    restaurante.items ||
+                                    []
+                                ).filter(
+                                    (
+                                        item
+                                    ) =>
+                                        item.id ===
+                                        "menu-management"
+                                ),
+                        });
+                    }
+                }
+
+
+                if (
+                    canInventory &&
+                    canInventoryEntryByPermission
+                ) {
+                    const inventario =
+                        menuSectionsBase.find(
+                            (
+                                section
+                            ) =>
+                                section.id ===
+                                "inventario"
+                        );
+
+
+                    if (
+                        inventario
+                    ) {
+                        sections.push({
+                            ...inventario,
+
+                            items:
+                                (
+                                    inventario.items ||
+                                    []
+                                ).filter(
+                                    (
+                                        item
+                                    ) =>
+                                        item.id ===
+                                        "inventory-stock"
+                                ),
+                        });
+                    }
+                }
+
+
+                return sections.filter(
+                    (
+                        section
+                    ) =>
+                        Array.isArray(
+                            section.items
+                        ) &&
+                        section.items.length >
+                        0
+                );
+            },
+            [
+                isOwnerOrAdmin,
+                menuSectionsBase,
+                canAccessCashRegister,
+                canInventory,
+                canCreateProductsByPermission,
+                canInventoryEntryByPermission,
+                canAccountsReceivable,
+            ]
+        );
+
+
+    const toggleMenu = (
+        menuId
+    ) => {
+        setExpandedMenu(
+            expandedMenu ===
+            menuId
+                ? null
+                : menuId
+        );
+    };
+
+
+    const allowedTabIds =
+        useMemo(
+            () => {
+                return new Set(
+                    (
+                        menuSections ||
+                        []
+                    )
+                        .flatMap(
+                            (
+                                section
+                            ) =>
+                                section.items ||
+                                []
+                        )
+                        .filter(
+                            (
+                                item
+                            ) =>
+                                !item.comingSoon &&
+                                !item.action
+                        )
+                        .map(
+                            (
+                                item
+                            ) =>
+                                item.id
+                        )
+                );
+            },
+            [
+                menuSections,
+            ]
+        );
+
+
+    useEffect(
+        () => {
+            if (
+                !allowedTabIds.size
+            ) {
+                return;
             }
+
+
+            if (
+                !allowedTabIds.has(
+                    tab
+                )
+            ) {
+                const fallbackTab =
+                    allowedTabIds.has(
+                        "cash-register"
+                    )
+                        ? "cash-register"
+                        : [
+                            ...allowedTabIds,
+                        ][0];
+
+
+                setTab(
+                    fallbackTab
+                );
+            }
+        },
+        [
+            allowedTabIds,
+            tab,
+        ]
+    );
+
+
+    const handleTabClick = (
+        item
+    ) => {
+        if (
+            item.action
+        ) {
+            item.action();
+
+            return;
         }
-    }, [
-        userData,
-        isAuth,
-        navigate,
-        role,
-        canCreateProductsByPermission,
-        canInventoryEntryByPermission,
-    ]);
 
-    useEffect(() => {
-        const nextTab = location.state?.tab;
 
-        if (nextTab) {
-            setTab(nextTab);
-            navigate("/admin", { replace: true, state: {} });
+        if (
+            item.comingSoon
+        ) {
+            return;
         }
-    }, [location.state, navigate]);
 
-    // ⏳ Evitar pantalla en blanco mientras carga el usuario
-    if (!userData) {
+
+        if (
+            !allowedTabIds.has(
+                item.id
+            )
+        ) {
+            return;
+        }
+
+
+        setTab(
+            item.id
+        );
+    };
+
+
+    /*
+     * IMPORTANTE:
+     * Este retorno queda después de todos los hooks.
+     */
+    if (
+        !userData
+    ) {
         return (
             <div className="bg-[#060606] min-h-screen flex items-center justify-center text-white">
-                Loading...
+                {t(
+                    "admin.loading"
+                )}
             </div>
         );
     }
 
-    const PLAN_FEATURES_FALLBACK = {
-        emprendedor: {
-            basicReports: true,
-            advancedReports: false,
-            productReports: false,
-            financialAnalysis: false,
-            employees: true,
-            payroll: false,
-            menu: true,
-            tables: true,
-            fiscal: false,
-            printers: true,
-            inventory: false,
-            suppliers: false,
-            inventoryCategories: false,
-            expenses: false,
-            financeSummary: false,
-            notifications: false,
-            accountsReceivable: false,
-        },
-        estandar: {
-            basicReports: true,
-            advancedReports: true,
-            productReports: true,
-            financialAnalysis: false,
-            employees: true,
-            payroll: false,
-            menu: true,
-            tables: true,
-            fiscal: false,
-            printers: true,
-            inventory: true,
-            suppliers: true,
-            inventoryCategories: true,
-            expenses: false,
-            financeSummary: false,
-            notifications: false,
-            accountsReceivable: true,
-        },
-        premium: {
-            basicReports: true,
-            advancedReports: true,
-            productReports: true,
-            financialAnalysis: true,
-            employees: true,
-            payroll: false,
-            menu: true,
-            tables: true,
-            fiscal: true,
-            printers: true,
-            inventory: true,
-            suppliers: true,
-            inventoryCategories: true,
-            expenses: true,
-            financeSummary: true,
-            notifications: false,
-            accountsReceivable: true,
-        },
-        pro: {
-            basicReports: true,
-            advancedReports: true,
-            productReports: true,
-            financialAnalysis: true,
-            employees: true,
-            payroll: true,
-            menu: true,
-            tables: true,
-            fiscal: true,
-            printers: true,
-            inventory: true,
-            suppliers: true,
-            inventoryCategories: true,
-            expenses: true,
-            financeSummary: true,
-            notifications: true,
-            accountsReceivable: true,
-        },
-    };
-
-    const fallbackFeatures =
-        PLAN_FEATURES_FALLBACK[rawPlan] ||
-        PLAN_FEATURES_FALLBACK.emprendedor;
-    const planFeatures = {
-        ...fallbackFeatures,
-        ...(usageData?.features || {}),
-
-        // Cuentas por cobrar debe estar disponible para todos menos Emprendedor
-        accountsReceivable: rawPlan !== "emprendedor",
-
-        // Seguridad visual: Premium debe tener Registro de gastos y Reporte de gastos
-        ...(rawPlan === "premium"
-            ? {
-                expenses: true,
-                financeSummary: true,
-            }
-            : {}),
-    };
-    const canUseFeature = (feature) => Boolean(planFeatures?.[feature]);
-
-    const canInventory = canUseFeature("inventory");
-    const canAccountsReceivable = rawPlan !== "emprendedor";
-
-    const totalUsersLimit =
-        limits.maxUsers === null || limits.maxUsers === undefined
-            ? "∞"
-            : limits.maxUsers;
-
-    const dishesLimit =
-        limits.maxDishes === null || limits.maxDishes === undefined
-            ? "∞"
-            : limits.maxDishes;
-
-    const tablesLimit =
-        limits.maxTables === null || limits.maxTables === undefined
-            ? "∞"
-            : limits.maxTables;
-
-    // Calcular progreso y colores para el modal
-    const progress = (used, max) => {
-        if (max === null || max === undefined || max === "∞") return 0;
-        if (max === 0) return 0;
-        return Math.min(100, Math.round((used / max) * 100));
-    };
-
-    const isNearLimit = (used, max) => {
-        if (max === null || max === undefined || max === "∞") return false;
-        return used / max >= 0.8;
-    };
-
-    // Configuración de menú con submenús organizados
-    const menuSectionsBase = [
-        {
-            id: "reportes",
-            label: "Reportes y Análisis",
-            icon: BarChart3,
-            color: "text-blue-400",
-            bgColor: "bg-blue-500/10",
-            borderColor: "border-blue-500/20",
-            items: [
-                {
-                    id: "cash-register",
-                    label: "Cierre de Caja",
-                    icon: Wallet,
-                    description: "Control de cierre de caja diario",
-                },
-                ...(canAccountsReceivable
-                    ? [
-                        {
-                            id: "accounts-receivable",
-                            label: "Cuentas por cobrar",
-                            icon: CreditCard,
-                            description: "Control de fiado, abonos y saldos pendientes",
-                        },
-                    ]
-                    : []),
-                {
-                    id: "sales-reports",
-                    label: "Reportes de Ventas",
-                    icon: DollarSign,
-                    description: "Reporte básico de ventas y facturación",
-                },
-                ...(canUseFeature("productReports")
-                    ? [
-                        {
-                            id: "product-reports",
-                            label: "Reportes de Productos",
-                            icon: PieChart,
-                            description: "Productos más vendidos y análisis por producto",
-                        },
-                    ]
-                    : []),
-                ...(canUseFeature("financialAnalysis")
-                    ? [
-                        {
-                            id: "financial-analysis",
-                            label: "Análisis Financiero",
-                            icon: TrendingUp,
-                            description: "Análisis detallado de finanzas",
-                        },
-                    ]
-                    : []),
-            ],
-        },
-        {
-            id: "personal",
-            label: "Gestión de Personal",
-            icon: Users,
-            color: "text-green-400",
-            bgColor: "bg-green-500/10",
-            borderColor: "border-green-500/20",
-            items: [
-                {
-                    id: "employees",
-                    label: "Empleados",
-                    icon: Users,
-                    description: "Gestionar empleados",
-                },
-                ...(canUseFeature("payroll")
-                    ? [
-                        {
-                            id: "payroll",
-                            label: "Nómina",
-                            icon: Users,
-                            description: "Crear corridas y postear gasto",
-                        },
-                    ]
-                    : []),
-                {
-                    id: "schedules",
-                    label: "Horarios y Turnos",
-                    icon: Calendar,
-                    description: "Gestionar horarios de trabajo",
-                    comingSoon: true,
-                },
-                {
-                    id: "attendance",
-                    label: "Asistencia",
-                    icon: Clock,
-                    description: "Control de asistencia",
-                    comingSoon: true,
-                },
-            ],
-        },
-        {
-            id: "restaurante",
-            label: "Restaurante",
-            icon: UtensilsCrossed,
-            color: "text-purple-400",
-            bgColor: "bg-purple-500/10",
-            borderColor: "border-purple-500/20",
-            items: [
-                {
-                    id: "menu-management",
-                    label: "Gestión de Menú",
-                    icon: ShoppingBag,
-                    description: "Administrar platos, productos y categorías básicas",
-                },
-                {
-                    id: "tables-management",
-                    label: "Gestión de Mesas",
-                    icon: Table2,
-                    description: "Administrar mesas del restaurante",
-                },
-                ...(canUseFeature("inventoryCategories")
-                    ? [
-                        {
-                            id: "categories-inv",
-                            label: "Categorías de inventario",
-                            icon: ShoppingBag,
-                            description: "Organizar categorías de inventario",
-                        },
-                    ]
-                    : []),
-            ],
-        },
-        {
-            id: "facturacion-config",
-            label: "Facturación y Configuración",
-            icon: Receipt,
-            color: "text-orange-400",
-            bgColor: "bg-orange-500/10",
-            borderColor: "border-orange-500/20",
-            items: [
-                {
-                    id: "fiscal",
-                    label: "Facturación / Configuración",
-                    icon: Receipt,
-                    description: "ITBIS, propina, descuentos, delivery, PreFactura y NCF según el plan",
-                },
-                {
-                    id: "printersconfig",
-                    label: "Configuración de impresoras",
-                    icon: Receipt,
-                    description: "Gestionar impresoras de tickets y facturas",
-                },
-            ],
-        },
-        ...(canInventory
-            ? [
-                {
-                    id: "inventario",
-                    label: "Inventario",
-                    icon: Package,
-                    color: "text-cyan-400",
-                    bgColor: "bg-cyan-500/10",
-                    borderColor: "border-cyan-500/20",
-                    items: [
-                        ...(canUseFeature("suppliers")
-                            ? [
-                                {
-                                    id: "suppliers",
-                                    label: "Proveedores",
-                                    icon: Store,
-                                    description: "Gestionar proveedores",
-                                },
-                            ]
-                            : []),
-                        {
-                            id: "inventory-stock",
-                            label: "Control de Stock",
-                            icon: Package,
-                            description: "Inventario y stock de ingredientes",
-                        },
-                    ],
-                },
-            ]
-            : []),
-        ...(canUseFeature("expenses") || canUseFeature("financeSummary")
-            ? [
-                {
-                    id: "gestion-financiera",
-                    label: "Gestión Financiera",
-                    icon: Wallet,
-                    color: "text-emerald-400",
-                    bgColor: "bg-emerald-500/10",
-                    borderColor: "border-emerald-500/20",
-                    items: [
-                        ...(canUseFeature("expenses")
-                            ? [
-                                {
-                                    id: "expense-categories",
-                                    label: "Categorías de gasto",
-                                    icon: FileText,
-                                    description: "Crear/editar categorías de gasto",
-                                },
-                                {
-                                    id: "expenses",
-                                    label: "Registro de gastos",
-                                    icon: Receipt,
-                                    description: "Registrar gastos operativos",
-                                },
-                            ]
-                            : []),
-                        ...(canUseFeature("financeSummary")
-                            ? [
-                                {
-                                    id: "expenses-summary",
-                                    label: "Reporte de gastos",
-                                    icon: TrendingUp,
-                                    description: "Resumen y análisis de gastos",
-                                },
-                            ]
-                            : []),
-                    ],
-                },
-            ]
-            : []),
-        {
-            id: "configuracion",
-            label: "Configuración",
-            icon: Settings,
-            color: "text-gray-400",
-            bgColor: "bg-gray-500/10",
-            borderColor: "border-gray-500/20",
-            items: [
-                ...(canUseFeature("notifications")
-                    ? [
-                        {
-                            id: "notifications",
-                            label: "Notificaciones",
-                            icon: Bell,
-                            description: "Configurar notificaciones",
-                            comingSoon: true,
-                        },
-                    ]
-                    : []),
-                {
-                    id: "help",
-                    label: "Ayuda y Soporte",
-                    icon: HelpCircle,
-                    description: "Documentación y ayuda",
-                },
-            ],
-        },
-    ].filter((section) => Array.isArray(section.items) && section.items.length > 0);
-
-    const menuSections = useMemo(() => {
-        if (isOwnerOrAdmin) return menuSectionsBase;
-
-        const sections = [];
-
-        const reportes = menuSectionsBase.find((s) => s.id === "reportes");
-        if (reportes) {
-            sections.push({
-                ...reportes,
-                items: (reportes.items || []).filter((i) =>
-                    [
-                        "cash-register",
-                        ...(canAccountsReceivable ? ["accounts-receivable"] : []),
-                    ].includes(i.id)
-                ),
-            });
-        }
-
-        if (canCreateProductsByPermission) {
-            const restaurante = menuSectionsBase.find((s) => s.id === "restaurante");
-            if (restaurante) {
-                sections.push({
-                    ...restaurante,
-                    items: (restaurante.items || []).filter((i) => i.id === "menu-management"),
-                });
-            }
-        }
-
-        if (canInventory && canInventoryEntryByPermission) {
-            const inventario = menuSectionsBase.find((s) => s.id === "inventario");
-            if (inventario) {
-                sections.push({
-                    ...inventario,
-                    items: (inventario.items || []).filter((i) => i.id === "inventory-stock"),
-                });
-            }
-        }
-
-
-        return sections.filter((section) => Array.isArray(section.items) && section.items.length > 0);
-    }, [
-        isOwnerOrAdmin,
-        menuSectionsBase,
-        canInventory,
-        canCreateProductsByPermission,
-        canInventoryEntryByPermission,
-        canAccountsReceivable,
-    ]);
-
-
-
-    const toggleMenu = (menuId) => {
-        setExpandedMenu(expandedMenu === menuId ? null : menuId);
-    };
-    const allowedTabIds = useMemo(() => {
-        return new Set(
-            (menuSections || [])
-                .flatMap((s) => s.items || [])
-                .filter((i) => !i.comingSoon && !i.action)
-                .map((i) => i.id)
-        );
-    }, [menuSections]);
-    useEffect(() => {
-        if (!allowedTabIds.size) return;
-
-        if (!allowedTabIds.has(tab)) {
-            const fallbackTab = allowedTabIds.has("cash-register")
-                ? "cash-register"
-                : [...allowedTabIds][0];
-
-            setTab(fallbackTab);
-        }
-    }, [allowedTabIds, tab]);
-
-
-    const handleTabClick = (item) => {
-        if (item.action) {
-            item.action();
-            return;
-        }
-        if (item.comingSoon) return;
-
-        // 🔒 Si no está permitido para el rol, no lo dejes cambiar
-        if (!allowedTabIds.has(item.id)) return;
-
-        setTab(item.id);
-    };
-
 
     return (
         <div className="bg-gradient-to-br from-[#060606] via-[#0a0a0a] to-[#060606] min-h-screen py-10 pb-24 px-4 md:px-8 text-white">
-            <div className="max-w-7xl mx-auto space-y-8">
-                {/* HEADER MEJORADO */}
+
+            <div className="max-w-[1600px] mx-auto space-y-8">
+                {/* ======================================
+                    HEADER
+                ====================================== */}
+
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
                     <div className="space-y-2">
+
                         <div className="flex items-center gap-3">
+
                             <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
+
                                 <Shield className="w-5 h-5 text-[#f6b100]" />
+
                             </div>
+
+
                             <div>
+
                                 <p className="text-xs uppercase tracking-[0.22em] text-gray-500">
-                                    Admin Dashboard
+                                    {t(
+                                        "admin.header.eyebrow"
+                                    )}
                                 </p>
+
+
                                 <h1 className="text-3xl md:text-4xl font-bold mt-0.5">
-                                    Panel de Administración
+                                    {t(
+                                        "admin.header.title"
+                                    )}
                                 </h1>
+
                             </div>
+
                         </div>
+
+
                         <p className="text-sm text-gray-400 ml-[52px]">
-                            Gestiona tu equipo, revisa reportes y controla el uso de tu plan.
+                            {t(
+                                "admin.header.description"
+                            )}
                         </p>
+
                     </div>
+
+
                     {isOwnerOrAdmin && (
 
-                    <button
-                        onClick={() => navigate("/register")}
-                        className="self-start md:self-auto group relative bg-[#f6b100] text-black px-6 py-3 rounded-xl font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:scale-105 flex items-center gap-2"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        <span>Registrar Usuario</span>
-                    </button>
+                        <button
+                            type="button"
+
+                            onClick={() =>
+                                navigate(
+                                    "/register"
+                                )
+                            }
+
+                            className="self-start md:self-auto group relative bg-[#f6b100] text-black px-6 py-3 rounded-xl font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:scale-105 flex items-center gap-2"
+                        >
+
+                            <UserPlus className="w-4 h-4" />
+
+
+                            <span>
+                                {t(
+                                    "admin.header.registerUser"
+                                )}
+                            </span>
+
+                        </button>
+
                     )}
+
                 </div>
 
-                {/* MÉTRICAS RÁPIDAS MEJORADAS */}
+
+                {/* ======================================
+                    MÉTRICAS
+                ====================================== */}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
                     <button
-                        onClick={() => setShowPlanDetails(true)}
+                        type="button"
+
+                        onClick={() =>
+                            setShowPlanDetails(
+                                true
+                            )
+                        }
+
                         className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group text-left cursor-pointer"
                     >
+
                         <div className="flex items-center justify-between mb-3">
+
                             <p className="text-xs text-gray-400 uppercase tracking-[0.18em]">
-                                Plan actual
+                                {t(
+                                    "admin.metrics.currentPlan"
+                                )}
                             </p>
+
+
                             <TrendingUp className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+
                         </div>
+
+
                         <p className="text-lg font-semibold flex items-center gap-2 mb-3">
+
                             <span className="px-3 py-1 rounded-full bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 text-yellow-400 text-xs font-bold border border-yellow-500/40">
                                 {plan}
                             </span>
+
                         </p>
+
+
                         <div className="flex items-center justify-between pt-3 border-t border-gray-800/50">
-                            <p className="text-xs text-gray-400">Usuarios:</p>
+
+                            <p className="text-xs text-gray-400">
+                                {t(
+                                    "admin.metrics.users"
+                                )}
+                                :
+                            </p>
+
+
                             <span className="font-semibold text-gray-100">
                                 {usage.users || 0} / {totalUsersLimit}
                             </span>
+
                         </div>
+
                     </button>
 
+
                     <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group">
+
                         <div className="flex items-center justify-between mb-3">
+
                             <p className="text-xs text-gray-400 uppercase tracking-[0.18em]">
-                                Equipo
+                                {t(
+                                    "admin.metrics.team"
+                                )}
                             </p>
+
+
                             <Users className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+
                         </div>
+
+
                         <p className="text-lg font-semibold mb-3">
-                            <span className="text-gray-300">{usage.admins || 0}</span>
-                            <span className="text-gray-500 mx-2">·</span>
-                            <span className="text-gray-300">{usage.cajeras || 0}</span>
-                            <span className="text-gray-500 mx-2">·</span>
-                            <span className="text-gray-300">{usage.camareros || 0}</span>
+
+                            <span className="text-gray-300">
+                                {usage.admins || 0}
+                            </span>
+
+                            <span className="text-gray-500 mx-2">
+                                ·
+                            </span>
+
+                            <span className="text-gray-300">
+                                {usage.cajeras || 0}
+                            </span>
+
+                            <span className="text-gray-500 mx-2">
+                                ·
+                            </span>
+
+                            <span className="text-gray-300">
+                                {usage.camareros || 0}
+                            </span>
+
                         </p>
+
+
                         <div className="flex items-center justify-between pt-3 border-t border-gray-800/50">
-                            <p className="text-xs text-gray-400">Total activos:</p>
+
+                            <p className="text-xs text-gray-400">
+                                {t(
+                                    "admin.metrics.totalActive"
+                                )}
+                                :
+                            </p>
+
+
                             <span className="font-semibold text-gray-100">
                                 {(usage.admins || 0) +
                                     (usage.cajeras || 0) +
                                     (usage.camareros || 0)}
                             </span>
+
                         </div>
+
                     </div>
 
+
                     <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group">
+
                         <div className="flex items-center justify-between mb-3">
+
                             <p className="text-xs text-gray-400 uppercase tracking-[0.18em]">
-                                Mesas & Platos
+                                {t(
+                                    "admin.metrics.tablesAndDishes"
+                                )}
                             </p>
+
+
                             <Package className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+
                         </div>
+
+
                         <p className="text-lg font-semibold mb-3">
-                            <span className="text-gray-300">{usage.tables || 0}</span>
-                            <span className="text-gray-500 mx-2">mesas</span>
-                            <span className="text-gray-500 mx-2">·</span>
-                            <span className="text-gray-300">{usage.dishes || 0}</span>
-                            <span className="text-gray-500 mx-2">platos</span>
+
+                            <span className="text-gray-300">
+                                {usage.tables || 0}
+                            </span>
+
+                            <span className="text-gray-500 mx-2">
+                                {t(
+                                    "admin.metrics.tables"
+                                )}
+                            </span>
+
+                            <span className="text-gray-500 mx-2">
+                                ·
+                            </span>
+
+                            <span className="text-gray-300">
+                                {usage.dishes || 0}
+                            </span>
+
+                            <span className="text-gray-500 mx-2">
+                                {t(
+                                    "admin.metrics.dishes"
+                                )}
+                            </span>
+
                         </p>
+
+
                         <div className="flex items-center justify-between pt-3 border-t border-gray-800/50">
-                            <p className="text-xs text-gray-400">Límite:</p>
+
+                            <p className="text-xs text-gray-400">
+                                {t(
+                                    "admin.metrics.limit"
+                                )}
+                                :
+                            </p>
+
+
                             <span className="font-semibold text-gray-100 text-xs">
                                 {tablesLimit} / {dishesLimit}
                             </span>
+
                         </div>
+
                     </div>
+
                 </div>
 
 
-                {/* CONTENIDO PRINCIPAL CON MENÚ LATERAL Y CONTENIDO */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-4">
-                    {/* MENÚ LATERAL CON SUBMENÚS */}
-                    <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-4 shadow-xl sticky top-4 max-h-[calc(100vh-120px)] overflow-y-auto modern-scroll">                            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
+                {/* ======================================
+                    CONTENIDO PRINCIPAL
+                ====================================== */}
+
+                <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-6 mt-4">
+
+                    {/* MENÚ LATERAL */}
+
+                    <div className="hidden lg:block">
+
+                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-4 shadow-xl sticky top-4 max-h-[calc(100vh-120px)] overflow-y-auto modern-scroll">
+
+                            <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
+
                                 <LayoutDashboard className="w-5 h-5 text-[#f6b100]" />
-                                <h3 className="text-sm font-semibold text-white">Navegación</h3>
+
+
+                                <h3 className="text-sm font-semibold text-white">
+                                    {t(
+                                        "admin.navigation"
+                                    )}
+                                </h3>
+
                             </div>
 
+
                             <nav className="space-y-2">
-                                {menuSections.map((section) => {
-                                    const SectionIcon = section.icon;
-                                    const isExpanded = expandedMenu === section.id;
-                                    const hasActiveItem = section.items.some(item => tab === item.id);
 
-                                    return (
-                                        <div key={section.id} className="space-y-1">
-                                            {/* Botón de categoría */}
-                                            <button
-                                                onClick={() => toggleMenu(section.id)}
-                                                className={`
-                                                    w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-                                                    ${hasActiveItem 
-                                                        ? `${section.bgColor} ${section.borderColor} border text-white` 
-                                                        : 'hover:bg-[#1a1a1a] text-gray-400 hover:text-white'
-                                                    }
-                                                `}
+                                {menuSections.map(
+                                    (
+                                        section
+                                    ) => {
+                                        const SectionIcon =
+                                            section.icon;
+
+
+                                        const isExpanded =
+                                            expandedMenu ===
+                                            section.id;
+
+
+                                        const hasActiveItem =
+                                            section.items.some(
+                                                (
+                                                    item
+                                                ) =>
+                                                    tab ===
+                                                    item.id
+                                            );
+
+
+                                        return (
+                                            <div
+                                                key={
+                                                    section.id
+                                                }
+
+                                                className="space-y-1"
                                             >
-                                                <div className="flex items-center gap-2.5">
-                                                    <SectionIcon className={`w-4 h-4 ${section.color}`} />
-                                                    <span>{section.label}</span>
-                                                </div>
-                                                {isExpanded ? (
-                                                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                                                ) : (
-                                                    <ChevronRight className="w-4 h-4 text-gray-500" />
+
+                                                <button
+                                                    type="button"
+
+                                                    onClick={() =>
+                                                        toggleMenu(
+                                                            section.id
+                                                        )
+                                                    }
+
+                                                    className={`
+                                                        w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
+                                                        ${
+                                                        hasActiveItem
+                                                            ? `${section.bgColor} ${section.borderColor} border text-white`
+                                                            : "hover:bg-[#1a1a1a] text-gray-400 hover:text-white"
+                                                    }
+                                                    `}
+                                                >
+
+                                                    <div className="flex items-center gap-2.5">
+
+                                                        <SectionIcon
+                                                            className={`w-4 h-4 ${section.color}`}
+                                                        />
+
+
+                                                        <span>
+                                                            {section.label}
+                                                        </span>
+
+                                                    </div>
+
+
+                                                    {isExpanded ? (
+
+                                                        <ChevronDown className="w-4 h-4 text-gray-500" />
+
+                                                    ) : (
+
+                                                        <ChevronRight className="w-4 h-4 text-gray-500" />
+
+                                                    )}
+
+                                                </button>
+
+
+                                                {isExpanded && (
+
+                                                    <div className="ml-4 space-y-1 border-l border-gray-800/50 pl-3 py-1">
+
+                                                        {section.items.map(
+                                                            (
+                                                                item
+                                                            ) => {
+                                                                const ItemIcon =
+                                                                    item.icon;
+
+
+                                                                const isActive =
+                                                                    tab ===
+                                                                    item.id &&
+                                                                    !item.action;
+
+
+                                                                const isComingSoon =
+                                                                    item.comingSoon;
+
+
+                                                                return (
+                                                                    <button
+                                                                        key={
+                                                                            item.id
+                                                                        }
+
+                                                                        type="button"
+
+                                                                        onClick={() =>
+                                                                            handleTabClick(
+                                                                                item
+                                                                            )
+                                                                        }
+
+                                                                        disabled={
+                                                                            isComingSoon
+                                                                        }
+
+                                                                        className={`
+                                                                            w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200
+                                                                            ${
+                                                                            isActive
+                                                                                ? "bg-[#f6b100]/20 text-[#f6b100] border border-[#f6b100]/30"
+                                                                                : isComingSoon
+                                                                                    ? "text-gray-600 cursor-not-allowed opacity-50"
+                                                                                    : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                                                                        }
+                                                                        `}
+
+                                                                        title={
+                                                                            item.description
+                                                                        }
+                                                                    >
+
+                                                                        <ItemIcon className="w-3.5 h-3.5" />
+
+
+                                                                        <span className="flex-1 text-left">
+                                                                            {item.label}
+                                                                        </span>
+
+
+                                                                        {isComingSoon && (
+
+                                                                            <span className="text-[10px] text-gray-500 px-1.5 py-0.5 bg-gray-800/50 rounded">
+                                                                                {t(
+                                                                                    "admin.comingSoon"
+                                                                                )}
+                                                                            </span>
+
+                                                                        )}
+
+                                                                    </button>
+                                                                );
+                                                            }
+                                                        )}
+
+                                                    </div>
+
                                                 )}
-                                            </button>
 
-                                            {/* Submenú items */}
-                                            {isExpanded && (
-                                                <div className="ml-4 space-y-1 border-l border-gray-800/50 pl-3 py-1">
-                                                    {section.items.map((item) => {
-                                                        const ItemIcon = item.icon;
-                                                        const isActive = tab === item.id && !item.action;
-                                                        const isComingSoon = item.comingSoon;
-
-                                                        return (
-                                                            <button
-                                                                key={item.id}
-                                                                onClick={() => handleTabClick(item)}
-                                                                disabled={isComingSoon}
-                                                                className={`
-                                                                    w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200
-                                                                    ${
-                                                                        isActive
-                                                                            ? "bg-[#f6b100]/20 text-[#f6b100] border border-[#f6b100]/30"
-                                                                            : isComingSoon
-                                                                            ? "text-gray-600 cursor-not-allowed opacity-50"
-                                                                            : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
-                                                                    }
-                                                                `}
-                                                                title={item.description}
-                                                            >
-                                                                <ItemIcon className="w-3.5 h-3.5" />
-                                                                <span className="flex-1 text-left">{item.label}</span>
-                                                                {isComingSoon && (
-                                                                    <span className="text-[10px] text-gray-500 px-1.5 py-0.5 bg-gray-800/50 rounded">
-                                                                        Próximamente
-                                                                    </span>
-                                                                )}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                            </div>
+                                        );
+                                    }
+                                )}
 
                             </nav>
+
                         </div>
+
                     </div>
 
-                    {/* CONTENIDO PRINCIPAL */}
-                    <div className="lg:col-span-3">
+
+                    {/* CONTENIDO */}
+
+                    <div className="min-w-0">
+
                         <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-6 shadow-xl">
-                            {/* TABS VISIBLES EN MÓVIL (ocultos en desktop) */}
+
+                            {/* TABS MÓVILES */}
+
                             <div className="lg:hidden flex gap-2 overflow-x-auto pb-4 mb-6 border-b border-gray-800/50">
-                                {menuSections.flatMap(section => section.items)
-                                    .filter(item => !item.comingSoon && !item.action)
-                                    .map((item) => {
-                                        const ItemIcon = item.icon;
-                                        const isActive = tab === item.id;
-                                        return (
-                                            <button
-                                                key={item.id}
-                                                onClick={() => handleTabClick(item)}
-                                                className={`
-                                                    shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
-                                                    flex items-center gap-2
-                                                    ${
+
+                                {menuSections
+                                    .flatMap(
+                                        (
+                                            section
+                                        ) =>
+                                            section.items
+                                    )
+                                    .filter(
+                                        (
+                                            item
+                                        ) =>
+                                            !item.comingSoon &&
+                                            !item.action
+                                    )
+                                    .map(
+                                        (
+                                            item
+                                        ) => {
+                                            const ItemIcon =
+                                                item.icon;
+
+
+                                            const isActive =
+                                                tab ===
+                                                item.id;
+
+
+                                            return (
+                                                <button
+                                                    key={
+                                                        item.id
+                                                    }
+
+                                                    type="button"
+
+                                                    onClick={() =>
+                                                        handleTabClick(
+                                                            item
+                                                        )
+                                                    }
+
+                                                    className={`
+                                                        shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
+                                                        flex items-center gap-2
+                                                        ${
                                                         isActive
                                                             ? "bg-gradient-to-r from-[#f6b100] to-[#ffd633] text-black"
                                                             : "bg-[#1a1a1a] text-[#ababab] hover:bg-[#262626]"
                                                     }
-                                                `}
-                                            >
-                                                <ItemIcon className="w-3.5 h-3.5" />
-                                                <span>{item.label}</span>
-                                            </button>
-                                        );
-                                    })}
+                                                    `}
+                                                >
+
+                                                    <ItemIcon className="w-3.5 h-3.5" />
+
+
+                                                    <span>
+                                                        {item.label}
+                                                    </span>
+
+                                                </button>
+                                            );
+                                        }
+                                    )}
+
                             </div>
 
-                            {/* CONTENIDO DINÁMICO CON ANIMACIÓN */}
+
+                            {/* CONTENIDO DINÁMICO */}
+
                             <div className="transition-opacity duration-300">
-                                {tab === "cash-register" && <CashRegister />}
-                                {tab === "inventory-stock" && (
-                                    <Inventory
-                                        plan={rawPlan}
-                                        currentUser={effectiveUser}
-                                    />
-                                )}
-                                {tab === "accounts-receivable" && canAccountsReceivable && <AccountsReceivable />}
-                                {tab === "reports" && <Reports />}
-                                {tab === "employees" && <Employees />}
-                                {tab === "fiscal" && <FiscalConfig />}
-                                {tab === "sales-reports" && <SalesReports />}
-                                {tab === "product-reports" && <ProductReports />}
-                                {tab === "financial-analysis" && <FinancialAnalysis />}
-                                {tab === "expenses-summary" && <FinanceSummary />}
-                                {tab === "expense-categories" && <ExpenseCategories />}
-                                {tab === "expenses" && <Expenses />}
-                                {tab === "payroll" && <PayrollRuns />}
-                                {tab === "printersconfig" && <PrintersConfig />}
+
+                                {allowedTabIds.has(
+                                    tab
+                                ) && (
+
+                                    <>
+
+                                        {tab ===
+                                            "cash-register" &&
+                                            canAccessCashRegister && (
+
+                                                <CashRegister />
+
+                                            )}
 
 
-                                {tab === "menu-management" && (
-                                    <MenuManagement currentUser={effectiveUser} />
+                                        {tab ===
+                                            "inventory-stock" && (
+
+                                                <Inventory
+                                                    plan={
+                                                        rawPlan
+                                                    }
+
+                                                    currentUser={
+                                                        effectiveUser
+                                                    }
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "accounts-receivable" &&
+                                            canAccountsReceivable && (
+
+                                                <AccountsReceivable />
+
+                                            )}
+
+
+                                        {tab === "branches" && isOwnerOrAdmin && (
+                                            <BranchesManagement multiClient={canUseFeature("multiClient")} isOwner={role === "Owner"} />
+                                        )}
+
+                                        {tab ===
+                                            "employees" && (
+
+                                                <Employees />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "regional-config" && (
+
+                                                <FiscalConfig
+                                                    view="regional"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "tax-config" && (
+
+                                                <FiscalConfig
+                                                    view="taxes"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "service-charge-config" && (
+
+                                                <FiscalConfig
+                                                    view="service-charges"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "billing-config" && (
+
+                                                <FiscalConfig
+                                                    view="billing"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "delivery-config" && (
+
+                                                <FiscalConfig
+                                                    view="delivery"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "tax-identity-config" && (
+
+                                                <TaxIdentityConfig />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "ncf-config" &&
+                                            isDominicanTenant &&
+                                            canUseFeature(
+                                                "fiscal"
+                                            ) && (
+
+                                                <FiscalConfig
+                                                    view="ncf"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "ecf-config" &&
+                                            isDominicanTenant &&
+                                            canUseFeature(
+                                                "fiscal"
+                                            ) && (
+
+                                                <FiscalConfig
+                                                    view="ecf"
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "sales-reports" && (
+
+                                                <SalesReports />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "product-reports" && (
+
+                                                <ProductReports />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "financial-analysis" && (
+
+                                                <FinancialAnalysis />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "expenses-summary" && (
+
+                                                <FinanceSummary />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "expense-categories" && (
+
+                                                <ExpenseCategories />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "expenses" && (
+
+                                                <Expenses />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "payroll" && (
+
+                                                <PayrollRuns />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "printersconfig" && (
+
+                                                <PrintersConfig />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "menu-management" && (
+
+                                                <MenuManagement
+                                                    currentUser={
+                                                        effectiveUser
+                                                    }
+                                                />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "tables-management" && (
+
+                                                <TablesManagement />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "suppliers" && (
+
+                                                <Suppliers />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "categories-inv" && (
+
+                                                <InventoryCategories />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "notifications" && (
+
+                                                <Notifications />
+
+                                            )}
+
+
+                                        {tab ===
+                                            "help" && (
+
+                                                <HelpAndSupport />
+
+                                            )}
+
+
+                                        {(
+                                            tab ===
+                                            "schedules" ||
+                                            tab ===
+                                            "attendance"
+                                        ) && (
+
+                                            <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+
+                                                <div className="p-4 bg-[#f6b100]/10 rounded-full mb-4">
+
+                                                    {tab ===
+                                                        "schedules" && (
+
+                                                            <Calendar className="w-12 h-12 text-[#f6b100]" />
+
+                                                        )}
+
+
+                                                    {tab ===
+                                                        "attendance" && (
+
+                                                            <Clock className="w-12 h-12 text-[#f6b100]" />
+
+                                                        )}
+
+                                                </div>
+
+
+                                                <h3 className="text-xl font-bold text-white mb-2">
+
+                                                    {menuSections
+                                                            .flatMap(
+                                                                (
+                                                                    section
+                                                                ) =>
+                                                                    section.items
+                                                            )
+                                                            .find(
+                                                                (
+                                                                    item
+                                                                ) =>
+                                                                    item.id ===
+                                                                    tab
+                                                            )
+                                                            ?.label ||
+                                                        t(
+                                                            "admin.comingSoon"
+                                                        )
+                                                    }
+
+                                                </h3>
+
+
+                                                <p className="text-gray-400 max-w-md">
+
+                                                    {menuSections
+                                                            .flatMap(
+                                                                (
+                                                                    section
+                                                                ) =>
+                                                                    section.items
+                                                            )
+                                                            .find(
+                                                                (
+                                                                    item
+                                                                ) =>
+                                                                    item.id ===
+                                                                    tab
+                                                            )
+                                                            ?.description ||
+                                                        t(
+                                                            "admin.comingSoonDescription"
+                                                        )
+                                                    }
+
+                                                </p>
+
+                                            </div>
+
+                                        )}
+
+                                    </>
+
                                 )}
-                                {tab === "tables-management" && <TablesManagement />}
-                                {tab === "suppliers" && <Suppliers />}
-                                {tab === "categories-inv" && <InventoryCategories />}
-                                {tab === "notifications" && <Notifications />}
-                                {tab === "help" && <HelpAndSupport />}
-                                {(tab === "schedules" || tab === "attendance") && (
-                                    <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-                                        <div className="p-4 bg-[#f6b100]/10 rounded-full mb-4">
-                                            {tab === "sales-reports" && <DollarSign className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "product-reports" && <PieChart className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "financial-analysis" && <TrendingUp className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "schedules" && <Calendar className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "attendance" && <Clock className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "printersconfig" && <CreditCard className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "suppliers" && <Store className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "categories-inv" && <ShoppingBag className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "notifications" && <Bell className="w-12 h-12 text-[#f6b100]" />}
-                                            {tab === "help" && <HelpCircle className="w-12 h-12 text-[#f6b100]" />}
-                                        </div>
-                                        <h3 className="text-xl font-bold text-white mb-2">
-                                            {menuSections.flatMap(s => s.items).find(i => i.id === tab)?.label || "Próximamente"}
-                                        </h3>
-                                        <p className="text-gray-400 max-w-md">
-                                            {menuSections.flatMap(s => s.items).find(i => i.id === tab)?.description ||
-                                             "Esta funcionalidad estará disponible próximamente."}
-                                        </p>
-                                    </div>
-                                )}
+
                             </div>
+
                         </div>
+
                     </div>
+
                 </div>
+
             </div>
 
-            {/* Modal de detalles del plan */}
+
+            {/* ======================================
+                MODAL DEL PLAN
+            ====================================== */}
+
             {showPlanDetails && (
+
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-                    onClick={() => setShowPlanDetails(false)}
+
+                    onClick={() =>
+                        setShowPlanDetails(
+                            false
+                        )
+                    }
                 >
+
                     <div
                         className="w-full max-w-lg bg-gradient-to-br from-[#101010] to-[#0a0a0a] rounded-2xl border border-gray-800/50 p-6 shadow-2xl mx-4"
-                        onClick={(e) => e.stopPropagation()}
+
+                        onClick={(
+                            event
+                        ) =>
+                            event.stopPropagation()
+                        }
                     >
-                        {/* Header */}
+
                         <div className="flex items-center justify-between mb-6">
+
                             <div>
+
                                 <p className="text-xs uppercase tracking-[0.18em] text-gray-400 mb-1">
-                                    Suscripción
+                                    {t(
+                                        "admin.plan.subscription"
+                                    )}
                                 </p>
+
+
                                 <h3 className="text-xl font-semibold text-white flex items-center gap-2">
-                                    Plan Actual:{" "}
+
+                                    {t(
+                                        "admin.plan.currentPlan"
+                                    )}
+                                    :{" "}
+
                                     <span className="px-3 py-1 rounded-full bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 text-yellow-400 text-sm font-bold border border-yellow-500/40">
                                         {plan}
                                     </span>
+
                                 </h3>
+
+
                                 <p className="text-xs text-gray-400 mt-2">
-                                    Uso basado en los recursos de su inquilino.
+                                    {t(
+                                        "admin.plan.usageDescription"
+                                    )}
                                 </p>
+
                             </div>
+
+
                             <button
-                                onClick={() => setShowPlanDetails(false)}
+                                type="button"
+
+                                onClick={() =>
+                                    setShowPlanDetails(
+                                        false
+                                    )
+                                }
+
                                 className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors"
+
+                                aria-label={
+                                    t(
+                                        "common.close"
+                                    )
+                                }
                             >
+
                                 <X className="w-5 h-5 text-gray-400" />
+
                             </button>
+
                         </div>
 
-                        {/* Botón Mejorar plan */}
-                        <button
-                            onClick={() => {
-                                window.open("https://wa.link/vzbps9", "_blank", "noopener,noreferrer");
-                            }}
-                            className="w-full mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
-                        >
-                            <TrendingUp className="w-4 h-4" />
-                            Mejorar plan
-                        </button>
 
-                        {/* Detalles del uso */}
+                        {rawPlan !==
+                            "pro" && (
+
+                                <button
+                                    type="button"
+
+                                    onClick={() => {
+                                        window.open(
+                                            "https://wa.link/vzbps9",
+                                            "_blank",
+                                            "noopener,noreferrer"
+                                        );
+                                    }}
+
+                                    className="w-full mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
+                                >
+
+                                    <TrendingUp className="w-4 h-4" />
+
+
+                                    {t(
+                                        "admin.plan.upgrade"
+                                    )}
+
+                                </button>
+
+                            )}
+
+
                         <div className="space-y-4">
-                            {/* Usuarios totales */}
+
+                            {/* USUARIOS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Usuarios totales</span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.totalUsers"
+                                        )}
+                                    </span>
+
+
                                     <span className="text-gray-400">
+
                                         {usage.users || 0} / {totalUsersLimit}
-                                        {remaining.users !== null && remaining.users !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.users} left)
+
+
+                                        {remaining.users !==
+                                            null &&
+                                            remaining.users !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.users,
+                                                        }
+                                                    )}
+                                                    )
+
                                             </span>
-                                        )}
+
+                                            )}
+
                                     </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.users || 0, limits.maxUsers) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.users ||
+                                                0,
+                                                limits.maxUsers
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.users || 0, limits.maxUsers)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.users ||
+                                                    0,
+                                                    limits.maxUsers
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
 
-                            {/* Admins */}
+
+                            {/* ADMINS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Admins</span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.admins"
+                                        )}
+                                    </span>
+
+
                                     <span className="text-gray-400">
+
                                         {usage.admins || 0} / {limits.maxAdmins ?? "∞"}
-                                        {remaining.admins !== null && remaining.admins !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.admins} left)
+
+
+                                        {remaining.admins !==
+                                            null &&
+                                            remaining.admins !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.admins,
+                                                        }
+                                                    )}
+                                                    )
+
                                             </span>
-                                        )}
+
+                                            )}
+
                                     </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.admins || 0, limits.maxAdmins) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.admins ||
+                                                0,
+                                                limits.maxAdmins
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.admins || 0, limits.maxAdmins)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.admins ||
+                                                    0,
+                                                    limits.maxAdmins
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
 
-                            {/* Cajeras */}
+
+                            {/* CAJERAS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Cajeras</span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.cashiers"
+                                        )}
+                                    </span>
+
+
                                     <span className="text-gray-400">
+
                                         {usage.cajeras || 0} / {limits.maxCashiers ?? "∞"}
-                                        {remaining.cajeras !== null && remaining.cajeras !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.cajeras} left)
+
+
+                                        {remaining.cajeras !==
+                                            null &&
+                                            remaining.cajeras !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.cajeras,
+                                                        }
+                                                    )}
+                                                    )
+
                                             </span>
-                                        )}
+
+                                            )}
+
                                     </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.cajeras || 0, limits.maxCashiers) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.cajeras ||
+                                                0,
+                                                limits.maxCashiers
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.cajeras || 0, limits.maxCashiers)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.cajeras ||
+                                                    0,
+                                                    limits.maxCashiers
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
 
-                            {/* Camareros */}
+
+                            {/* CAMAREROS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Camareros</span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.waiters"
+                                        )}
+                                    </span>
+
+
                                     <span className="text-gray-400">
+
                                         {usage.camareros || 0} / {limits.maxWaiters ?? "∞"}
-                                        {remaining.camareros !== null && remaining.camareros !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.camareros} left)
+
+
+                                        {remaining.camareros !==
+                                            null &&
+                                            remaining.camareros !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.camareros,
+                                                        }
+                                                    )}
+                                                    )
+
                                             </span>
-                                        )}
+
+                                            )}
+
                                     </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.camareros || 0, limits.maxWaiters) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.camareros ||
+                                                0,
+                                                limits.maxWaiters
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.camareros || 0, limits.maxWaiters)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.camareros ||
+                                                    0,
+                                                    limits.maxWaiters
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
 
-                            {/* Platos */}
+
+                            {/* PLATOS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Platos</span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.dishes"
+                                        )}
+                                    </span>
+
+
                                     <span className="text-gray-400">
+
                                         {usage.dishes || 0} / {dishesLimit}
-                                        {remaining.dishes !== null && remaining.dishes !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.dishes} left)
+
+
+                                        {remaining.dishes !==
+                                            null &&
+                                            remaining.dishes !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.dishes,
+                                                        }
+                                                    )}
+                                                    )
+
                                             </span>
-                                        )}
+
+                                            )}
+
                                     </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.dishes || 0, limits.maxDishes) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.dishes ||
+                                                0,
+                                                limits.maxDishes
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.dishes || 0, limits.maxDishes)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.dishes ||
+                                                    0,
+                                                    limits.maxDishes
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
 
-                            {/* Mesas */}
+
+                            {/* MESAS */}
+
                             <div>
+
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-gray-300 font-medium">Mesas</span>
-                                    <span className="text-gray-400">
-                                        {usage.tables || 0} / {tablesLimit}
-                                        {remaining.tables !== null && remaining.tables !== undefined && (
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                ({remaining.tables} left)
-                                            </span>
+
+                                    <span className="text-gray-300 font-medium">
+                                        {t(
+                                            "admin.plan.tables"
                                         )}
                                     </span>
+
+
+                                    <span className="text-gray-400">
+
+                                        {usage.tables || 0} / {tablesLimit}
+
+
+                                        {remaining.tables !==
+                                            null &&
+                                            remaining.tables !==
+                                            undefined && (
+
+                                                <span className="ml-2 text-xs text-gray-500">
+
+                                                (
+                                                    {t(
+                                                        "admin.plan.remaining",
+                                                        {
+                                                            count:
+                                                            remaining.tables,
+                                                        }
+                                                    )}
+                                                    )
+
+                                            </span>
+
+                                            )}
+
+                                    </span>
+
                                 </div>
+
+
                                 <div className="w-full h-2 rounded-full bg-gray-800/50 overflow-hidden">
+
                                     <div
                                         className={`h-2 rounded-full transition-all ${
-                                            isNearLimit(usage.tables || 0, limits.maxTables) ? "bg-red-500" : "bg-[#f6b100]"
+                                            isNearLimit(
+                                                usage.tables ||
+                                                0,
+                                                limits.maxTables
+                                            )
+                                                ? "bg-red-500"
+                                                : "bg-[#f6b100]"
                                         }`}
-                                        style={{ width: `${progress(usage.tables || 0, limits.maxTables)}%` }}
+
+                                        style={{
+                                            width:
+                                                `${progress(
+                                                    usage.tables ||
+                                                    0,
+                                                    limits.maxTables
+                                                )}%`,
+                                        }}
                                     />
+
                                 </div>
+
                             </div>
+
                         </div>
 
-                        {/* Mensaje de mejora */}
-                        {rawPlan !== "estandar" && (
+
+                        {planUpgradeMessage && (
+
                             <div className="mt-6 p-4 bg-[#1a1a1a] border border-gray-800/50 rounded-lg">
+
                                 <p className="text-xs text-gray-400 text-center">
-                                    ¿Has llegado al límite? Pásate a PRO o estandar para obtener más usuarios, mesas y platos.
+                                    {planUpgradeMessage}
                                 </p>
+
                             </div>
+
                         )}
+
                     </div>
+
                 </div>
+
             )}
+
         </div>
     );
-
 };
 
 

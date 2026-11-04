@@ -2,6 +2,9 @@ import { io } from "socket.io-client";
 
 let socket = null;
 let currentTenantId = null;
+let currentClientId = null;
+let currentAuthToken = null;
+let currentBaseUrl = null;
 
 const resolveBaseUrl = (baseUrl) =>
     baseUrl ||
@@ -11,9 +14,15 @@ const resolveBaseUrl = (baseUrl) =>
 
 export const connectSocket = ({ baseUrl, tenantId } = {}) => {
     if (!tenantId) return socket;
+    const token = localStorage.getItem("token");
+    if (!token) { disconnectSocket(); return null; }
+    let branchId = "default";
+    try { branchId = JSON.parse(localStorage.getItem("scope") || "{}").clientId || "default"; }
+    catch { /* default branch */ }
 
-    // tenant cambió => reconectar limpio
-    if (socket && currentTenantId && currentTenantId !== tenantId) {
+    // Cualquier cambio de negocio, sucursal, sesion o URL exige autenticacion nueva.
+    const resolvedUrl = resolveBaseUrl(baseUrl);
+    if (socket && (currentTenantId !== tenantId || currentClientId !== branchId || currentAuthToken !== token || currentBaseUrl !== resolvedUrl)) {
         socket.removeAllListeners();
         socket.disconnect();
         socket = null;
@@ -22,11 +31,14 @@ export const connectSocket = ({ baseUrl, tenantId } = {}) => {
     if (socket) return socket;
 
     currentTenantId = tenantId;
+    currentClientId = branchId;
+    currentAuthToken = token;
+    currentBaseUrl = resolvedUrl;
 
-    socket = io(resolveBaseUrl(baseUrl), {
+    socket = io(resolvedUrl, {
         withCredentials: true,
         transports: ["websocket"], // instantáneo (evita long-poll delays)
-        auth: { tenantId },
+        auth: { token, clientId: branchId },
         autoConnect: true,
         reconnection: true,
         reconnectionDelay: 300,
@@ -44,6 +56,9 @@ export const disconnectSocket = () => {
     }
     socket = null;
     currentTenantId = null;
+    currentClientId = null;
+    currentAuthToken = null;
+    currentBaseUrl = null;
 };
 
 export const getSocket = () => socket;

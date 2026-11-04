@@ -1,56 +1,99 @@
     // src/components/invoice/Invoice.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { invoiceLineBreakdown } from "../../lib/invoiceExtras";
 import { motion } from "framer-motion";
 import { useReactToPrint } from "react-to-print";
 import useTenant from "../../hooks/useTenant.js";
 import { printWithTenantConfig } from "../../lib/tenantPrint";
 import usePrinterOptions from "../../hooks/usePrinterOptions";
 import { QRCodeSVG } from "qrcode.react";
+    import Ticket from "../ticket/Ticket.jsx";
+
+    import {
+        getBusinessTaxIdentity,
+        getCustomerTaxIdentity,
+    } from "../../lib/taxIdentityDisplay.js";
 const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
+    import {
+        formatDate,
+        formatDateTime,
+        formatMoney,
+        getTenantLocalization,
+    } from "../../lib/localization";
+    import {
+        useTranslation,
+    } from "react-i18next";
 
-const formatDMY = (dateLike) => {
-    if (!dateLike) return "N/A";
-    const d = new Date(dateLike);
-    if (typeof dateLike === "object" && dateLike.$date) dateLike = dateLike.$date;
+    const safeNum = (value) => {
+        if (
+            value === null ||
+            value === undefined
+        ) {
+            return 0;
+        }
 
-    if (Number.isNaN(d.getTime())) return "N/A";
-    // dd/mm/aaaa
-    return new Intl.DateTimeFormat("es-DO", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-    }).format(d);
-};
+        if (
+            typeof value ===
+            "number"
+        ) {
+            return Number.isFinite(
+                value
+            )
+                ? value
+                : 0;
+        }
 
-const safeNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-    const s = String(v).trim();
+        let normalized =
+            String(value)
+                .trim()
+                .replace(/\s/g, "")
+                .replace(
+                    /[^\d,.-]/g,
+                    ""
+                );
 
-    // limpia "RD$", comas, espacios
-    const normalized = s.replace(/rd\$/gi, "").replace(/,/g, "").trim();
-    const n = Number(normalized);
-    return Number.isFinite(n) ? n : 0;
-};
+        const lastComma =
+            normalized.lastIndexOf(",");
 
-const formatDMYTime = (dateLike) => {
-    if (!dateLike) return "N/A";
-    if (typeof dateLike === "object" && dateLike.$date) dateLike = dateLike.$date;
+        const lastDot =
+            normalized.lastIndexOf(".");
 
-    const d = new Date(dateLike);
-    if (Number.isNaN(d.getTime())) return "N/A";
-    // dd/mm/aaaa, hh:mm a. m.
-    return new Intl.DateTimeFormat("es-DO", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-    }).format(d);
-};
+        if (
+            lastComma >
+            lastDot
+        ) {
+            normalized =
+                normalized
+                    .replace(
+                        /\./g,
+                        ""
+                    )
+                    .replace(
+                        ",",
+                        "."
+                    );
+        } else {
+            normalized =
+                normalized.replace(
+                    /,/g,
+                    ""
+                );
+        }
+
+        const number =
+            Number(normalized);
+
+        return Number.isFinite(
+            number
+        )
+            ? number
+            : 0;
+    };
+
+
 
     const Invoice = ({
+
                          order,
                          onClose,
                          itemsOverride = null,
@@ -59,19 +102,92 @@ const formatDMYTime = (dateLike) => {
                          onCloseAndRelease = null,
                          isReleaseLoading = false,
                      }) => {
+        const {
+            t,
+        } =
+            useTranslation();
     const [isPrintingLogic, setIsPrintingLogic] = useState(false);
+        const [
+            showTicket,
+            setShowTicket,
+        ] = useState(false);
     const showCloseAndReleaseButton =
     canReleaseTable && typeof onCloseAndRelease === "function";
 
     const { tenantInfo } = useTenant();
+        const localization =
+            getTenantLocalization(
+                tenantInfo
+            );
+        const isDominicanTenant =
+            String(
+                localization
+                    ?.countryCode ||
+                tenantInfo
+                    ?.localization
+                    ?.countryCode ||
+                "DO"
+            )
+                .trim()
+                .toUpperCase() ===
+            "DO";
+
+        const money = (value) =>
+            formatMoney(
+                value,
+                localization
+            );
 
     const receiptRef = useRef(null);
 
     // ===== Datos negocio =====
-    const businessName = tenantInfo?.business?.name || tenantInfo?.name || "";
-    const businessAddress = tenantInfo?.business?.address || "";
-    const businessRnc = tenantInfo?.business?.rnc || tenantInfo?.fiscal?.rnc || "";
-    const businessPhone = tenantInfo?.business?.phone || "";
+        const businessName =
+            tenantInfo?.business?.name ||
+            tenantInfo?.name ||
+            "";
+
+        const businessAddress =
+            tenantInfo?.business?.address ||
+            "";
+
+        const businessPhone =
+            tenantInfo?.business?.phone ||
+            "";
+
+
+// ======================================================
+// IDENTIFICACIÓN FISCAL DEL NEGOCIO
+// ======================================================
+
+        const businessTaxIdentity =
+            getBusinessTaxIdentity(
+                tenantInfo
+            );
+
+
+        const businessTaxLabel =
+            businessTaxIdentity
+                ?.label ||
+            businessTaxIdentity
+                ?.type ||
+            "Tax ID";
+
+
+        const businessTaxValue =
+            businessTaxIdentity
+                ?.value ||
+            "";
+
+
+        /*
+         * Solo enviamos el campo legacy RNC
+         * cuando realmente es República Dominicana.
+         */
+        const businessLegacyRnc =
+            businessTaxIdentity
+                ?.countryCode === "DO"
+                ? businessTaxValue
+                : "";
 
     const businessLogoUrl =
         tenantInfo?.business?.logoUrl ||
@@ -93,6 +209,7 @@ const formatDMYTime = (dateLike) => {
     const ecfENCF = ecf?.eNCF || "";
     const ecfStatus = ecf?.status || "";
     const ecfTrackId = ecf?.trackId || "";
+    const ecfIsInternalSandbox = ecf?.internalSandbox === true || /^SANDBOX-/i.test(String(ecfTrackId));
     const ecfSecurityCode = ecf?.securityCode || "";
     const ecfQrUrl =
         ecf?.qrUrl ||
@@ -131,6 +248,7 @@ const formatDMYTime = (dateLike) => {
                         ? "e34 - Nota de crédito electrónica"
                         : "e-CF";
 
+
     const resolvedNcfType =
         order?.fiscal?.ncfType ||
         order?.ncfType ||
@@ -153,14 +271,6 @@ const formatDMYTime = (dateLike) => {
     );
 
     const tenantPreInvoiceEnabled = !!tenantInfo?.features?.preInvoice?.enabled;
-    console.log("[INVOICE][ECF DATA]", {
-        isEcf,
-        ecf,
-        ecfQrUrl,
-        ecfENCF,
-        ecfTrackId,
-        ecfSecurityCode,
-    });
 
 // si existe una prefactura en la orden, tiene prioridad; si no, usa el tenant default
     const isPreInvoice =
@@ -213,30 +323,84 @@ const formatDMYTime = (dateLike) => {
 
 
     // ✅ Sucursal / Punto emisión (defaults)
-    const branchName =
-        tenantInfo?.fiscal?.branchName ||
-        tenantInfo?.business?.branchName ||
-        "Principal";
+        const branchName =
+            String(order?.fiscal?.branchName || "").trim() ||
+            (order?.clientId && order.clientId !== "default" ? `Sucursal ${order.clientId}` : "") ||
+            (isDominicanTenant
+                ? (
+                    tenantInfo
+                        ?.fiscal
+                        ?.branchName ||
 
-    const emissionPoint =
-        order?.fiscal?.emissionPoint ||
-        tenantInfo?.fiscal?.emissionPoint ||
-        "001";
+                    tenantInfo
+                        ?.business
+                        ?.branchName ||
+
+                    "Principal"
+                )
+                : (
+                    tenantInfo
+                        ?.business
+                        ?.branchName ||
+                    ""
+                ));
+
+
+        const emissionPoint =
+            (
+                isDominicanTenant ||
+                isFiscal ||
+                isEcf
+            )
+                ? (
+                    order
+                        ?.fiscal
+                        ?.emissionPoint ||
+
+                    tenantInfo
+                        ?.fiscal
+                        ?.emissionPoint ||
+
+                    "001"
+                )
+                : "";
 
 
 
     // ===== Cliente =====
-    const clientName =
-        order?.customerDetails?.name ||
-        order?.customerName ||
-        "Consumidor Final";
+        const clientName =
+            order?.customerDetails?.name ||
+            order?.customerName ||
+            t(
+                "invoice.finalConsumer"
+            );
 
-    const clientRnc =
-        order?.customerDetails?.rncCedula ||
-        order?.customerDetails?.rnc ||
-        order?.customerRnc ||
-        order?.customerRNC ||
-        "";
+        const clientTaxIdentity =
+            getCustomerTaxIdentity(
+                order
+            );
+
+
+        const clientTaxLabel =
+            clientTaxIdentity
+                ?.label ||
+            clientTaxIdentity
+                ?.type ||
+            "Tax ID";
+
+
+        const clientTaxValue =
+            clientTaxIdentity
+                ?.value ||
+            "";
+
+
+        const clientLegacyRnc =
+            clientTaxIdentity
+                ?.countryCode === "DO"
+                ? clientTaxValue
+                : "";
+
     const clientPhone =
         order?.customerDetails?.phone ||
         order?.customerPhone ||
@@ -276,6 +440,43 @@ const formatDMYTime = (dateLike) => {
         "";
     // ===== Pago =====
     const paymentMethod = order?.paymentMethod || "Efectivo";
+        const normalizedPaymentMethod =
+            String(
+                paymentMethod ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+
+        const paymentMethodKey =
+            normalizedPaymentMethod ===
+            "efectivo"
+                ? "cash"
+
+                : normalizedPaymentMethod ===
+                "tarjeta"
+                    ? "card"
+
+                    : normalizedPaymentMethod ===
+                    "transferencia"
+                        ? "transfer"
+
+                        : normalizedPaymentMethod ===
+                        "crédito" ||
+                        normalizedPaymentMethod ===
+                        "credito"
+                            ? "credit"
+
+                            : null;
+
+
+        const paymentMethodLabel =
+            paymentMethodKey
+                ? t(
+                    `invoice.paymentMethods.${paymentMethodKey}`
+                )
+                : paymentMethod;
 
     // ===== Items =====
     const items = itemsOverride ?? (order?.items || []);
@@ -287,6 +488,28 @@ const formatDMYTime = (dateLike) => {
 
     const discount = Number(order?.discountAmount ?? bills?.discount ?? 0);
     const tax = Number(order?.taxAmount ?? bills?.tax ?? 0);
+        const taxBreakdown =
+            Array.isArray(
+                bills?.taxBreakdown
+            )
+                ? bills.taxBreakdown
+                : [];
+
+        const serviceChargeBreakdown =
+            Array.isArray(
+                bills
+                    ?.serviceChargeBreakdown
+            )
+                ? bills
+                    .serviceChargeBreakdown
+                : [];
+
+        const serviceChargeTotal =
+            safeNum(
+                bills
+                    ?.serviceChargeTotal ??
+                0
+            );
 
     const taxEnabled =
         typeof (order?.taxEnabled ?? bills?.taxEnabled) === "boolean"
@@ -326,12 +549,14 @@ const formatDMYTime = (dateLike) => {
         isLoadingPrinters,
     } = usePrinterOptions("invoice");
 
-    const getInvoiceItemName = (item) =>
-        item?.dishInfo?.name ||
-        item?.dishName ||
-        item?.dish?.name ||
-        item?.name ||
-        "Producto";
+        const getInvoiceItemName = (item) =>
+            item?.dishInfo?.name ||
+            item?.dishName ||
+            item?.dish?.name ||
+            item?.name ||
+            t(
+                "invoice.product"
+            );
     const [selectedPrinterId, setSelectedPrinterId] = useState("");
 
 
@@ -354,20 +579,21 @@ const formatDMYTime = (dateLike) => {
 
 // Si el backend ya incluyó el envío en grandTotal, no lo sumamos doble.
 // Recalculamos un “expected” y comparamos.
-    const expectedTotalWithShipping =
-        (subtotal - discount) +
-        (taxEnabled ? tax : 0) +
-        tip +
-        (treatAsInternalDelivery ? shippingFee : 0);
 
-    const shippingAlreadyIncluded =
-        treatAsInternalDelivery && Math.abs(expectedTotalWithShipping - grandTotal) < 0.01;
-
-    const totalToPay = isAppDelivery
-        ? (grandTotal + commissionAmount)
-        : treatAsInternalDelivery
-            ? (shippingAlreadyIncluded ? grandTotal : (grandTotal + shippingFee))
-            : grandTotal;
+        const totalToPay =
+            grandTotal > 0
+                ? grandTotal
+                : (
+                    Math.max(
+                        subtotal -
+                        discount,
+                        0
+                    ) +
+                    tax +
+                    serviceChargeTotal +
+                    tip +
+                    shippingFee
+                );
 
     const cashReceived = safeNum(order?.cashReceived ?? bills?.cashReceived ?? 0);
 
@@ -459,7 +685,11 @@ const formatDMYTime = (dateLike) => {
     });
 
     const handleBrowserPrint = async () => {
-        setPrintMessage("Abriendo impresión normal del navegador...");
+        setPrintMessage(
+            t(
+                "invoice.openingPrintDialog"
+            )
+        );
         await browserPrint?.();
     };
 
@@ -468,26 +698,76 @@ const formatDMYTime = (dateLike) => {
 
         try {
             setIsPrintingLogic(true);
-            setPrintMessage("Enviando factura a la impresora...");
+            setPrintMessage(
+                t(
+                    "invoice.sendingToPrinter"
+                )
+            );
 
             console.log("[PRINT][invoice] selectedPrinter =", selectedPrinter);
 
-            const itemsSubtotalSum = (items || []).reduce((sum, item) => {
-                const qty = Number(item?.quantity || item?.qty || 1);
-                const unitPrice =
-                    Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
-                    (Number(item?.price || 0) / Number(qty || 1));
+            const itemsSubtotalSum =
+                (items || []).reduce(
+                    (sum, item) => {
+                        const qty =
+                            Number(
+                                item?.quantity ??
+                                item?.qty ??
+                                1
+                            );
 
-                return sum + unitPrice * qty;
-            }, 0);
+                        const unitPrice =
+                            Number(
+                                item?.unitPrice ??
+                                item?.pricePerQuantity ??
+                                0
+                            ) ||
+                            (
+                                Number(
+                                    item?.price ||
+                                    0
+                                ) /
+                                Number(
+                                    qty || 1
+                                )
+                            );
+
+                        return (
+                            sum +
+                            unitPrice *
+                            qty
+                        );
+                    },
+                    0
+                );
 
             const payload = {
                 businessName,
                 businessLogoUrl,
-                rnc: businessRnc,
+                localization,
+
+                locale:
+                localization.locale,
+
+                currency:
+                localization.currency,
+                // Compatibilidad impresoras legacy
+                rnc:
+                businessLegacyRnc,
+
+                // Nuevo formato internacional
+                businessTaxIdentity,
+
+                businessTaxIdLabel:
+                businessTaxLabel,
+
+                businessTaxIdValue:
+                businessTaxValue,
                 address: businessAddress,
                 phone: businessPhone,
-
+                taxBreakdown,
+                serviceChargeTotal,
+                serviceChargeBreakdown,
                 headerTitle,
 
 
@@ -510,10 +790,22 @@ const formatDMYTime = (dateLike) => {
                 facturaNo,
                 branchName,
                 emissionPoint,
-                expirationDate: expirationDate ? formatDMY(expirationDate) : "N/A",
+                expirationDate:
+                    expirationDate
+                        ? formatDate(
+                            expirationDate,
+                            localization
+                        )
+                        : "N/A",
 
                 orderId: order?._id || "N/A",
-                fechaHora: order?.createdAt ? formatDMYTime(order.createdAt) : "N/A",
+                fechaHora:
+                    order?.createdAt
+                        ? formatDateTime(
+                            order.createdAt,
+                            localization
+                        )
+                        : "N/A",
                 mesa: tableName || "N/A",
                 mesero: waiterName || "N/A",
                 salaArea: salaArea || "N/A",
@@ -521,29 +813,46 @@ const formatDMYTime = (dateLike) => {
                 clientName,
                 clientPhone,
                 clientAddress,
-                clientRnc,
+                // Compatibilidad RD
+                clientRnc:
+                clientLegacyRnc,
+
+// Formato internacional
+                clientTaxIdentity,
+
+                clientTaxIdLabel:
+                clientTaxLabel,
+
+                clientTaxIdValue:
+                clientTaxValue,
 
                 taxEnabled,
                 paymentMethod,
 
-                items: (items || []).map((item) => {
-                    const qty = Number(item?.quantity || item?.qty || 1);
-                    const unitPrice =
-                        Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
-                        (Number(item?.price || 0) / Number(qty || 1));
-
-                    const lineSubtotal = unitPrice * qty;
-                    const lineTax =
-                        taxEnabled && tax > 0 && itemsSubtotalSum > 0
-                            ? (lineSubtotal / itemsSubtotalSum) * tax
-                            : 0;
-
-                    return {
-                        name: getInvoiceItemName(item),
-                        qty,
-                        unitPrice,
+                // ESC/POS: base and paid extras are separate rows, preserving the
+                // previously calculated sale total (do not charge additions again).
+                items: (items || []).flatMap((item) => {
+                    const detail = invoiceLineBreakdown(item);
+                    const lineTax = safeNum(item?.taxAmount ?? item?.taxSnapshot?.amount ?? 0);
+                    const notes = detail.extras.filter(x => x.isNote).map(x => x.label);
+                    const main = {
+                        name: [getInvoiceItemName(item), ...notes].join(" - "),
+                        qty: detail.qty,
+                        qtyType: item?.qtyType || "unit",
+                        weightUnit: item?.qtyType === "weight" ? (item?.weightUnit || localization.weightUnit) : "",
+                        unitPrice: detail.mainUnitPrice,
                         tax: lineTax,
                     };
+                    const extras = detail.extras.filter(x => !x.isNote).map(x => ({
+                        name: `  + ${x.label}${x.included ? " (incl.)" : ""}`,
+                        qty: x.totalQty,
+                        qtyType: "unit",
+                        weightUnit: "",
+                        // Legacy snapshots may not balance; keep total unchanged.
+                        unitPrice: x.included ? 0 : (x.unitPrice ?? 0),
+                        tax: 0,
+                    }));
+                    return [main, ...extras];
                 }),
 
                 subtotal,
@@ -566,13 +875,20 @@ const formatDMYTime = (dateLike) => {
                 payload,
             });
 
-            setPrintMessage(result?.message || "Factura impresa correctamente.");
+            setPrintMessage(
+                result?.message ||
+                t(
+                    "invoice.printedSuccessfully"
+                )
+            );
         } catch (err) {
             console.error("[PRINT][invoice] logic print error:", err);
             setPrintMessage(
                 err?.response?.data?.message ||
                 err?.message ||
-                "No se pudo imprimir la factura."
+                t(
+                    "invoice.printFailed"
+                )
             );
         } finally {
             setIsPrintingLogic(false);
@@ -582,25 +898,43 @@ const formatDMYTime = (dateLike) => {
     const backdropVariants = { hidden: { opacity: 0 }, visible: { opacity: 1 } };
     const modalVariants = { hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } };
 
-    const headerTitle =
-        invoiceTitle ??
-        (isEcf
-            ? "Factura Electrónica e-CF"
-            : isFiscal
-                ? "Factura con Comprobante Fiscal"
-                : isPreInvoice
-                    ? "PreFactura"
-                    : "Factura Consumidor Final");
+        const headerTitle =
+            invoiceTitle ??
+            (
+                isEcf
+                    ? t(
+                        "invoice.titles.ecf"
+                    )
 
+                    : isFiscal
+                        ? t(
+                            "invoice.titles.fiscal"
+                        )
+
+                        : isPreInvoice
+                            ? t(
+                                "invoice.titles.preInvoice"
+                            )
+
+                            : isDominicanTenant
+                                ? t(
+                                    "invoice.titles.consumerFinal"
+                                )
+
+                                : t(
+                                    "invoice.titles.standard"
+                                )
+            );
     return (
+        <>
         <motion.div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-2 sm:px-4"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 backdrop-blur-md px-3 py-5 sm:px-6"
             initial="hidden"
             animate="visible"
             variants={backdropVariants}
         >
             <motion.div
-                className="bg-white rounded-lg shadow-xl w-[min(96vw,460px)] max-h-[90vh] overflow-hidden flex flex-col"
+                className="bg-white rounded-2xl ring-1 ring-white/20 shadow-[0_28px_90px_rgba(0,0,0,0.6)] w-[min(96vw,500px)] max-h-[92vh] overflow-hidden flex flex-col"
                 initial="hidden"
                 animate="visible"
                 variants={modalVariants}
@@ -633,7 +967,12 @@ const formatDMYTime = (dateLike) => {
                         <p className="font-semibold text-[15px] text-gray-900 leading-tight">
                             {businessName}
                         </p>
-                        {businessRnc && <p className="mt-1">RNC: {businessRnc}</p>}
+                        {businessTaxValue && (
+                            <p className="mt-1">
+                                {businessTaxLabel}:{" "}
+                                {businessTaxValue}
+                            </p>
+                        )}
                         {businessAddress && <p>{businessAddress}</p>}
                         {businessPhone && <p>{businessPhone}</p>}
                     </div>
@@ -650,6 +989,9 @@ const formatDMYTime = (dateLike) => {
                         <div className="text-xs text-center text-gray-700">
                             <p>Tipo e-CF: {ecfTypeLabel}</p>
                             {ecfENCF && <p className="font-semibold">eNCF: {ecfENCF}</p>}
+                            {ecfIsInternalSandbox && (
+                                <p className="font-bold text-red-700">DOCUMENTO DE PRUEBA — SANDBOX INTERNO, SIN VALIDEZ FISCAL</p>
+                            )}
                         </div>
                     ) : isFiscal ? (
                         <div className="text-xs text-center text-gray-700">
@@ -658,7 +1000,10 @@ const formatDMYTime = (dateLike) => {
                         </div>
                     ) : null}
                     <p className="text-[11px] text-center text-gray-600">
-                        {isEcfAdjustment ? "Documento de ajuste electrónico" : "Gracias por su compra"}
+                        {isEcfAdjustment
+                            ? "Documento de ajuste electrónico"
+                            : t("invoice.thankYou")
+                        }
                     </p>
                     {/* Datos orden */}
                     <div className="mt-3 border-t pt-3 text-xs text-gray-800 space-y-1">
@@ -666,38 +1011,56 @@ const formatDMYTime = (dateLike) => {
                         {/* ✅ Sucursal / Punto emisión */}
                         {tableName && (
                             <p>
-                                <span className="font-semibold">Mesa:</span> {tableName}
+                                <span className="font-semibold">
+                                    {t("invoice.table")}:
+                                </span> {tableName}
                             </p>
                         )}
 
                         {waiterName && (
                             <p>
-                                <span className="font-semibold">Mesero:</span> {waiterName}
+                                <span className="font-semibold">{t("invoice.waiter")}:</span> {waiterName}
                             </p>
                         )}
 
                         {salaArea && (
                             <p>
-                                <span className="font-semibold">Sala/Área:</span> {salaArea}
+                                <span className="font-semibold">{t("invoice.roomArea")}:</span> {salaArea}
                             </p>
                         )}
-                        {(branchName || emissionPoint) && (
+                        {branchName && (
                             <p>
-                                <span className="font-semibold">Sucursal:</span> {branchName}{" "}
-                                <span className="text-gray-500">·</span>{" "}
-                                <span className="font-semibold">Punto de emision:</span> {emissionPoint}
+                                <span className="font-semibold">
+                                    {t("invoice.branch")}:
+                                </span>{" "}
+                                                        {branchName}
+                                                    </p>
+                                                )}
+
+
+                                                {emissionPoint && (
+                                                    <p>
+                                <span className="font-semibold">
+                                    {t("invoice.emissionPoint")}:
+                                </span>{" "}
+                                {emissionPoint}
                             </p>
                         )}
 
 
                         <p>
-                            <span className="font-semibold">Fecha/Hora:</span>{" "}
-                            {order?.createdAt ? formatDMYTime(order.createdAt) : "N/A"}
+                            <span className="font-semibold">{t("invoice.dateTime")}:</span>{" "}
+                            {order?.createdAt
+                                ? formatDateTime(
+                                    order.createdAt,
+                                    localization
+                                )
+                                : "N/A"}
                         </p>
                         {/* ✅ Factura No. */}
                         {facturaNo && (
                             <p>
-                                <span className="font-semibold">Factura No.:</span> {facturaNo}
+                                <span className="font-semibold">{t("invoice.invoiceNumber")}:</span> {facturaNo}
                             </p>
                         )}
 
@@ -754,27 +1117,36 @@ const formatDMYTime = (dateLike) => {
                         {!isEcf && isFiscal && (
                             <p>
                                 <span className="font-semibold">Vence (NCF):</span>{" "}
-                                {expirationDate ? formatDMY(expirationDate) : "N/A"}
+                                {expirationDate
+                                    ? formatDate(
+                                        expirationDate,
+                                        localization
+                                    )
+                                    : "N/A"}
                             </p>
                         )}
                         <p>
-                            <span className="font-semibold">Cliente:</span> {clientName}
+                            <span className="font-semibold">{t("invoice.customer")}:</span> {clientName}
                         </p>
                         {clientPhone && (
                             <p>
-                                <span className="font-semibold">Teléfono:</span> {clientPhone}
+                                <span className="font-semibold">{t("invoice.phone")}:</span> {clientPhone}
                             </p>
                         )}
 
                         {clientAddress && (
                             <p>
-                                <span className="font-semibold">Dirección:</span> {clientAddress}
+                                <span className="font-semibold">{t("invoice.phone")}:</span> {clientAddress}
                             </p>
                         )}
 
-                        {clientRnc && (
+                        {clientTaxValue && (
                             <p>
-                                <span className="font-semibold">RNC/Cédula:</span> {clientRnc}
+                                <span className="font-semibold">
+                                    {clientTaxLabel}:
+                                </span>{" "}
+
+                                {clientTaxValue}
                             </p>
                         )}
                     </div>
@@ -782,30 +1154,82 @@ const formatDMYTime = (dateLike) => {
                     {/* Items */}
                     <div className="mt-4 text-xs">
                         <h3 className="font-semibold mb-2 text-gray-800">
-                            {isEcfAdjustment ? "Detalle de la nota" : "Detalle de consumo"}
+                            {isEcfAdjustment
+                                ? t(
+                                    "invoice.adjustmentDetail"
+                                )
+                                : t(
+                                    "invoice.consumptionDetail"
+                                )
+                            }
                         </h3>
                         <div className={`${headerGridClass} gap-x-2 border-b pb-1 mb-1 font-semibold text-[11px] text-gray-700`}>
-                            <span>Descripción</span>
-                            <span className="text-right">Cant.</span>
-                            <span className="text-right">Precio</span>
-                            <span className="text-right">Importe</span>
+                            <span>
+                                {t(
+                                    "invoice.description"
+                                )}
+                            </span>
+
+                            <span className="text-right">
+                                {t(
+                                    "invoice.quantity"
+                                )}
+                            </span>
+
+                            <span className="text-right">
+                                {t(
+                                    "invoice.price"
+                                )}
+                            </span>
+
+                            <span className="text-right">
+                                {t(
+                                    "invoice.amount"
+                                )}
+                            </span>
                         </div>
 
                         <div className="space-y-0.5">
-                            {items?.length === 0 && <p className="text-gray-500">No hay items.</p>}
-
+                            {items?.length === 0 && <p className="text-gray-500">{t(
+                                "invoice.noItems"
+                            )}</p>}
 
 
 
                             {(items || []).map((item, index) => {
-                                const itemsSubtotalSum = (items || []).reduce((sum, item) => {
-                                    const qty = item?.quantity || item?.qty || 1;
-                                    const unitPrice =
-                                        Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
-                                        (Number(item?.price || 0) / Number(qty || 1));
-                                    return sum + unitPrice * qty;
-                                }, 0);
+                                const itemsSubtotalSum =
+                                    (items || []).reduce(
+                                        (sum, row) => {
+                                            const rowQty =
+                                                Number(
+                                                    row?.quantity ??
+                                                    row?.qty ??
+                                                    1
+                                                );
 
+                                            const rowUnitPrice =
+                                                Number(
+                                                    row?.unitPrice ??
+                                                    row?.pricePerQuantity ??
+                                                    0
+                                                ) ||
+                                                (
+                                                    Number(
+                                                        row?.price || 0
+                                                    ) /
+                                                    Number(
+                                                        rowQty || 1
+                                                    )
+                                                );
+
+                                            return (
+                                                sum +
+                                                rowUnitPrice *
+                                                rowQty
+                                            );
+                                        },
+                                        0
+                                    );
 
                                 const itemName =
                                     item?.dishInfo?.name ||
@@ -814,7 +1238,20 @@ const formatDMYTime = (dateLike) => {
                                     item?.name ||
                                     "Producto";
 
-                                const qty = item?.quantity || item?.qty || 1;
+                                const qty =
+                                    Number(
+                                        item?.quantity ??
+                                        item?.qty ??
+                                        1
+                                    );
+
+                                const qtyLabel =
+                                    item?.qtyType === "weight"
+                                        ? `${qty} ${
+                                            item?.weightUnit ||
+                                            localization.weightUnit
+                                        }`
+                                        : String(qty);
 
                                 const unitPrice =
                                     Number(item?.unitPrice ?? item?.pricePerQuantity ?? 0) ||
@@ -826,22 +1263,26 @@ const formatDMYTime = (dateLike) => {
                                         ? (lineSubtotal / itemsSubtotalSum) * tax
                                         : 0;
 
+                                const detail = invoiceLineBreakdown(item);
                                 return (
-                                    <div key={index} className={`${headerGridClass} gap-x-2 text-[11px] text-gray-800`}>
-                                        <span className="truncate" title={itemName}>
-                                            {itemName}
-                                        </span>
-
-                                        <span className="text-right">{qty}</span>
-
-                                        <span className="text-right">
-                                        RD${unitPrice.toFixed(2)}
-                                        </span>
-
-                                        <span className="text-right font-medium">
-                                        RD${lineSubtotal.toFixed(2)}
-                                         </span>
-                                    </div>
+                                    <React.Fragment key={item?.lineId || index}>
+                                        <div className={`${headerGridClass} gap-x-2 text-[11px] text-gray-800`}>
+                                            <span className="min-w-0 break-words font-medium" title={itemName}>{itemName}</span>
+                                            <span className="text-right">{qtyLabel}</span>
+                                            <span className="text-right">{money(detail.mainUnitPrice)}</span>
+                                            <span className="text-right font-medium">{money(detail.mainLineTotal)}</span>
+                                        </div>
+                                        {detail.extras.map((extra, extraIndex) => (
+                                            <div key={`addon-${extraIndex}`} className={`${headerGridClass} gap-x-2 text-[10px] text-gray-600`}>
+                                                <span className="min-w-0 pl-3 break-words">
+                                                    {extra.isNote ? "• " : "+ "}{extra.label}{extra.included ? " (incluido)" : ""}
+                                                </span>
+                                                <span className="text-right">{extra.isNote ? "—" : extra.totalQty}</span>
+                                                <span className="text-right">{extra.isNote || extra.unitPrice === null ? "—" : money(extra.unitPrice)}</span>
+                                                <span className="text-right">{extra.isNote || extra.lineTotal === null ? "—" : extra.included ? "—" : money(extra.lineTotal)}</span>
+                                            </div>
+                                        ))}
+                                    </React.Fragment>
                                 );
                             })}
                         </div>
@@ -850,54 +1291,160 @@ const formatDMYTime = (dateLike) => {
                     {/* Totales */}
                     <div className="mt-4 border-t pt-3 text-xs space-y-1 text-gray-800">
                         <p>
-                            <span className="font-semibold">Subtotal:</span> RD${subtotal.toFixed(2)}
+                          <span className="font-semibold">
+                            {t("invoice.subtotal")}:
+                          </span>{" "}
+                            {money(subtotal)}
                         </p>
 
                         {discount > 0 && (
                             <p>
-                                <span className="font-semibold">Descuento:</span> -RD${discount.toFixed(2)}
+                                <span className="font-semibold">
+                                    {t("invoice.discount")}:
+                                </span>{" "}
+                                {money(-discount)}
                             </p>
                         )}
-
                         {tip > 0 && (
                             <p>
-                                <span className="font-semibold">Propina Legal:</span> RD${tip.toFixed(2)}
+                                <span className="font-semibold">
+                                    {t("invoice.tip")}:
+                                </span>{" "}
+
+                                {money(tip)}
                             </p>
                         )}
 
-                        {taxEnabled && tax > 0 && (
-                            <p>
-                                <span className="font-semibold">ITBIS:</span> RD${tax.toFixed(2)}
-                            </p>
+                        {taxEnabled &&
+                            taxBreakdown.length > 0 &&
+                            taxBreakdown.map(
+                                (
+                                    row,
+                                    index
+                                ) => (
+                                    <p
+                                        key={
+                                            `${row.taxId || "tax"}-${index}`
+                                        }
+                                    >
+                <span className="font-semibold">
+                    {row.name ||
+                        "Impuesto"}{" "}
+                    {Number(
+                        row.ratePercent ||
+                        0
+                    )}
+                    %
+                    {row.includedInPrice
+                        ? ` (${t(
+                            "invoice.includedInPrice"
+                        )})`
+                        : ""}
+                    :
+                </span>{" "}
+
+                                        {money(
+                                            safeNum(
+                                                row.amount
+                                            )
+                                        )}
+                                    </p>
+                                )
+                            )}
+                        {taxEnabled &&
+                            taxBreakdown.length === 0 &&
+                            tax > 0 && (
+                                <p>
+            <span className="font-semibold">
+                t("invoice.tax"):
+            </span>{" "}
+
+                                    {money(tax)}
+                                </p>
+                            )}
+                        {serviceChargeBreakdown.map(
+                            (
+                                charge,
+                                index
+                            ) => (
+                                <p
+                                    key={
+                                        `${charge.chargeId || "charge"}-${index}`
+                                    }
+                                >
+            <span className="font-semibold">
+                {charge.name ||
+                    t(
+                        "invoice.charge"
+                    )}{" "}
+
+                {Number(
+                    charge.ratePercent ||
+                    0
+                )}
+                %:
+            </span>{" "}
+
+                                    {money(
+                                        safeNum(
+                                            charge.amount
+                                        )
+                                    )}
+                                </p>
+                            )
                         )}
                         {isAppDelivery  && commissionAmount > 0 && (
                             <p>
-                                <span className="font-semibold">Comisión ({commissionPct}%):</span> RD${commissionAmount.toFixed(2)}
+                             <span className="font-semibold">
+                                {t(
+                                    "invoice.commission"
+                                )} ({commissionPct}%):
+                            </span>{" "}
+                                {money(commissionAmount)}
                             </p>
                         )}
                         {showShipping && (
                             <p>
-                                <span className="font-semibold">Envío:</span> RD${shippingFee.toFixed(2)}
+                                <span className="font-semibold">
+                                    {t(
+                                        "invoice.shipping"
+                                    )}:
+                                </span>{" "}
+                                {money(shippingFee)}
                             </p>
                         )}
 
 
                         <p className="font-semibold">
-                            Total a pagar: RD${totalToPay.toFixed(2)}
+                            {t(
+                                "invoice.totalToPay"
+                            )}:{" "}
+                            {money(totalToPay)}
                         </p>
                         <p>
-                            <span className="font-semibold">Método de pago:</span> {paymentMethod}
+                            <span className="font-semibold">
+                                {t(
+                                    "invoice.paymentMethod"
+                                )}:
+                            </span>{" "}
+
+                            {paymentMethodLabel}
                         </p>
                         {showCashChange && (
                             <>
                             </>
                         )}
                     </div>
+                    {isEcf && !ecfQrUrl && (
+                        <p className="text-xs font-semibold text-red-700 text-center mt-3">
+                            Código QR fiscal no disponible. Verifica el documento electrónico antes de imprimir.
+                        </p>
+                    )}
                     {ecfQrUrl && (
                         <div className="flex flex-col items-center justify-center mt-3">
                             <QRCodeSVG value={ecfQrUrl} size={96} />
                             <p className="text-[10px] text-gray-500 mt-1 text-center">
-                                Consulta e-CF DGII
+                                {ecfIsInternalSandbox ? "QR DE PRUEBA — NO VÁLIDO DGII" : "Consulta e-CF DGII"}
                             </p>
                             {ecfSecurityCode && (
                                 <p className="text-xs leading-tight text-gray-800 text-center mt-1">
@@ -921,7 +1468,9 @@ const formatDMYTime = (dateLike) => {
                 </div>
                 <div className="border-t px-4 pt-3 pb-2 bg-gray-50">
                     <div className="space-y-2">
-                        <div className="text-xs font-semibold text-gray-700">Impresora</div>
+                        <div className="text-xs font-semibold text-gray-700">{t(
+                            "invoice.printer"
+                        )}</div>
 
                         <select
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -935,7 +1484,9 @@ const formatDMYTime = (dateLike) => {
                         >
                             {invoicePrinters.length === 0 ? (
                                 <option value="" className="text-gray-900 bg-white">
-                                    No hay impresoras registradas
+                                    {t(
+                                        "invoice.noPrinters"
+                                    )}
                                 </option>
                             ) : (
                                 invoicePrinters.map((p) => (
@@ -952,12 +1503,20 @@ const formatDMYTime = (dateLike) => {
 
                         {selectedPrinter ? (
                             <div className="text-[11px] text-gray-500">
-                                Modo: {selectedPrinter.mode} · Papel: {selectedPrinter.paperSize}
+                                {t(
+                                    "invoice.mode"
+                                )}: {selectedPrinter.mode}
+                                {" · "}
+                                {t(
+                                    "invoice.paper"
+                                )}: {selectedPrinter.paperSize}
                                 {selectedPrinter.ip ? ` · ${selectedPrinter.ip}:${selectedPrinter.port}` : ""}
                             </div>
                         ) : (
                             <div className="text-[11px] text-gray-400">
-                                En modo browser, el navegador mostrará su diálogo de impresión.
+                                {t(
+                                    "invoice.browserPrinterHelp"
+                                )}
                             </div>
                         )}
                         {printMessage && (
@@ -970,13 +1529,41 @@ const formatDMYTime = (dateLike) => {
 
                 {/* Botones */}
                 <div className="border-t px-2 py-2 bg-gray-50">
-                    <div className="flex flex-nowrap items-center justify-center gap-1.5 w-full">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
+                        <button
+                            type="button"
+
+                            onClick={() =>
+                                setShowTicket(true)
+                            }
+
+                            className="
+                                        h-9
+                                        px-3
+                                        rounded-md
+                                        border
+                                        border-[#f6b100]
+                                        bg-[#f6b100]
+                                        text-black
+                                        hover:bg-[#ffc526]
+                                        font-bold
+                                        whitespace-nowrap
+                                        text-[11px]
+                                        leading-none
+                                    "
+                        >
+                            {t(
+                                "invoice.printTicket"
+                            )}
+                        </button>
                         <button
                             type="button"
                             onClick={handleBrowserPrint}
                             className="h-9 px-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 font-semibold whitespace-nowrap text-[11px] leading-none"
                         >
-                            Otras impresoras
+                            {t(
+                                "invoice.otherPrinters"
+                            )}
                         </button>
 
                         <button
@@ -989,7 +1576,14 @@ const formatDMYTime = (dateLike) => {
                                     : "bg-[#111111] hover:bg-[#2b2b2b]"
                             }`}
                         >
-                            {isPrintingLogic ? "Imprimiendo..." : "Impresora de red"}
+                            {isPrintingLogic
+                                ? t(
+                                    "invoice.printing"
+                                )
+                                : t(
+                                    "invoice.networkPrinter"
+                                )
+                            }
                         </button>
 
                         <button
@@ -998,7 +1592,9 @@ const formatDMYTime = (dateLike) => {
                             disabled={isReleaseLoading}
                             className="h-9 px-2 rounded-md border border-red-500 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 font-bold whitespace-nowrap text-[11px] leading-none disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            Cerrar
+                            {t(
+                                "invoice.close"
+                            )}
                         </button>
 
                         {showCloseAndReleaseButton && (
@@ -1012,14 +1608,48 @@ const formatDMYTime = (dateLike) => {
                                         : "bg-red-600 hover:bg-red-700 active:bg-red-800"
                                 }`}
                             >
-                                {isReleaseLoading ? "Desocupando..." : "Cerrar y desocupar"}
+                                {isReleaseLoading
+                                    ? t(
+                                        "invoice.releasing"
+                                    )
+                                    : t(
+                                        "invoice.closeAndRelease"
+                                    )
+                                }
                             </button>
                         )}
                     </div>
                 </div>
             </motion.div>
         </motion.div>
+
+
+            {showTicket && (
+                <Ticket
+                    order={{
+                        ...order,
+
+                        /*
+                         * Respeta itemsOverride si esta factura
+                         * fue abierta con una lista específica.
+                         */
+                        items,
+                    }}
+
+                    printerCategory="ticket"
+
+                    title="TICKET"
+
+                    closeAfterPrint
+
+                    onClose={() =>
+                        setShowTicket(false)
+                    }
+                />
+            )}
+
+        </>
     );
-};
+    };;
 
 export default Invoice;

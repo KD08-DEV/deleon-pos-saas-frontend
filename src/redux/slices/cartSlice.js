@@ -144,7 +144,10 @@ export const buildCartKey = (item = {}) => {
 
     const weightUnit =
         qtyType === "weight"
-            ? String(item?.weightUnit || "lb")
+            ? String(
+                item?.weightUnit ||
+                ""
+            )
             : "";
 
     return [

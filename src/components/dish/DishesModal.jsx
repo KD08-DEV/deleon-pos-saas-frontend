@@ -5,8 +5,25 @@ import { useMutation } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
 import { addDish } from "@/https";
 import { enqueueSnackbar } from "notistack";
+import useTenant from "../../hooks/useTenant";
 
+import {
+    getDefaultWeightUnit,
+    getTenantLocalization,
+} from "../../lib/localization";
 const DishModal = ({ setIsDishesModalOpen }) => {
+    const { tenantInfo } =
+        useTenant();
+
+    const localization =
+        getTenantLocalization(
+            tenantInfo
+        );
+
+    const defaultWeightUnit =
+        getDefaultWeightUnit(
+            localization
+        );
     const userData = useSelector((state) => state.user.userData);
     const tenantId = userData?.tenantId;
 
@@ -15,7 +32,8 @@ const DishModal = ({ setIsDishesModalOpen }) => {
         price: "",
         category: "",
         sellMode: "unit",     // unit | weight
-        weightUnit: "lb",     // lb | kg
+        weightUnit:
+        defaultWeightUnit,  // lb | kg
         pricePerLb: "",       // usado cuando sellMode=weight (nombre legacy)
     });
 
