@@ -2757,7 +2757,7 @@ const Admin = () => {
 
 
                                         {tab === "branches" && isOwnerOrAdmin && (
-                                            <BranchesManagement multiClient={canUseFeature("multiClient")} isOwner={role === "Owner"} />
+                                            <BranchesManagement isOwner={role === "Owner"} />
                                         )}
 
                                         {tab ===

@@ -1,3 +1,4 @@
+import useRncLookup from "../../hooks/useRncLookup";
 import React, {
     useCallback,
     useEffect,
@@ -735,6 +736,7 @@ const OrderCard = ({
     const [lastSplitBills, setLastSplitBills] = useState([]);
     const [invoiceOrderOverride, setInvoiceOrderOverride] = useState(null);
     const [isUpdating, setIsUpdating] = useState(false);
+    const statusUpdateLock = useRef(false);
     const [invoiceOrderSnapshot, setInvoiceOrderSnapshot] = useState(null);
     const [showOrderDetails, setShowOrderDetails] = useState(false);
     const [showCancelNoteModal, setShowCancelNoteModal] = useState(false);
@@ -1041,7 +1043,7 @@ const OrderCard = ({
         !isFiscalOrder && String(localOrder?.orderStatus || "") === "Completado";
 
     const canOpenCorrection = canCorrectOrder &&
-        !isFiscalOrder && !localOrder?.ecf?.exists && !localOrder?.accountReceivableId &&
+        !localOrder?.fiscal?.ecfDocumentType && !localOrder?.ecf?.exists && !localOrder?.ecf?.eNCF && !localOrder?.eNCF && !localOrder?.accountReceivableId &&
         localOrder?.paymentMethod !== "Credito" &&
         !["Cancelado", "Cancelled", "Canceled"].includes(localOrder?.orderStatus);
 
@@ -1104,38 +1106,12 @@ const OrderCard = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allowedNcfTypes.join("|")]);
 
-    // Autocompletado DGII (solo RNC 9 dígitos)
-    useEffect(() => {
-        if (!showFiscalModal) return;
-        const clean = String(fiscalRnc || "").replace(/\D/g, "");
-        if (!isLikelyRnc(clean)) return;
-        if (fiscalName?.trim()) return;
-
-        const t = setTimeout(async () => {
-            try {
-                setDgiiLoading(true);
-                const res = await api.get(`/api/dgii/rnc/${clean}`);
-                console.log("DGII response:", res?.data);
-                const name =
-                    res?.data?.data?.name ||
-                    res?.data?.name ||
-                    res?.data?.data?.nombre ||
-                    res?.data?.data?.razonSocial ||
-                    "";
-
-                if (name) setFiscalName(name);
-            } catch (e) {
-                // no rompemos flujo
-            } finally {
-                setDgiiLoading(false);
-            }
-        }, 450);
-
-        return () => clearTimeout(t);
-    }, [fiscalRnc, fiscalName, showFiscalModal]);
+    const fiscalLookup=useRncLookup({value:fiscalRnc,name:fiscalName,onName:setFiscalName,enabled:showFiscalModal});
+    useEffect(()=>setDgiiLoading(fiscalLookup.loading),[fiscalLookup.loading]);
 
     const handleStatusUpdate = async (nextStatus, extraPayload = {}) => {
-        if (!localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
+        if (statusUpdateLock.current || localOrder?.tableReleasedAt || !localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
+        statusUpdateLock.current = true;
 
         try {
             setIsUpdating(true);
@@ -1165,6 +1141,10 @@ const OrderCard = ({
                 statusPayload.orderNote = String(extraPayload.orderNote);
             }
 
+            if(nextStatus === "Cancelado" && localOrder.inventoryDeducted){
+                if(!window.confirm("Cancelar puede devolver existencias. Confirma que los ingredientes pueden volver físicamente al inventario; si fueron enviados a cocina o preparados, se requiere un administrador.")) return;
+                statusPayload.inventoryReturnConfirmed = true;
+            }
             const res = await updateOrder(localOrder._id, statusPayload);
 
             const updated = unwrapOrder(res);
@@ -1179,6 +1159,7 @@ const OrderCard = ({
             // ✅ IMPORTANTÍSIMO: guarda la orden COMPLETA (con fiscal, invoiceUrl, etc.)
             setLocalOrder(safeUpdatedOrder);
             onStatusChanged?.(safeUpdatedOrder);
+            setShowOrderDetails(false);
 
         } catch (err) {
             console.error("Error updating status:", err);
@@ -1188,6 +1169,7 @@ const OrderCard = ({
                 { variant: "error" }
             );
         } finally {
+            statusUpdateLock.current = false;
             setIsUpdating(false);
         }
     };
@@ -1238,19 +1220,19 @@ const OrderCard = ({
         setShowCancelNoteModal(false);
 
         await handleStatusUpdate("Cancelado", {
-            orderNote: String(cancelOrderNote || "").trim(),
+            ...(localOrder?.paymentStatus !== "Pagado" ? {orderNote:String(cancelOrderNote || "").trim()} : {}),
         });
     };
 
     const handleCompleteNow = () => {
-        setShowOrderDetails(false);
         if (["Completado", "Cancelado"].includes(currentStatus)) return;
         handleStatusUpdate("Completado");
     };
 
     const handlePayNow = async () => {
-        if (!localOrder?._id) return;
+        if (statusUpdateLock.current || localOrder?.tableReleasedAt || !localOrder?._id) return;
         if (String(localOrder?.paymentStatus || "Pendiente") === "Pagado") return;
+        statusUpdateLock.current = true;
 
         try {
             setIsUpdating(true);
@@ -1290,6 +1272,7 @@ const OrderCard = ({
                 }
             );
         } finally {
+            statusUpdateLock.current = false;
             setIsUpdating(false);
         }
     };
@@ -1552,7 +1535,7 @@ const OrderCard = ({
                                         )}
                                     </span>
                                 </div>
-                                
+
                                 {localOrder?.table && (
                                     <>
                                         <span className="text-[#666]">•</span>
@@ -1821,7 +1804,7 @@ const OrderCard = ({
                     <motion.button
                         type="button"
                         onClick={handleBack}
-                        disabled={!canGoBack}
+                        disabled={!canGoBack || isUpdating}
                         whileHover={canGoBack ? { scale: 1.05 } : {}}
                         whileTap={canGoBack ? { scale: 0.95 } : {}}
                         className={`flex items-center justify-center gap-1.5 flex-1 min-w-[80px] rounded-lg border px-3 py-2 text-xs font-semibold transition-all duration-200 ${
@@ -1839,15 +1822,15 @@ const OrderCard = ({
                         <motion.button
                             type="button"
                             onClick={handleCompleteNow}
+                            disabled={isUpdating || Boolean(localOrder?.tableReleasedAt)}
+                            aria-busy={isUpdating}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-green-500/30 transition-all duration-200"
                         >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>
-                                {t(
-                                    "orderCard.actions.complete"
-                                )}
+                                {isUpdating ? "Procesando..." : t("orderCard.actions.complete")}
                             </span>
                         </motion.button>
                     )}
@@ -1882,7 +1865,7 @@ const OrderCard = ({
                             onClick={() => setShowOrderDetails(false)}
                             className="fixed inset-0 z-50 backdrop-blur-md bg-black/60"
                         />
-                        
+
                         {/* Modal centrado */}
                         <motion.div
                             initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -2227,7 +2210,7 @@ const OrderCard = ({
                                     {/* Acciones */}
                                     <div className="pt-4 border-t border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50 space-y-3">
                                         <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide mb-3">{t("orderCard.actionsLabel")}</h3>
-                                        
+
                                         <div className="grid grid-cols-2 gap-3">
                                             {/* Atrás */}
                                             <motion.button
@@ -2267,14 +2250,14 @@ const OrderCard = ({
                                             <motion.button
                                                 type="button"
                                                 onClick={handleCompleteNow}
+                                                disabled={isUpdating || Boolean(localOrder?.tableReleasedAt)}
+                                                aria-busy={isUpdating}
                                                 whileHover={{ scale: 1.02 }}
                                                 whileTap={{ scale: 0.98 }}
                                                 className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30"
                                             >
                                                 <CheckCircle2 className="w-4 h-4" />
-                                                <span>{t(
-                                                    "orderCard.actions.markCompleted"
-                                                )}</span>
+                                                <span>{isUpdating ? "Procesando..." : t("orderCard.actions.markCompleted")}</span>
                                             </motion.button>
                                         )}
 
@@ -2335,7 +2318,7 @@ const OrderCard = ({
                                                     </span>
                                                 </motion.button>
                                             )}
-                                            
+
 
 
                                             {/* Comprobante Fiscal */}
@@ -2563,6 +2546,7 @@ const OrderCard = ({
                                     className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-white outline-none"
                                     placeholder="Ej: 101234567 o 001-0000000-0"
                                 />
+                                <p role="status" className="text-xs text-gray-400">{{FOUND:'Encontrado; se conserva el nombre manual.',NOT_FOUND:'No encontrado. Completa el nombre manualmente.',ERROR:'Error consultando RNC.'}[fiscalLookup.status]}</p>
                                 {dgiiLoading && (
                                     <span className="absolute right-3 top-8 text-[11px] text-gray-400">
                     Buscando DGII...

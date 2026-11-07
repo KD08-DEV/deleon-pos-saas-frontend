@@ -1,3 +1,4 @@
+import { financeErrorMessage } from "../../lib/financeErrorMessage";
 // src/pages/admin/CashRegister.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -2040,6 +2041,7 @@ const CashRegister = () => {
 
             return res.data;
         },
+        onError: (error) => showToast(financeErrorMessage(error), "error"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal", modalDay || "range"] });
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal-range"] });
@@ -2069,6 +2071,7 @@ const CashRegister = () => {
 
             return res.data;
         },
+        onError: (error) => showToast(financeErrorMessage(error), "error"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal", modalDay || "range"] });
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal-range"] });
@@ -2187,9 +2190,7 @@ const CashRegister = () => {
             }
 
             showToast(
-                err?.response?.data?.message ||
-                err?.response?.data?.error ||
-                t("cashRegisterPage.messages.saveOpeningError")
+                financeErrorMessage(err, t("cashRegisterPage.messages.saveOpeningError"))
             );
         },
 

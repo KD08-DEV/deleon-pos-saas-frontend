@@ -1,3 +1,4 @@
+import { financeErrorMessage } from "../../lib/financeErrorMessage";
 import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, X } from "lucide-react";
@@ -115,16 +116,15 @@ export default function Expenses() {
         const r =
             await listExpenseCategories();
 
-        setCats(
-            r.data || []
-        );
+        const active = (r.data || []).filter(category => category.status !== "inactive");
+        setCats(active);
 
         if (
             !categoryId &&
-            r.data?.[0]?._id
+            active[0]?._id
         ) {
             setCategoryId(
-                r.data[0]._id
+                active[0]._id
             );
         }
     }
@@ -162,10 +162,7 @@ export default function Expenses() {
         ]).catch(
             (error) =>
                 setErr(
-                    error?.message ||
-                    t(
-                        "expensesPage.messages.loadFailed"
-                    )
+                    financeErrorMessage(error, t("expensesPage.messages.loadFailed"))
                 )
         );
 
@@ -313,10 +310,7 @@ export default function Expenses() {
             error
             ) {
             setErr(
-                error?.message ||
-                t(
-                    "expensesPage.messages.createFailed"
-                )
+                financeErrorMessage(error, t("expensesPage.messages.createFailed"))
             );
 
         } finally {
@@ -371,10 +365,7 @@ export default function Expenses() {
             error
             ) {
             setErr(
-                error?.message ||
-                t(
-                    "expensesPage.messages.voidFailed"
-                )
+                financeErrorMessage(error, t("expensesPage.messages.voidFailed"))
             );
 
         } finally {
@@ -510,10 +501,7 @@ export default function Expenses() {
                                 error
                             ) =>
                                 setErr(
-                                    error?.message ||
-                                    t(
-                                        "expensesPage.messages.loadFailed"
-                                    )
+                                    financeErrorMessage(error, t("expensesPage.messages.loadFailed"))
                                 )
                         )
                     }

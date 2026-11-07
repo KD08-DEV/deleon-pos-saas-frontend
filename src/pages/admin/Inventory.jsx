@@ -7498,6 +7498,7 @@ function MovementModal({
                     t(
                         "inventoryPage.movementModal.yield.defaultSteps.boiled"
                     ),
+                uiId: "boiled",
 
                 qtyAfter:
                     "",
@@ -7508,6 +7509,7 @@ function MovementModal({
                     t(
                         "inventoryPage.movementModal.yield.defaultSteps.cooked"
                     ),
+                uiId: "cooked",
 
                 qtyAfter:
                     "",
@@ -8402,7 +8404,7 @@ function MovementModal({
                             ) => (
 
                                 <div
-                                    key={`${step.label}-${idx}`}
+                                    key={step.uiId}
                                     className="grid grid-cols-1 md:grid-cols-3 gap-2"
                                 >
 
@@ -8521,6 +8523,7 @@ function MovementModal({
                                                 t(
                                                     "inventoryPage.movementModal.yield.defaultSteps.step"
                                                 ),
+                                            uiId: createRequestId(),
 
                                             qtyAfter:
                                                 "",

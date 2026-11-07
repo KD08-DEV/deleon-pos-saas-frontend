@@ -1,5 +1,4 @@
 import React, {
-    useMemo,
     useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -792,8 +791,7 @@ export default function EcfConfig({
 
 
     const phaseLabel =
-        useMemo(
-            () => {
+        (() => {
                 if (
                     form.ecf
                         ?.enabled !==
@@ -837,18 +835,7 @@ export default function EcfConfig({
                 }
 
                 return "Configurando";
-            },
-            [
-                form.ecf
-                    ?.enabled,
-
-                currentEnvironment,
-
-                currentCertificationStatus,
-
-                ecfOperationalReady,
-            ]
-        );
+        })();
 
 
     const setEcf = (

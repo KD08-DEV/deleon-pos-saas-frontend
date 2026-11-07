@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import { financeErrorMessage } from "../../lib/financeErrorMessage";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
@@ -29,6 +30,7 @@ export default function ExpenseCategories() {
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [err, setErr] = useState("");
+    const submitting = useRef(false);
     const [busy, setBusy] = useState(false);
 
     const [editModal, setEditModal] = useState(initialEditState);
@@ -47,10 +49,7 @@ export default function ExpenseCategories() {
     useEffect(() => {
         refresh().catch((error) =>
             setErr(
-                error?.message ||
-                t(
-                    "expenseCategoriesPage.messages.loadFailed"
-                )
+                financeErrorMessage(error, t("expenseCategoriesPage.messages.loadFailed"))
             )
         );
 
@@ -60,6 +59,8 @@ export default function ExpenseCategories() {
     async function onCreate(event) {
         event.preventDefault();
 
+        if (submitting.current) return;
+        submitting.current = true;
         setBusy(true);
         setErr("");
 
@@ -78,17 +79,17 @@ export default function ExpenseCategories() {
             await refresh();
         } catch (error) {
             setErr(
-                error?.message ||
-                t(
-                    "expenseCategoriesPage.messages.createFailed"
-                )
+                financeErrorMessage(error, t("expenseCategoriesPage.messages.createFailed"))
             );
         } finally {
+            submitting.current = false;
             setBusy(false);
         }
     }
 
     function openEditModal(row) {
+        if (submitting.current) return;
+        setErr("");
         setEditModal({
             open:
                 true,
@@ -107,6 +108,7 @@ export default function ExpenseCategories() {
     }
 
     function closeEditModal() {
+        if (submitting.current) return;
         setEditModal(
             initialEditState
         );
@@ -127,6 +129,8 @@ export default function ExpenseCategories() {
             return;
         }
 
+        if (submitting.current) return;
+        submitting.current = true;
         setBusy(true);
         setErr("");
 
@@ -142,22 +146,22 @@ export default function ExpenseCategories() {
                 }
             );
 
-            closeEditModal();
+            setEditModal(initialEditState);
 
             await refresh();
         } catch (error) {
             setErr(
-                error?.message ||
-                t(
-                    "expenseCategoriesPage.messages.updateFailed"
-                )
+                financeErrorMessage(error, t("expenseCategoriesPage.messages.updateFailed"))
             );
         } finally {
+            submitting.current = false;
             setBusy(false);
         }
     }
 
     function openDeleteModal(row) {
+        if (submitting.current) return;
+        setErr("");
         setDeleteModal({
             open:
                 true,
@@ -172,6 +176,7 @@ export default function ExpenseCategories() {
     }
 
     function closeDeleteModal() {
+        if (submitting.current) return;
         setDeleteModal(
             initialDeleteState
         );
@@ -184,6 +189,8 @@ export default function ExpenseCategories() {
             return;
         }
 
+        if (submitting.current) return;
+        submitting.current = true;
         setBusy(true);
         setErr("");
 
@@ -192,17 +199,15 @@ export default function ExpenseCategories() {
                 deleteModal.id
             );
 
-            closeDeleteModal();
+            setDeleteModal(initialDeleteState);
 
             await refresh();
         } catch (error) {
             setErr(
-                error?.message ||
-                t(
-                    "expenseCategoriesPage.messages.deleteFailed"
-                )
+                financeErrorMessage(error, t("expenseCategoriesPage.messages.deleteFailed"))
             );
         } finally {
+            submitting.current = false;
             setBusy(false);
         }
     }
@@ -482,6 +487,7 @@ export default function ExpenseCategories() {
                                 }
                                 className="p-5 space-y-4"
                             >
+                                {err && <p role="alert" className="text-sm text-red-300">{err}</p>}
                                 <div>
                                     <label className="block text-sm text-white/70 mb-1">
                                         {t(
@@ -682,6 +688,7 @@ export default function ExpenseCategories() {
                             </div>
 
                             <div className="p-5">
+                                {err && <p role="alert" className="mb-3 text-sm text-red-300">{err}</p>}
                                 <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                                     {t(
                                         "expenseCategoriesPage.deleteModal.confirmPrefix"

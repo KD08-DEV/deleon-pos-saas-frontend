@@ -1,15 +1,16 @@
-import React, { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import api, { getScope, setScope } from "../../lib/api";
 import EcfBranchOverview from "./EcfBranchOverview";
 
 // Gestión visual de sucursales. Los datos y permisos se vuelven a validar en backend.
-export default function BranchesManagement({ multiClient = false, isOwner = false }) {
+export default function BranchesManagement({ isOwner = false }) {
   const { i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith("en");
   const L = (es, en) => english ? en : es;
   const qc = useQueryClient();
+  const creating = useRef(false);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
@@ -21,11 +22,22 @@ export default function BranchesManagement({ multiClient = false, isOwner = fals
     queryKey: ["branches", getScope().tenantId],
     queryFn: async () => (await api.get("/api/clients")).data,
     retry: 0,
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: "always",
   });
   const branches = Array.isArray(data?.data) ? data.data : [];
   // The principal location is included in the plan quota.
-  const maxBranches = multiClient ? 3 : 1;
-  const atLimit = branches.length >= maxBranches;
+  const policy = data?.policy;
+  const multiClient = !isError && policy?.multiClient === true;
+  const maxBranches = policy?.maxBranches;
+  const atLimit = policy?.canCreate !== true;
+  const branchError = e => ({
+    PLAN_MULTI_BRANCH_DENIED: L("Tu plan no permite crear más sucursales. Las existentes se conservan.", "Your plan does not allow new branches. Existing branches are preserved."),
+    BRANCH_LIMIT_REACHED: L("Alcanzaste el límite de sucursales de tu plan.", "Your branch quota has been reached."),
+    BRANCH_DUPLICATE: L("Ya existe una sucursal con ese nombre.", "A branch with this name already exists."),
+    INVALID_BRANCH_NAME: L("Escribe un nombre de sucursal válido.", "Enter a valid branch name."),
+  })[e.response?.data?.code] || e.response?.data?.message || e.message;
   const currentBranch = getScope()?.clientId || "default";
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -46,8 +58,10 @@ export default function BranchesManagement({ multiClient = false, isOwner = fals
       setName(""); setAddress(""); setPhone(""); setShareOnCreate(false);
       setError(""); setInfo(L("Sucursal creada", "Branch created"));
       qc.invalidateQueries({ queryKey: ["branches"] });
+      qc.invalidateQueries({ queryKey: ["header-branches"] });
     },
-    onError: e => { setError(e.response?.data?.message || e.response?.data?.code || e.message); refetch(); },
+    onError: e => { setError(branchError(e)); refetch(); },
+    onSettled: () => { creating.current = false; },
   });
   async function changeMode(branch, mode) {
     setBusyId(branch.clientId); setError(""); setInfo("");
@@ -123,10 +137,10 @@ export default function BranchesManagement({ multiClient = false, isOwner = fals
         </div>
       </div>)}
     </div>
-    <p className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-gray-300">{L("Sucursales en uso", "Branches in use")}: {branches.length}/{maxBranches} ({L("incluye principal", "including main location")})</p>
-    {!multiClient ? <p className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-3 text-amber-200">{L("Para crear varias sucursales necesitas un plan con la función multisucursal.", "A multi-branch plan is needed to create locations.")}</p>
-      : atLimit ? <p className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 text-amber-200">{L("Alcanzaste el máximo de 3 sucursales del plan Pro.", "The Pro plan allows up to 3 locations.")}</p>
-      : <form onSubmit={e => { e.preventDefault(); if (name.trim()) createMutation.mutate(); }} className="rounded-xl border border-gray-700 bg-[#161616] p-4 grid gap-3">
+    <p className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-gray-300">{L("Sucursales en uso", "Branches in use")}: {policy?.used ?? branches.length}/{!policy ? "—" : maxBranches == null ? L("Sin límite", "Unlimited") : maxBranches} ({L("incluye principal", "including main location")})</p>
+    {!policy || isError ? <p>{L("Actualiza la lista para comprobar el plan vigente.", "Refresh the list to check the current plan.")}</p> : !multiClient ? <p className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-3 text-amber-200">{L("Para crear varias sucursales necesitas un plan con la función multisucursal.", "A multi-branch plan is needed to create locations.")}</p>
+      : atLimit ? <p className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 text-amber-200">{L(`Alcanzaste el límite de ${maxBranches} sucursales del plan ${policy.label}.`, `You reached the ${maxBranches}-branch limit for ${policy.label}.`)}</p>
+      : <form onSubmit={e => { e.preventDefault(); if (name.trim() && !creating.current && policy?.canCreate && !isError) { creating.current = true; setError(""); createMutation.mutate(); } }} className="rounded-xl border border-gray-700 bg-[#161616] p-4 grid gap-3">
         <h3 className="font-semibold">{L("Crear sucursal", "Create branch")}</h3>
         <input className="rounded bg-gray-800 p-2" required maxLength={120} placeholder={L("Nombre de la sucursal", "Branch name")} value={name} onChange={e=>setName(e.target.value)} />
         <input className="rounded bg-gray-800 p-2" maxLength={200} placeholder={L("Dirección", "Address")} value={address} onChange={e=>setAddress(e.target.value)} />

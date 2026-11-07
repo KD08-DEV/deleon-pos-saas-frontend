@@ -19,7 +19,7 @@ import {
 import { addDish, getDishes, deleteDish, updateDish } from "../../https";
 import { enqueueSnackbar } from "notistack";
 import { useTranslation } from "react-i18next";
-import api from "../../lib/api";
+import api, { getScope } from "../../lib/api";
 import { resolveImageUrl } from "../../lib/imageUrl";
 import useTenant from "../../hooks/useTenant";
 import {
@@ -390,6 +390,20 @@ const MenuManagement = ({ currentUser }) => {
         staleTime: 30_000,
     });
 
+    const { data: customizationData, isError: customizationError, isFetching: customizationLoading, refetch: refreshCustomization } = useQuery({
+        queryKey: ["customization-inventory-options", tenantId, getScope().clientId],
+        enabled: Boolean(tenantId && showDishModal), staleTime: 0, refetchOnWindowFocus: "always",
+        queryFn: async () => {
+            const rows = []; let page = 1; let pages = 1;
+            do {
+                const response = await getDishes({tenantId, page, limit: 200, includeInventory: true});
+                rows.push(...extractDishList(response));
+                pages = response?.data?.data?.totalPages || 1; page++;
+            } while (page <= pages);
+            return rows;
+        },
+    });
+    const customizationOptions = customizationData || [];
     const dishes = useMemo(() => extractDishList(data), [data]);
     const allDishes = useMemo(() => extractDishList(allDishesData), [allDishesData]);
 
@@ -863,7 +877,7 @@ const MenuManagement = ({ currentUser }) => {
     };
 
     const selectExistingExtraDish = (localId, dishId) => {
-        const selectedDish = allDishes.find(
+        const selectedDish = customizationOptions.find(
             (dish) => String(dish?._id) === String(dishId)
         );
 
@@ -968,6 +982,7 @@ const MenuManagement = ({ currentUser }) => {
 
         const cleanedIngredients = (dishForm.removableIngredients || [])
             .map((item) => ({
+                ...(item._id ? {_id:item._id} : {}),
                 ingredientDishId: item?.ingredientDishId || null,
                 name: String(item?.name || "").trim(),
                 active: item?.active !== false,
@@ -976,6 +991,7 @@ const MenuManagement = ({ currentUser }) => {
 
         const cleanedExtras = (dishForm.extras || [])
             .map((item) => ({
+                ...(item._id ? {_id:item._id} : {}),
                 extraDishId: item?.extraDishId || null,
                 name: String(item?.name || "").trim(),
                 price: Number(item?.price || 0),
@@ -2176,6 +2192,8 @@ const MenuManagement = ({ currentUser }) => {
                                                 </div>
 
                                                 <div className="mt-3 space-y-2">
+                                                    <button type="button" onClick={() => refreshCustomization()} disabled={customizationLoading}>Actualizar ingredientes y extras</button>
+                                                    {customizationError && <p role="alert">No se pudo cargar el inventario de esta sucursal. Reintenta la consulta.</p>}
                                                     {(dishForm.removableIngredients || []).length === 0 ? (
                                                         <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-gray-500">
                                                             {t(
@@ -2188,6 +2206,14 @@ const MenuManagement = ({ currentUser }) => {
                                                                 key={ingredient.localId}
                                                                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2"
                                                             >
+                                                                <select aria-label="Ingrediente de inventario" value={ingredient.ingredientDishId || ""} onChange={event => {
+                                                                    const selected = customizationOptions.find(d => String(d._id) === event.target.value);
+                                                                    updateRemovableIngredient(ingredient.localId, {ingredientDishId: selected?._id || null, ...(selected ? {name:selected.name} : {})});
+                                                                }} className="bg-[#1a1a1a] text-white rounded p-2 max-w-48">
+                                                                    <option value="">Solo indicación de cocina</option>
+                                                                    {ingredient.ingredientDishId && !customizationOptions.some(d=>String(d._id)===String(ingredient.ingredientDishId)) && <option value={ingredient.ingredientDishId}>Referencia no disponible</option>}
+                                                                    {customizationOptions.filter(d=>["direct","ingredient"].includes(d.inventoryType) || d.isInventoryItem).map(d=><option key={d._id} value={d._id}>{d.name}</option>)}
+                                                                </select>
                                                                 <input
                                                                     type="text"
                                                                     value={ingredient.name}
@@ -2334,7 +2360,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     "menuManagement.customization.extras.manualExtra"
                                                                                 )}
                                                                             </option>
-                                                                            {allDishes
+                                                                            {customizationOptions
                                                                                 .filter(
                                                                                     (dish) =>
                                                                                         String(dish?._id) !==

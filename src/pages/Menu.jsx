@@ -610,6 +610,14 @@ const Menu = () => {
             ?.data;
 
 
+    useEffect(() => {
+        if (!order?.tableReleasedAt) return;
+        dispatch(removeAllItems());
+        dispatch(clearDraftContext());
+        enqueueSnackbar("Esta mesa ya fue liberada. Inicia un nuevo consumo desde Mesas.", { variant: "info" });
+        navigate(TABLES_ROUTE, { replace: true });
+    }, [order?.tableReleasedAt, dispatch, navigate, enqueueSnackbar]);
+
     const getTableLabel = (
         table
     ) => {

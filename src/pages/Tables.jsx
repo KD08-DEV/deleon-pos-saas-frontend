@@ -1,3 +1,6 @@
+import api from "../lib/api";
+import MoveTableAction from "../components/tables/MoveTableAction";
+import { refreshTableViews, tableOperationMessage } from "../lib/tableOperations";
 import React, { useEffect } from "react";
 import { setDraftContext, clearDraftContext } from "../redux/slices/customerSlice";
 import { removeAllItems } from "../redux/slices/cartSlice";
@@ -18,6 +21,10 @@ import { useTranslation } from "react-i18next";
 
 export default function Tables() {
     const { t } = useTranslation();
+    const releaseLock = React.useRef(false);
+    const moveLock = React.useRef(false);
+    const [moveBusy, setMoveBusy] = React.useState(false);
+    const onMoveBusyChange = busy => { moveLock.current = busy; setMoveBusy(busy); };
 
     const location =
         useLocation();
@@ -84,6 +91,7 @@ export default function Tables() {
 
     const closeTableActionModal =
         () => {
+            if (moveLock.current || releaseLock.current) return;
 
             setTableActionModal({
                 open:
@@ -848,188 +856,31 @@ export default function Tables() {
         };
 
 
-    const confirmReleaseTable =
-        async () => {
-
-            const table =
-                releaseConfirmModal
-                    .table;
-
-
-            const tableId =
-                table?._id ||
-                table?.id ||
-                null;
-
-
-            if (
-                !tableId
-            ) {
-
-                enqueueSnackbar(
-                    t(
-                        "tables.messages.tableIdNotFound"
-                    ),
-                    {
-                        variant:
-                            "error",
-                    }
-                );
-
-                return;
+    const confirmReleaseTable = async () => {
+        const table = releaseConfirmModal.table;
+        const tableId = table?._id || table?.id;
+        if (releaseLock.current || !tableId) return;
+        releaseLock.current = true;
+        setReleaseConfirmModal(previous => ({ ...previous, loading: true }));
+        try {
+            const activeOrderId = getOrderIdFromTable(table);
+            if (activeOrderId) {
+                await api.post(`/api/order/${encodeURIComponent(activeOrderId)}/close-and-vacate`);
+            } else {
+                await updateTable(tableId, { status: "Disponible", orderId: null });
             }
-
-
-            try {
-
-                setReleaseConfirmModal(
-                    (
-                        previous
-                    ) => ({
-                        ...previous,
-
-                        loading:
-                            true,
-                    })
-                );
-
-
-                /*
-                 * IMPORTANTE:
-                 * Desocupar la mesa NO cancela la orden.
-                 * Solo libera la mesa quitando currentOrder.
-                 * La orden queda igual.
-                 */
-
-                await updateTable(
-                    tableId,
-                    {
-                        status:
-                            "Disponible",
-
-                        orderId:
-                            null,
-                    }
-                );
-
-
-                dispatch(
-                    removeAllItems()
-                );
-
-
-                dispatch(
-                    clearDraftContext()
-                );
-
-
-                queryClient
-                    .invalidateQueries({
-                        queryKey:
-                        QK.TABLES,
-
-                        exact:
-                            true,
-                    });
-
-
-                queryClient
-                    .invalidateQueries({
-                        queryKey:
-                        QK.ORDERS,
-
-                        exact:
-                            true,
-                    });
-
-
-                queryClient
-                    .invalidateQueries({
-                        queryKey: [
-                            "cash-session",
-                        ],
-                    });
-
-
-                queryClient
-                    .refetchQueries({
-                        queryKey:
-                        QK.TABLES,
-
-                        exact:
-                            true,
-
-                        type:
-                            "active",
-                    });
-
-
-                enqueueSnackbar(
-                    t(
-                        "tables.messages.releaseSuccess"
-                    ),
-                    {
-                        variant:
-                            "success",
-                    }
-                );
-
-
-                setReleaseConfirmModal({
-                    open:
-                        false,
-
-                    table:
-                        null,
-
-                    loading:
-                        false,
-                });
-
-
-                closeTableActionModal();
-
-            } catch (
-                error
-                ) {
-
-                console.error(
-                    "[TABLES] No pude desocupar la mesa:",
-                    error
-                        ?.response
-                        ?.data ||
-                    error
-                );
-
-
-                setReleaseConfirmModal(
-                    (
-                        previous
-                    ) => ({
-                        ...previous,
-
-                        loading:
-                            false,
-                    })
-                );
-
-
-                enqueueSnackbar(
-                    error
-                        ?.response
-                        ?.data
-                        ?.message ||
-                    t(
-                        "tables.messages.releaseFailed"
-                    ),
-                    {
-                        variant:
-                            "error",
-                    }
-                );
-            }
-        };
-
+            dispatch(removeAllItems());
+            dispatch(clearDraftContext());
+            await refreshTableViews(queryClient);
+            enqueueSnackbar(t("tables.messages.releaseSuccess"), { variant: "success" });
+            setReleaseConfirmModal({ open: false, table: null, loading: false });
+            releaseLock.current = false;
+            closeTableActionModal();
+        } catch (error) {
+            setReleaseConfirmModal(previous => ({ ...previous, loading: false }));
+            enqueueSnackbar(tableOperationMessage(error), { variant: "error" });
+        } finally { releaseLock.current = false; }
+    };
 
     const handlePickTable =
         (
@@ -1772,7 +1623,7 @@ export default function Tables() {
                                     <TableAccountsActions
                                         table={tableActionModal.table}
                                         variant="ecf"
-                                        onOpenOrder={(id) => { closeTableActionModal(); navigate(`/menu?orderId=${encodeURIComponent(id)}`); }}
+                                        onOpenOrder={(id) => { if (moveLock.current) return; closeTableActionModal(); navigate(`/menu?orderId=${encodeURIComponent(id)}`); }}
                                         onChanged={() => queryClient.invalidateQueries({queryKey:QK.TABLES})}
                                     />
 
@@ -1780,6 +1631,7 @@ export default function Tables() {
                                         type="button"
 
                                         onClick={() => {
+                                            if (moveLock.current) return;
 
                                             const selectedTable =
                                                 tableActionModal
@@ -1822,6 +1674,8 @@ export default function Tables() {
                                     </button>
 
 
+                                    <MoveTableAction table={tableActionModal.table} tables={tables} onDone={closeTableActionModal} onBusyChange={onMoveBusyChange} />
+
                                     {tableActionModal
                                             .table
                                             ?.status !==
@@ -1829,6 +1683,7 @@ export default function Tables() {
 
                                             <button
                                                 type="button"
+                                                disabled={moveBusy}
 
                                                 onClick={() =>
                                                     handleReleaseTable(

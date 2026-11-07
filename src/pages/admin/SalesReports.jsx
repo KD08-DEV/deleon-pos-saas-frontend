@@ -1,3 +1,4 @@
+import {serviceCharges,manualTip} from "../../lib/reportChargeAmounts";
 // src/pages/admin/SalesReports.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -194,35 +195,8 @@ const SalesReports = () => {
             0
         );
 
-    const getBillTip = (
-        bill = {}
-    ) =>
-        safeNumber(
-            bill?.serviceChargeTotal ??
-            bill?.serviceCharge ??
-            bill?.legalTip ??
-            bill?.propinaLegal ??
-            bill?.tip ??
-            bill?.propina ??
-            bill?.tipAmount ??
-            0
-        );
-
-    const getRowTipTotal = (
-        row = {}
-    ) =>
-        safeNumber(
-            row?.serviceChargeTotal ??
-            row?.tipTotal ??
-            row?.serviceCharge ??
-            row?.legalTip ??
-            row?.propinaLegal ??
-            row?.tip ??
-            row?.propina ??
-            row?.tipAmount ??
-            0
-        );
-
+    const getBillTip=serviceCharges;
+    const getRowTipTotal=row=>safeNumber(row?.tipTotal??row?.serviceChargeTotal??0);
     const cleanedParams = useMemo(() => {
         const obj = { ...filters };
 
@@ -277,13 +251,13 @@ const SalesReports = () => {
 
     });
     useEffect(() => {
-        if (productReportQuery.data?.length) {
-            console.log("[sales-by-product][first-row]", productReportQuery.data[0]);
+        if (productReportQuery.data?.rows?.length) {
+            console.log("[sales-by-product][first-row]", productReportQuery.data.rows[0]);
         }
     }, [productReportQuery.data, t, i18n.language]);
 
     const detailRows = useMemo(() => {
-        return (productReportQuery.data || []).map((r) => {
+        return (productReportQuery.data?.rows || []).map((r) => {
             const resolvedCategory =
                 r?.categoryName ||
                 r?.menuCategory ||
@@ -336,6 +310,7 @@ const SalesReports = () => {
                 costTotal: safeNumber(r?.costTotal ?? r?.totalCost ?? 0),
                 taxTotal: safeNumber(r?.taxTotal ?? r?.tax ?? r?.itbis ?? 0),
                 tipTotal: getRowTipTotal(r),
+                manualTipTotal:safeNumber(r.manualTipTotal),
                 orderCount: safeNumber(r?.orderCount ?? r?.count ?? 0),
             };
         });
@@ -497,7 +472,7 @@ const SalesReports = () => {
 
         // ✅ OJO: tu backend está bajo /api
         const res = await api.get(`/api/order/report/sales-by-product?${params.toString()}`);
-        return res.data?.data || [];
+        return {rows:res.data?.data||[],meta:res.data?.meta||{}};
     }
     function groupByCategory(detailRows) {
         const map = new Map();
@@ -518,6 +493,7 @@ const SalesReports = () => {
                 revenue: 0,
                 taxTotal: 0,
                 tipTotal: 0,
+                manualTipTotal:0,
                 // solo si costo existe para TODOS
                 costTotal: 0,
                 profit: 0,
@@ -533,6 +509,7 @@ const SalesReports = () => {
             prev.revenue += revenue;
             prev.taxTotal += taxTotal;
             prev.tipTotal += tipTotal;
+            prev.manualTipTotal += safeNumber(r.manualTipTotal);
 
             if (hasCost) {
                 prev.anyCost = true;
@@ -594,6 +571,7 @@ const SalesReports = () => {
                 costPct: null,
                 profitPct: null,
                 tipTotal: 0,
+                manualTipTotal:0,
                 anyCost: false,
                 allCost: true,
             };
@@ -602,6 +580,7 @@ const SalesReports = () => {
             prev.revenue += revenue;
             prev.taxTotal += taxTotal;
             prev.tipTotal += tipTotal;
+            prev.manualTipTotal += safeNumber(r.manualTipTotal);
 
             if (hasCost) {
                 prev.anyCost = true;
@@ -652,6 +631,7 @@ const SalesReports = () => {
                 [t("salesReportsPage.excel.columns.subtotal")]: Number(o.bills?.subtotal || 0),
                 [taxReportLabel]: getBillTax(o.bills),
                 [serviceChargeReportLabel]: getBillTip(o.bills),
+                "Propina adicional":manualTip(o.bills),
                 [t("salesReportsPage.excel.columns.total")]: Number(o.bills?.totalWithTax || 0),
                 [t("salesReportsPage.excel.columns.user")]: o?.user?.name || "—",
                 [t("salesReportsPage.excel.columns.table")]: o?.table?.tableNumber || "—",
@@ -711,6 +691,7 @@ const SalesReports = () => {
                         [t("salesReportsPage.excel.columns.profitPercent")]: profitPct == null ? t("salesReportsPage.common.notAvailable") : `${profitPct.toFixed(2)}%`,
                         [taxReportLabel]: safeNumber(r.taxTotal),
                         [serviceChargeReportLabel]: safeNumber(r.tipTotal),
+                        "Propina adicional":safeNumber(r.manualTipTotal),
                     };
                 }
 
@@ -726,6 +707,7 @@ const SalesReports = () => {
                         [t("salesReportsPage.excel.columns.profitPercent")]: r.profitPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.profitPct).toFixed(2)}%`,
                         [taxReportLabel]: safeNumber(r.taxTotal),
                         [serviceChargeReportLabel]: safeNumber(r.tipTotal),
+                        "Propina adicional":safeNumber(r.manualTipTotal),
                     };
                 }
 
@@ -739,12 +721,15 @@ const SalesReports = () => {
                     [t("salesReportsPage.excel.columns.costPercent")]: r.costPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.costPct).toFixed(2)}%`,
                     [t("salesReportsPage.excel.columns.profitPercent")]: r.profitPct == null ? t("salesReportsPage.common.notAvailable") : `${Number(r.profitPct).toFixed(2)}%`,
                     [taxReportLabel]: safeNumber(r.taxTotal),
+                    [serviceChargeReportLabel]:safeNumber(r.tipTotal),
+                    "Propina adicional":safeNumber(r.manualTipTotal),
                 };
             });
 
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, t("salesReportsPage.excel.reportSheet"));
+            XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([{Criterio:'Cargos y propina adicional prorrateados por subtotal original de artículos; ajuste acumulado de centavos. No modifica facturas.',CargosOrdenes:productReportQuery.data?.meta?.chargeReconciliation?.serviceChargeTotal||0,PropinaAdicional:productReportQuery.data?.meta?.chargeReconciliation?.manualTipTotal||0,SinAsignar:(productReportQuery.data?.meta?.chargeReconciliation?.unallocatedServiceCharge||0)+(productReportQuery.data?.meta?.chargeReconciliation?.unallocatedManualTip||0)}]),'Criterio cargos');
 
             const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
             const blob = new Blob([arrayBuffer], {
@@ -836,14 +821,7 @@ const SalesReports = () => {
         0
     );
 
-    const summaryTip = safeNumber(
-        salesAnalysis.totalTip ||
-        dailySummary.totalTip ||
-        dailySummary.tip ||
-        dailySummary.legalTip ||
-        dailySummary.propinaLegal ||
-        0
-    );
+    const summaryTip = safeNumber(salesAnalysis.totalTip);
     if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
@@ -1067,6 +1045,8 @@ const SalesReports = () => {
                         {t("salesReportsPage.report.empty")}
                     </div>
                 ) : (
+                    <><p className="text-xs text-gray-400 p-3">Los cargos de servicio (incluida la propina legal) y la propina adicional se prorratean por el subtotal original de los artículos, con ajuste de centavos. Es un reparto analítico; no modifica las facturas. Los cargos informativos no cobrados se excluyen.</p>
+                    <p className="text-xs text-gray-400 p-3">Cargos de servicio de las órdenes del rango: {currency(productReportQuery.data?.meta?.chargeReconciliation?.serviceChargeTotal||0)} · Propina adicional: {currency(productReportQuery.data?.meta?.chargeReconciliation?.manualTipTotal||0)} · Sin base para asignar a categorías: {currency((productReportQuery.data?.meta?.chargeReconciliation?.unallocatedServiceCharge||0)+(productReportQuery.data?.meta?.chargeReconciliation?.unallocatedManualTip||0))}</p>
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
                             <thead>
@@ -1094,7 +1074,7 @@ const SalesReports = () => {
 
                                 <th className="text-right py-2 pl-3">
                                     {serviceChargeReportLabel}
-                                </th>
+                                </th><th className="text-right py-2 pl-3">Propina adicional</th>
                             </tr>
                             </thead>
 
@@ -1155,13 +1135,13 @@ const SalesReports = () => {
                                         </td>
 
                                         <td className="py-2 px-3 text-right">{currency(taxTotal)}</td>
-                                        <td className="py-2 pl-3 text-right">{currency(tipTotal)}</td>
+                                        <td className="py-2 pl-3 text-right">{currency(tipTotal)}</td><td className="py-2 pl-3 text-right">{currency(r.manualTipTotal)}</td>
                                     </tr>
                                 );
                             })}
                             </tbody>
                         </table>
-                    </div>
+                    </div></>
                 )}
             </div>
             {/* Análisis por método de pago */}
