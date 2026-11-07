@@ -1,0 +1,17 @@
+const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert/strict');
+const esbuild=require('../node_modules/esbuild'),puppeteer=require('../../pos-backend/node_modules/puppeteer');
+(async()=>{
+const root=path.resolve(__dirname,'..');const bundle=await esbuild.build({entryPoints:[path.join(__dirname,'customization.fixture.jsx')],alias:{"@":path.join(root,"src")},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'import.meta.env':'{}'},plugins:[{name:'mocks',setup(b){b.onResolve({filter:/^(react-i18next|notistack)$/},a=>({path:a.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({loader:'js',contents:a.path==='react-i18next'?'export const useTranslation=()=>({t:k=>k,i18n:{language:"es"}})':'export const enqueueSnackbar=m=>window.messages.push(m);'}));}}]});
+const server=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/app.js'?'application/javascript':'text/html');res.end(req.url==='/app.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/app.js"></script>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;const results=[];
+try{browser=await puppeteer.launch({headless:true});const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(6000);const origin=`http://127.0.0.1:${server.address().port}`;await p.setRequestInterception(true);p.on('request',r=>r.url().startsWith(origin+'/')?r.continue():r.abort());await p.goto(origin);
+await p.waitForSelector('button[title="menuManagement.actions.edit"]');await p.click('button[title="menuManagement.actions.edit"]');await p.waitForFunction(()=>[...document.querySelectorAll('select[aria-label="Ingrediente de inventario"] option')].some(o=>o.textContent==='Queso QA'));
+await p.select('select[aria-label="Ingrediente de inventario"]','507f1f77bcf86cd799439013');
+await p.evaluate(()=>{window.newIngredient=true;[...document.querySelectorAll('button')].find(b=>b.textContent==='Actualizar ingredientes y extras').click();});
+await p.waitForFunction(()=>[...document.querySelectorAll('option')].some(o=>o.textContent==='Nuevo ingrediente'));assert.equal(await p.$eval('select[aria-label="Ingrediente de inventario"]',e=>e.value),'507f1f77bcf86cd799439013');
+results.push({ids:['INV-01','INV-02'],status:'PASS',detail:'Selector real muestra ingredientes, conserva ID y actualiza nuevos registros'});
+await p.evaluate(()=>{const form=document.querySelector('select[aria-label="Ingrediente de inventario"]').closest('form');form.requestSubmit();});
+await p.waitForFunction(()=>window.saved!==null).catch(async e=>{console.log(await p.evaluate(()=>({messages:window.messages,requests:window.requests,invalid:[...document.querySelectorAll("input:invalid")].map(x=>({name:x.name,value:x.value,placeholder:x.placeholder}))})));throw e;});const saved=await p.evaluate(()=>window.saved);const ingredients=JSON.parse(saved.removableIngredients);assert.equal(ingredients[0].ingredientDishId,'507f1f77bcf86cd799439013');assert.equal(ingredients[0]._id,'507f1f77bcf86cd799439014');assert.deepEqual(errors,[]);
+results.push({ids:['INV-02'],status:'PASS',detail:'Guardar envía ID de ingrediente y conserva ID de opción'});
+}finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
+fs.writeFileSync(path.resolve(root,'../PERSONALIZACION_2026-11-06/frontend-runtime.json'),JSON.stringify(results,null,2));console.log(results);
+})().catch(e=>{console.error(e.stack);process.exitCode=1;});
