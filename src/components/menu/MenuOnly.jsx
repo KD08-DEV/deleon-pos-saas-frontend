@@ -66,7 +66,7 @@ const MenuOnly = () => {
                                     <h3 className="text-lg font-semibold text-[#f5f5f5] mb-2">
                                         {item.name}
                                     </h3>
-                                    <p className="text-[#f6b100] text-xl font-bold">
+                                    <p className="text-[#38bdf8] text-xl font-bold">
                                         ${item.price}
                                     </p>
                                 </div>

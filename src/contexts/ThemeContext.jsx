@@ -15,7 +15,7 @@ export const ThemeProvider = ({ children }) => {
         // Cargar tema del localStorage o usar dark por defecto
         if (typeof window !== 'undefined') {
             const savedTheme = localStorage.getItem('theme');
-            return savedTheme || 'dark';
+            return savedTheme === 'light' ? 'light' : 'dark';
         }
         return 'dark';
     });
@@ -25,6 +25,8 @@ export const ThemeProvider = ({ children }) => {
         if (typeof window === 'undefined') return;
         
         const root = document.documentElement;
+        root.dataset.theme = theme;
+        root.style.colorScheme = theme;
         
         // Asegurar que el tema dark esté aplicado por defecto
         if (theme === 'light') {

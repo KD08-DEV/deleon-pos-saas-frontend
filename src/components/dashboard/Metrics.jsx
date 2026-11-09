@@ -214,7 +214,7 @@ const Metrics = () => {
         {
             title: "Total Clientes",
             value: customersNow,
-            color: "#FACC15",
+            color: "#15b1fa",
             isIncrease: customersDelta.up,
             percentage: customersDelta.text,
         },
@@ -230,7 +230,7 @@ const Metrics = () => {
     const itemsData = [
         { title: "Categorias Totales", value: 8, color: "#8B5CF6", percentage: "+12%" },
         { title: "Platos Totales", value: dishes.length, color: "#16A34A", percentage: "+5%" },
-        { title: "Ordenes Activas", value: totalActiveOrders, color: "#CA8A04", percentage: "+9%" },
+        { title: "Ordenes Activas", value: totalActiveOrders, color: "#048bca", percentage: "+9%" },
         { title: "Mesas Totales", value: tables.length, color: "#9333EA", percentage: "+3%" },
     ];
 

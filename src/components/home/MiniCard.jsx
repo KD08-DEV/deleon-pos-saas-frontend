@@ -240,19 +240,19 @@ const MiniCard = memo(
                     const cardGradient =
                         isActiveOrders
                             ? "from-green-500/10 via-emerald-500/10 to-teal-500/10"
-                            : "from-yellow-500/10 via-amber-500/10 to-orange-500/10";
+                            : "from-sky-500/10 via-sky-500/10 to-orange-500/10";
 
 
                     const iconGradient =
                         isActiveOrders
                             ? "from-green-500 to-emerald-500"
-                            : "from-yellow-500 to-amber-500";
+                            : "from-sky-500 to-sky-500";
 
 
                     const borderColor =
                         isActiveOrders
                             ? "border-green-500/30"
-                            : "border-yellow-500/30";
+                            : "border-sky-500/30";
 
 
                     return {

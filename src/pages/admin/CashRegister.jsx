@@ -1,3 +1,4 @@
+import { financeErrorMessage } from "../../lib/financeErrorMessage";
 // src/pages/admin/CashRegister.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -2040,6 +2041,7 @@ const CashRegister = () => {
 
             return res.data;
         },
+        onError: (error) => showToast(financeErrorMessage(error), "error"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal", modalDay || "range"] });
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal-range"] });
@@ -2069,6 +2071,7 @@ const CashRegister = () => {
 
             return res.data;
         },
+        onError: (error) => showToast(financeErrorMessage(error), "error"),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal", modalDay || "range"] });
             queryClient.invalidateQueries({ queryKey: ["admin/cash-session", "modal-range"] });
@@ -2187,9 +2190,7 @@ const CashRegister = () => {
             }
 
             showToast(
-                err?.response?.data?.message ||
-                err?.response?.data?.error ||
-                t("cashRegisterPage.messages.saveOpeningError")
+                financeErrorMessage(err, t("cashRegisterPage.messages.saveOpeningError"))
             );
         },
 
@@ -4199,7 +4200,7 @@ const CashRegister = () => {
                         </h2>
                         {canConsultClosingDocuments && (
                             <button type="button" onClick={() => setShowClosingDocuments(true)}
-                                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20">
+                                className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
                                 {String(i18n.resolvedLanguage || "es").startsWith("en")
                                     ? "View invoices and notes" : "Ver facturas y notas"}
                             </button>
@@ -4228,7 +4229,7 @@ const CashRegister = () => {
                             type="date"
                             value={selectedYMD}
                             onChange={(e) => setSelectedYMD(e.target.value)}
-                            className="w-full sm:w-auto bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full sm:w-auto bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
 
@@ -4240,7 +4241,7 @@ const CashRegister = () => {
                             <select
                                 value={activeRegisterId}
                                 onChange={(e) => setSelectedRegisterId(e.target.value)}
-                                className="w-full sm:w-auto min-w-[220px] bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#f6b100]/50"
+                                className="w-full sm:w-auto min-w-[220px] bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:border-[#38bdf8]/50"
                                 disabled={registersLoading}
                             >
                                 <option value={ALL_REGISTERS_ID}>
@@ -4265,7 +4266,7 @@ const CashRegister = () => {
                     {isAdmin && showSummary && (
                         <button
                             onClick={() => setShowFullView(true)}
-                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all"
                         >
                             <Search className="w-4 h-4" />
                             {t("cashRegisterPage.actions.viewFullRecords")}
@@ -4333,9 +4334,9 @@ const CashRegister = () => {
                                     )}
                                 </div>
                             </div>
-                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors">
+                            <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#38bdf8]/30 transition-colors">
                                 <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashInRegister")}</div>
-                                <div className="text-sm font-semibold text-[#f6b100]">{currency(initialCashClosure.cashInRegister)}</div>
+                                <div className="text-sm font-semibold text-[#38bdf8]">{currency(initialCashClosure.cashInRegister)}</div>
                             </div>
                             <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3">
                                 <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.netSales")}</div>
@@ -4360,7 +4361,7 @@ const CashRegister = () => {
                                 setOpeningCashInput(formatThousands(e.target.value));
                             }}
                             inputMode="decimal"
-                            className={`w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50 ${
+                            className={`w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#38bdf8]/50 ${
                                 disableOpeningInput ? "opacity-60 cursor-not-allowed" : ""
                             }`}
                             placeholder="0"
@@ -4460,7 +4461,7 @@ const CashRegister = () => {
                                             openingFloat,
                                         });
                                     }}
-                                    className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                                    className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold"
                                 >
                                     {t("cashRegisterPage.opening.saveInitial")}
                                 </button>
@@ -4532,7 +4533,7 @@ const CashRegister = () => {
                                                 });
                                             }}
                                             disabled={adjustOpeningMutation.isPending}
-                                            className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
+                                            className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold disabled:opacity-60"
                                         >
                                             {adjustOpeningMutation.isPending
                                                 ? t("cashRegisterPage.actions.saving")
@@ -4591,7 +4592,7 @@ const CashRegister = () => {
                                             openingFloat,
                                         });
                                     }}
-                                    className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                                    className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold"
                                 >
                                     {t(
                                         "cashRegisterPage.opening.saveInitialAdmin",
@@ -4643,7 +4644,7 @@ const CashRegister = () => {
                                                         note: `Ajuste de fondo inicial por admin (${selectedYMD})`,
                                                     });
                                                 }}
-                                                className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                                                className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold"
                                             >
                                                 {t("cashRegisterPage.actions.saveChanges")}
                                             </button>
@@ -4736,7 +4737,7 @@ const CashRegister = () => {
                             <button
                                 type="button"
                                 onClick={() => setManagerCodeModalOpen(true)}
-                                className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633]"
+                                className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc]"
                             >
                                 {t("cashRegisterPage.manager.title")}
                             </button>
@@ -4836,7 +4837,7 @@ const CashRegister = () => {
                                                 ? t("cashRegisterPage.closing.consolidatedCounted")
                                                 : t("cashRegisterPage.closing.registerCounted")}
                                         </div>
-                                        <div className="text-sm font-bold text-[#f6b100]">
+                                        <div className="text-sm font-bold text-[#38bdf8]">
                                             {currency(closingDeclaredSummary.countedCashEquivalent)}
                                         </div>
                                     </div>
@@ -4870,15 +4871,15 @@ const CashRegister = () => {
                                             </div>
                                         </div>
 
-                                        <div className="rounded-lg bg-[#0b0b0b] border border-[#f6b100]/30 px-3 py-2">
+                                        <div className="rounded-lg bg-[#0b0b0b] border border-[#38bdf8]/30 px-3 py-2">
                                             <div className="text-[11px] text-gray-500">{t("cashRegisterPage.closing.registerCounted")}</div>
-                                            <div className="text-sm text-[#f6b100] font-bold">
+                                            <div className="text-sm text-[#38bdf8] font-bold">
                                                 {currency(closingDeclaredSummary.countedCashEquivalent)}
                                             </div>
                                         </div>
-                                        <div className="rounded-lg bg-[#0b0b0b] border border-[#f6b100]/30 px-3 py-2">
+                                        <div className="rounded-lg bg-[#0b0b0b] border border-[#38bdf8]/30 px-3 py-2">
                                             <div className="text-[11px] text-gray-500">{t("cashRegisterPage.closing.totalClose")}</div>
-                                            <div className="text-sm text-[#f6b100] font-bold">
+                                            <div className="text-sm text-[#38bdf8] font-bold">
                                                 {currency(closingDeclaredSummary.total)}
                                             </div>
                                         </div>
@@ -4904,7 +4905,7 @@ const CashRegister = () => {
                                                 </div>
 
                                                 <div className="flex items-center gap-3">
-                <span className="text-sm font-bold text-[#f6b100]">
+                <span className="text-sm font-bold text-[#38bdf8]">
                     {currency(breakdownDetailTotal)}
                 </span>
 
@@ -5031,7 +5032,7 @@ const CashRegister = () => {
                                 key={s._id}
                                 className={`rounded-xl border p-4 ${
                                     adminCloseTargetSession?._id === s._id
-                                        ? "border-[#f6b100] bg-[#f6b100]/10"
+                                        ? "border-[#38bdf8] bg-[#38bdf8]/10"
                                         : "border-gray-800/50 bg-[#151515]"
                                 }`}
                             >
@@ -5073,7 +5074,7 @@ const CashRegister = () => {
                                     <button
                                         type="button"
                                         onClick={() => handleSelectAdminSessionToClose(s)}
-                                        className="px-4 py-2 rounded-lg bg-[#f6b100] text-black font-semibold"
+                                        className="px-4 py-2 rounded-lg bg-[#38bdf8] text-black font-semibold"
                                     >
                                         {t("cashRegisterPage.sessions.closeThis")}
                                     </button>
@@ -5091,8 +5092,8 @@ const CashRegister = () => {
                 >
                     <h3 className="text-white font-semibold text-lg">{t("cashRegisterPage.closing.finalTitle")}</h3>
                     {isAdminLike && closeTargetSession && (
-                        <div className="mt-3 mb-4 rounded-xl border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
-                            <div className="text-sm text-[#f6b100] font-semibold">
+                        <div className="mt-3 mb-4 rounded-xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4">
+                            <div className="text-sm text-[#38bdf8] font-semibold">
                                 {t("cashRegisterPage.closing.selectedSession")}
                             </div>
 
@@ -5144,7 +5145,7 @@ const CashRegister = () => {
                                 onClick={() => setClosingInputMode(CLOSING_INPUT_MODE_TOTAL)}
                                 className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                                     closingInputMode === CLOSING_INPUT_MODE_TOTAL
-                                        ? "bg-[#f6b100] text-black"
+                                        ? "bg-[#38bdf8] text-black"
                                         : "text-gray-300 hover:bg-white/5"
                                 }`}
                             >
@@ -5162,7 +5163,7 @@ const CashRegister = () => {
                                     className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                                         closingInputMode ===
                                         CLOSING_INPUT_MODE_BREAKDOWN
-                                            ? "bg-[#f6b100] text-black"
+                                            ? "bg-[#38bdf8] text-black"
                                             : "text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
@@ -5202,7 +5203,7 @@ const CashRegister = () => {
                                     <div className="text-xs text-gray-500">
                                         {t("cashRegisterPage.closing.totalCounted")}
                                     </div>
-                                    <div className="text-lg font-bold text-[#f6b100]">
+                                    <div className="text-lg font-bold text-[#38bdf8]">
                                         {currency(closingBreakdownTotal)}
                                     </div>
                                 </div>
@@ -5365,7 +5366,7 @@ const CashRegister = () => {
     </div>
 </div>
 
-    <div className="mt-5 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
+    <div className="mt-5 rounded-lg border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <div>
                 <div className="text-sm text-white/80">{t("cashRegisterPage.closing.billsCoins")}</div>
@@ -5543,7 +5544,7 @@ const CashRegister = () => {
                             });
                         }}
                         disabled={closeCashSessionMutation.isPending}
-                        className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
+                        className="mt-4 w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold disabled:opacity-60"
                     >
                         {closeCashSessionMutation.isPending
                             ? t("cashRegisterPage.closing.closing")
@@ -5563,7 +5564,7 @@ const CashRegister = () => {
                     </h3>
                     <div className="text-sm text-gray-300">
                         {t("cashRegisterPage.salesSummary.totalCollected")}:{" "}
-                        <span className="font-semibold text-[#f6b100] text-lg">
+                        <span className="font-semibold text-[#38bdf8] text-lg">
                             {currency(summaryCashClosure.grandTotal)}
                         </span>
 
@@ -5619,7 +5620,7 @@ const CashRegister = () => {
                     ].map(([k, v]) => (
                         <div
                             key={k}
-                            className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#f6b100]/30 transition-colors"
+                            className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-3 hover:border-[#38bdf8]/30 transition-colors"
                         >
                             <div className="text-xs text-gray-400 mb-1">{v.label}</div>
                             <div
@@ -5654,7 +5655,7 @@ const CashRegister = () => {
                             summaryCashClosure
                         )
                     }
-                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                 >
                     <Download className="w-4 h-4" />
                     {t("cashRegisterPage.actions.exportExcel")}
@@ -5716,7 +5717,7 @@ const CashRegister = () => {
 
                                     <div className="col-span-2">
                                         <div className="text-xs text-gray-400">{t("cashRegisterPage.common.total")}</div>
-                                        <div className="text-lg font-bold text-[#f6b100]">
+                                        <div className="text-lg font-bold text-[#38bdf8]">
                                             {currency(r?.bills?.totalWithTax)}
                                         </div>
                                     </div>
@@ -5804,7 +5805,7 @@ const CashRegister = () => {
                                                 key={r._id}
                                                 className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
                                             >
-                                                <td className="p-3 text-sm font-semibold text-[#f6b100] whitespace-nowrap">
+                                                <td className="p-3 text-sm font-semibold text-[#38bdf8] whitespace-nowrap">
                                                     {getInvoiceNumber(r)}
                                                 </td>
                                                 <td className="p-3 text-sm text-gray-300">
@@ -5830,7 +5831,7 @@ const CashRegister = () => {
                                                 </span>
                                                                                             )}
                                                                                         </td>
-                                                <td className="p-3 text-sm font-bold text-[#f6b100]">
+                                                <td className="p-3 text-sm font-bold text-[#38bdf8]">
                                                     {currency(r?.bills?.totalWithTax)}
                                                 </td>
                                                 <td className="p-3">
@@ -5892,7 +5893,7 @@ const CashRegister = () => {
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowFiltersMenu(!showFiltersMenu)}
-                                        className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 text-white rounded-lg font-semibold hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                                        className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 text-white rounded-lg font-semibold hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                                     >
                                         <Filter className="w-4 h-4" />
                                         {t("cashRegisterPage.actions.filters")}
@@ -5917,7 +5918,7 @@ const CashRegister = () => {
                                                         type="date"
                                                         value={modalFilters.from}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, from: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                     />
                                                 </div>
 
@@ -5927,7 +5928,7 @@ const CashRegister = () => {
                                                         type="date"
                                                         value={modalFilters.to}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, to: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                     />
                                                 </div>
 
@@ -5936,7 +5937,7 @@ const CashRegister = () => {
                                                     <select
                                                         value={modalFilters.method}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, method: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                     >
                                                         <option value="">
                                                             {t("cashRegisterPage.filters.allMethods")}
@@ -5980,7 +5981,7 @@ const CashRegister = () => {
                                                                     registerId: e.target.value,
                                                                 }))
                                                             }
-                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                             disabled={registersLoading}
                                                         >
                                                             <option value={ALL_REGISTERS_ID}>
@@ -6013,7 +6014,7 @@ const CashRegister = () => {
                                                                     fiscal: e.target.value,
                                                                 }))
                                                             }
-                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                         >
                                                             <option value="">
                                                                 {t("cashRegisterPage.filters.all")}
@@ -6078,7 +6079,7 @@ const CashRegister = () => {
                                                         )}
                                                         value={modalFilters.user}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, user: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50"
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#38bdf8]/50"
                                                     />
                                                 </div>
 
@@ -6090,7 +6091,7 @@ const CashRegister = () => {
                                                         )}
                                                         value={modalFilters.client}
                                                         onChange={(e) => setModalFilters((f) => ({ ...f, client: e.target.value }))}
-                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50"
+                                                        className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-[#38bdf8]/50"
                                                     />
                                                 </div>
 
@@ -6129,7 +6130,7 @@ const CashRegister = () => {
                                 <h3 className="text-white font-semibold">{t("cashRegisterPage.fullRecords.summary")}</h3>
                                 <div className="text-sm text-gray-300">
                                     {t("cashRegisterPage.common.total")}:{" "}
-                                    <span className="font-semibold text-[#f6b100]">{currency(modalCashClosure.totalWithMenudo)}</span>
+                                    <span className="font-semibold text-[#38bdf8]">{currency(modalCashClosure.totalWithMenudo)}</span>
                                     <span className="text-gray-500 ml-2">(
                                         {t(
                                             "cashRegisterPage.common.orderCount",
@@ -6162,7 +6163,7 @@ const CashRegister = () => {
                                                         disabled={!modalIsEditingOpening}
                                                         onChange={(e) => setModalOpeningInput(formatThousands(e.target.value))}
                                                         inputMode="decimal"
-                                                        className={`w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50 ${
+                                                        className={`w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50 ${
                                                             !modalIsEditingOpening ? "opacity-60 cursor-not-allowed" : ""
                                                         }`}
                                                         placeholder="0"
@@ -6217,7 +6218,7 @@ const CashRegister = () => {
 
                                                                     setModalIsEditingOpening(false);
                                                                 }}
-                                                                className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                                                                className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold"
                                                             >
                                                                 {t("cashRegisterPage.actions.saveChanges")}
                                                             </button>
@@ -6247,9 +6248,9 @@ const CashRegister = () => {
                                     <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashSales")}</div>
                                     <div className="text-sm font-semibold text-white">{currency(modalCashClosure.cashSales)}</div>
                                 </div>
-                                <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2 hover:border-[#f6b100]/30 transition-colors">
+                                <div className="rounded-lg bg-[#1a1a1a] border border-gray-800/30 p-2 hover:border-[#38bdf8]/30 transition-colors">
                                     <div className="text-xs text-gray-400 mb-1">{t("cashRegisterPage.opening.cashInRegister")}</div>
-                                    <div className="text-sm font-semibold text-[#f6b100]">{currency(modalCashClosure.cashInRegister)}</div>
+                                    <div className="text-sm font-semibold text-[#38bdf8]">{currency(modalCashClosure.cashInRegister)}</div>
                                 </div>
                             </div>
 
@@ -6293,7 +6294,7 @@ const CashRegister = () => {
                             <div className="flex justify-end mb-4">
                                 <button
                                     onClick={() => downloadExcel(modalFilteredReports, modalCashClosure)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                                 >
                                     <Download className="w-4 h-4" />
                                     {t("cashRegisterPage.actions.exportExcel")}
@@ -6327,7 +6328,7 @@ const CashRegister = () => {
                                                     key={r._id}
                                                     className="border-b border-gray-800/30 hover:bg-[#1a1a1a]/50 transition-colors"
                                                 >
-                                                    <td className="p-3 text-sm font-semibold text-[#f6b100] whitespace-nowrap">
+                                                    <td className="p-3 text-sm font-semibold text-[#38bdf8] whitespace-nowrap">
                                                         {getInvoiceNumber(r)}
                                                     </td>
 
@@ -6345,7 +6346,7 @@ const CashRegister = () => {
                                                         r?.paymentMethod ||
                                                         "Efectivo"
                                                     )}</td>
-                                                    <td className="p-3 text-sm font-bold text-[#f6b100]">
+                                                    <td className="p-3 text-sm font-bold text-[#38bdf8]">
                                                         {currency(r?.bills?.totalWithTax)}
                                                     </td>
                                                     <td className="p-3">
@@ -6423,7 +6424,7 @@ const CashRegister = () => {
                                     onClick={() => setAdjustInputMode(CLOSING_INPUT_MODE_TOTAL)}
                                     className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                                         adjustInputMode === CLOSING_INPUT_MODE_TOTAL
-                                            ? "bg-[#f6b100] text-black"
+                                            ? "bg-[#38bdf8] text-black"
                                             : "text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
@@ -6435,7 +6436,7 @@ const CashRegister = () => {
                                     onClick={() => setAdjustInputMode(CLOSING_INPUT_MODE_BREAKDOWN)}
                                     className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                                         adjustInputMode === CLOSING_INPUT_MODE_BREAKDOWN
-                                            ? "bg-[#f6b100] text-black"
+                                            ? "bg-[#38bdf8] text-black"
                                             : "text-gray-300 hover:bg-white/5"
                                     }`}
                                 >
@@ -6475,7 +6476,7 @@ const CashRegister = () => {
 
                                     <div className="text-right">
                                         <div className="text-xs text-gray-500">{t("cashRegisterPage.closing.billsCoins")}</div>
-                                        <div className="text-lg font-bold text-[#f6b100]">
+                                        <div className="text-lg font-bold text-[#38bdf8]">
                                             {currency(adjustBreakdownTotal)}
                                         </div>
                                     </div>
@@ -6644,7 +6645,7 @@ const CashRegister = () => {
                                     </div>
                                 </div>
 
-                                <div className="mt-5 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 p-4">
+                                <div className="mt-5 rounded-lg border border-[#38bdf8]/30 bg-[#38bdf8]/10 p-4">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                                         <div>
                                             <div className="text-sm text-white/80">{t("cashRegisterPage.closing.billsCoins")}</div>
@@ -6755,7 +6756,7 @@ const CashRegister = () => {
                                         managerCode: adjustManagerCode.trim(),
                                     });
                                 }}
-                                className="w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-60"
+                                className="w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold disabled:opacity-60"
                                 disabled={adjustCloseCashSessionMutation.isPending}
                             >
                                 {adjustCloseCashSessionMutation.isPending ? "Guardando ajuste..." : "Guardar ajuste"}
@@ -6776,7 +6777,7 @@ const CashRegister = () => {
                                 </h2>
                                 <p className="text-xs text-gray-400 mt-1">
                                     {t("cashRegisterPage.ecf.affectedInvoice")}:{" "}
-                                    <span className="text-[#f6b100] font-semibold">
+                                    <span className="text-[#38bdf8] font-semibold">
                             {ecfAdjustmentModal.originalEcf?.eNCF || "—"}
                         </span>
                                 </p>
@@ -6811,13 +6812,13 @@ const CashRegister = () => {
 
                                 <div className="rounded-xl bg-[#111] border border-gray-800/50 p-3">
                                     <div className="text-xs text-gray-500">{t("cashRegisterPage.ecf.originalTotal")}</div>
-                                    <div className="text-[#f6b100] font-bold mt-1">
+                                    <div className="text-[#38bdf8] font-bold mt-1">
                                         {currency(ecfAdjustmentModal.originalEcf?.totals?.total)}
                                     </div>
                                 </div>
                             </div>
                             {ecfAdjustmentModal.documentType === "34" && (
-                                <div className="rounded-xl border border-[#f6b100]/20 bg-[#f6b100]/10 p-4">
+                                <div className="rounded-xl border border-[#38bdf8]/20 bg-[#38bdf8]/10 p-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                         <div>
                                             <div className="text-sm font-semibold text-white">{t("cashRegisterPage.ecf.availableCreditBalance")}</div>
@@ -6826,13 +6827,13 @@ const CashRegister = () => {
                                             </div>
                                         </div>
 
-                                        <div className="text-[#f6b100] font-bold text-lg">
+                                        <div className="text-[#38bdf8] font-bold text-lg">
                                             {currency(availableCreditTotal)}
                                         </div>
                                     </div>
 
                                     {acceptedDebitNotesTotal > 0 && (
-                                        <div className="mt-2 text-xs text-amber-200">
+                                        <div className="mt-2 text-xs text-sky-200">
                                             Las notas de débito ({currency(acceptedDebitNotesTotal)}) no aumentan el límite de notas de crédito contra el comprobante original.
                                         </div>
                                     )}
@@ -6861,7 +6862,7 @@ const CashRegister = () => {
                                         }}
                                         className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
                                             ecfAdjustmentForm.adjustmentMode === "partial"
-                                                ? "bg-[#f6b100] text-black border-[#f6b100]"
+                                                ? "bg-[#38bdf8] text-black border-[#38bdf8]"
                                                 : "bg-[#111] text-white border-gray-800/50"
                                         }`}
                                     >
@@ -6884,7 +6885,7 @@ const CashRegister = () => {
                                         }}
                                         className={`px-3 py-2 rounded-xl border text-sm font-semibold ${
                                             ecfAdjustmentForm.adjustmentMode === "total"
-                                                ? "bg-[#f6b100] text-black border-[#f6b100]"
+                                                ? "bg-[#38bdf8] text-black border-[#38bdf8]"
                                                 : "bg-[#111] text-white border-gray-800/50"
                                         }`}
                                     >
@@ -6894,11 +6895,11 @@ const CashRegister = () => {
                             </div>
 
                             {ecfAdjustmentModal.documentType === "33" && ecfAdjustmentForm.adjustmentMode === "total" && (
-                                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                                <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
                                     <p className="font-semibold">Atención: nota de débito por el total original</p>
                                     <p className="mt-1">Esto <strong>aumentará</strong> el importe de la factura en {currency(originalEcfTotal)}. No cancela ni sustituye el comprobante original.</p>
                                     <label className="mt-3 flex items-start gap-3 cursor-pointer rounded-lg border border-white/10 px-3 py-2">
-                                        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#f6b100]" checked={confirmedFullDebit} onChange={(e) => setConfirmedFullDebit(e.target.checked)} />
+                                        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#38bdf8]" checked={confirmedFullDebit} onChange={(e) => setConfirmedFullDebit(e.target.checked)} />
                                         <span>Confirmo que el aumento por ese importe es intencional.</span>
                                     </label>
                                 </div>
@@ -6916,7 +6917,7 @@ const CashRegister = () => {
                                                     amount: value,
                                                 }));
                                             }}
-                                            className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60"
+                                            className="mt-1 w-full px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#38bdf8]/60"
                                             placeholder=" 50.00"
                                             inputMode="decimal"
                                         />
@@ -6937,15 +6938,15 @@ const CashRegister = () => {
                             )}
 
                             {ecfAdjustmentModal.documentType === "34" && ecfAdjustmentForm.adjustmentMode === "total" && (
-                                <p className="text-xs text-amber-200 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                                <p className="text-xs text-sky-200 rounded-xl border border-sky-500/20 bg-sky-500/10 p-3">
                                     {acceptedCreditNotesTotal > 0
                                         ? `La anulación aplicará un crédito por ${currency(availableCreditTotal)}, que es el saldo original aún no acreditado. Las notas de débito se concilian por separado.`
                                         : `Se intentará anular el saldo original de ${currency(availableCreditTotal)}. Confirma que esta operación corresponde a una anulación.`}
                                 </p>
                             )}
                             {ecfAdjustmentModal.documentType === "34" && ecfAdjustmentForm.adjustmentMode === "total" && (
-                                <label className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-white cursor-pointer">
-                                    <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#f6b100]" checked={confirmedFullCredit} onChange={(e) => setConfirmedFullCredit(e.target.checked)} />
+                                <label className="flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 px-4 py-3 text-sm text-white cursor-pointer">
+                                    <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#38bdf8]" checked={confirmedFullCredit} onChange={(e) => setConfirmedFullCredit(e.target.checked)} />
                                     <span>Confirmo la anulación del saldo original pendiente de {currency(availableCreditTotal)}. He comprobado las notas emitidas anteriormente.</span>
                                 </label>
                             )}
@@ -6971,7 +6972,7 @@ const CashRegister = () => {
                                             reason: e.target.value,
                                         }))
                                     }
-                                    className="mt-1 w-full min-h-[90px] px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#f6b100]/60 resize-none"
+                                    className="mt-1 w-full min-h-[90px] px-3 py-3 bg-[#111] border border-gray-800/50 rounded-xl text-white outline-none focus:border-[#38bdf8]/60 resize-none"
                                     placeholder="Describe el motivo de la nota..."
                                 />
                             </div>
@@ -7027,7 +7028,7 @@ const CashRegister = () => {
                                                     </div>
 
                                                     <div className="text-right">
-                                                        <div className="text-[#f6b100] font-bold">
+                                                        <div className="text-[#38bdf8] font-bold">
                                                             {currency(doc?.totals?.total)}
                                                         </div>
 
@@ -7038,7 +7039,7 @@ const CashRegister = () => {
                                                         <button
                                                             type="button"
                                                             onClick={() => openAdjustmentInvoicePreview(doc)}
-                                                            className="mt-2 px-3 py-1 rounded-lg border border-[#f6b100]/40 bg-[#f6b100]/10 text-[#f6b100] text-xs font-semibold hover:bg-[#f6b100]/20 transition-colors"
+                                                            className="mt-2 px-3 py-1 rounded-lg border border-[#38bdf8]/40 bg-[#38bdf8]/10 text-[#38bdf8] text-xs font-semibold hover:bg-[#38bdf8]/20 transition-colors"
                                                         >
                                                             Ver / Imprimir
                                                         </button>
@@ -7072,7 +7073,7 @@ const CashRegister = () => {
                                         ecfAdjustmentModal.documentType === "34" &&
                                         availableCreditTotal <= 0
                                     )
-                                }                                className="px-4 py-3 rounded-xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] disabled:opacity-60"
+                                }                                className="px-4 py-3 rounded-xl bg-[#38bdf8] text-black font-bold hover:bg-[#7dd3fc] disabled:opacity-60"
                             >
                                 {issueEcfAdjustmentMutation.isPending
                                     ? "Emitiendo..."
@@ -7176,7 +7177,7 @@ const CashRegister = () => {
                                 setManagerCodeMutation.mutate({ managerCode: code });
                             }}
                             disabled={setManagerCodeMutation.isPending}
-                            className="mt-4 w-full px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
+                            className="mt-4 w-full px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] disabled:opacity-60"
                         >
                             {t("cashRegisterPage.manager.saveUpdate")}
                         </button>

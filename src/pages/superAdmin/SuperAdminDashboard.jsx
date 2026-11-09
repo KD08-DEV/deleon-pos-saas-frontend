@@ -78,7 +78,7 @@ const SuperAdminDashboard = () => {
                 <button
                     type="button"
                     onClick={() => navigate("/superadmin/create-tenant")}
-                    className="p-6 bg-yellow-500 rounded-xl text-left cursor-pointer hover:bg-yellow-400 transition text-black"
+                    className="p-6 bg-sky-500 rounded-xl text-left cursor-pointer hover:bg-sky-400 transition text-black"
                 >
                     <h2 className="text-xl font-bold mb-2">Create New Tenant</h2>
                     <p className="text-sm">

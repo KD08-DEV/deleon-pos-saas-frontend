@@ -443,7 +443,7 @@ const HelpAndSupport = () => {
 
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
 
-                    <HelpCircle className="w-6 h-6 text-[#f6b100]" />
+                    <HelpCircle className="w-6 h-6 text-[#38bdf8]" />
 
                     {t(
                         "helpAndSupport.title"
@@ -493,12 +493,12 @@ const HelpAndSupport = () => {
                                     onClick={
                                         link.action
                                     }
-                                    className="flex items-center gap-3 p-4 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg hover:border-[#f6b100]/50 transition-all group"
+                                    className="flex items-center gap-3 p-4 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg hover:border-[#38bdf8]/50 transition-all group"
                                 >
 
-                                    <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20 group-hover:bg-[#f6b100]/20 transition-colors">
+                                    <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20 group-hover:bg-[#38bdf8]/20 transition-colors">
 
-                                        <Icon className="w-5 h-5 text-[#f6b100]" />
+                                        <Icon className="w-5 h-5 text-[#38bdf8]" />
 
                                     </div>
 
@@ -545,7 +545,7 @@ const HelpAndSupport = () => {
                                             category.id
                                         )
                                     }
-                                    className={`p-6 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border rounded-2xl hover:border-[#f6b100]/50 transition-all text-left group ${category.borderColor}`}
+                                    className={`p-6 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border rounded-2xl hover:border-[#38bdf8]/50 transition-all text-left group ${category.borderColor}`}
                                 >
 
                                     <div className="flex items-center gap-4 mb-4">
@@ -568,7 +568,7 @@ const HelpAndSupport = () => {
 
                                         </h3>
 
-                                        <ChevronRight className="w-5 h-5 text-gray-400 ml-auto group-hover:text-[#f6b100] transition-colors" />
+                                        <ChevronRight className="w-5 h-5 text-gray-400 ml-auto group-hover:text-[#38bdf8] transition-colors" />
 
                                     </div>
 
@@ -659,7 +659,7 @@ const HelpAndSupport = () => {
 
                                         <div
                                             key={`${item.type}-${index}`}
-                                            className="p-5 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg hover:border-[#f6b100]/50 transition-all"
+                                            className="p-5 bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg hover:border-[#38bdf8]/50 transition-all"
                                         >
 
                                             <div className="flex items-start justify-between mb-2">
@@ -698,7 +698,7 @@ const HelpAndSupport = () => {
                                                         }
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-2 text-sm text-[#f6b100] hover:text-[#ffd633] transition-colors"
+                                                        className="inline-flex items-center gap-2 text-sm text-[#38bdf8] hover:text-[#7dd3fc] transition-colors"
                                                     >
 
                                                         {t(
@@ -717,7 +717,7 @@ const HelpAndSupport = () => {
 
                                                     <a
                                                         href={`mailto:${item.email}`}
-                                                        className="inline-flex items-center gap-2 text-sm text-[#f6b100] hover:text-[#ffd633] transition-colors"
+                                                        className="inline-flex items-center gap-2 text-sm text-[#38bdf8] hover:text-[#7dd3fc] transition-colors"
                                                     >
 
                                                         <Mail className="w-3.5 h-3.5" />
@@ -738,7 +738,7 @@ const HelpAndSupport = () => {
                                                         onClick={
                                                             openSupportEmail
                                                         }
-                                                        className="inline-flex items-center gap-2 text-sm text-[#f6b100] hover:text-[#ffd633] transition-colors"
+                                                        className="inline-flex items-center gap-2 text-sm text-[#38bdf8] hover:text-[#7dd3fc] transition-colors"
                                                     >
 
                                                         <Mail className="w-3.5 h-3.5" />
@@ -786,7 +786,7 @@ const HelpAndSupport = () => {
 
                     <div className="flex items-center gap-3 p-3 bg-[#1a1a1a] rounded-lg">
 
-                        <Mail className="w-5 h-5 text-[#f6b100]" />
+                        <Mail className="w-5 h-5 text-[#38bdf8]" />
 
                         <div>
 
@@ -800,7 +800,7 @@ const HelpAndSupport = () => {
 
                             <a
                                 href="mailto:soporte@sitfort.com"
-                                className="text-sm text-white hover:text-[#f6b100] transition-colors"
+                                className="text-sm text-white hover:text-[#38bdf8] transition-colors"
                             >
 
                                 soporte@sitfort.com
@@ -815,7 +815,7 @@ const HelpAndSupport = () => {
 
                     <div className="flex items-center gap-3 p-3 bg-[#1a1a1a] rounded-lg">
 
-                        <Phone className="w-5 h-5 text-[#f6b100]" />
+                        <Phone className="w-5 h-5 text-[#38bdf8]" />
 
                         <div>
 
@@ -827,7 +827,7 @@ const HelpAndSupport = () => {
                                 href="https://wa.link/vzbps9"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm text-white hover:text-[#f6b100] transition-colors"
+                                className="text-sm text-white hover:text-[#38bdf8] transition-colors"
                             >
 
                                 {t(
@@ -844,7 +844,7 @@ const HelpAndSupport = () => {
 
                     <div className="flex items-center gap-3 p-3 bg-[#1a1a1a] rounded-lg">
 
-                        <Users className="w-5 h-5 text-[#f6b100]" />
+                        <Users className="w-5 h-5 text-[#38bdf8]" />
 
                         <div>
 

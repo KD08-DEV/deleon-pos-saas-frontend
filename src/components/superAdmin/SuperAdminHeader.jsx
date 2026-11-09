@@ -20,7 +20,7 @@ const SuperAdminHeader = ({ user }) => {
             <div className="flex items-center gap-4">
                 <button className="relative p-2 rounded-full bg-[#18181b]">
                     <FaBell className="text-gray-300" />
-                    <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#eab308]" />
+                    <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[#08a2ea]" />
                 </button>
 
                 <div className="flex items-center gap-2">
@@ -29,7 +29,7 @@ const SuperAdminHeader = ({ user }) => {
             <span className="text-sm font-medium text-white">
               {user?.name || "SuperAdmin"}
             </span>
-                        <span className="text-[11px] text-[#eab308] font-semibold uppercase tracking-wide">
+                        <span className="text-[11px] text-[#08a2ea] font-semibold uppercase tracking-wide">
               SuperAdmin
             </span>
                     </div>

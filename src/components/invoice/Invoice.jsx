@@ -1542,10 +1542,10 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
                                         px-3
                                         rounded-md
                                         border
-                                        border-[#f6b100]
-                                        bg-[#f6b100]
+                                        border-[#38bdf8]
+                                        bg-[#38bdf8]
                                         text-black
-                                        hover:bg-[#ffc526]
+                                        hover:bg-[#26baff]
                                         font-bold
                                         whitespace-nowrap
                                         text-[11px]

@@ -90,10 +90,10 @@ export default function OrderCorrectionGlobalHistory({ onClose }) {
       style={{ paddingTop: "max(12px,env(safe-area-inset-top,0px))", paddingBottom: "calc(7rem + env(safe-area-inset-bottom,0px))" }}
       onClick={onClose}>
       <section role="dialog" aria-modal="true" aria-label={tr.title} onClick={e => e.stopPropagation()}
-        className="flex h-full min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-amber-500/25 bg-[#151515] text-white shadow-2xl">
+        className="flex h-full min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-sky-500/25 bg-[#151515] text-white shadow-2xl">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-lg font-bold"><History className="h-5 w-5 shrink-0 text-amber-400" />{tr.title}</h2>
+            <h2 className="flex items-center gap-2 text-lg font-bold"><History className="h-5 w-5 shrink-0 text-sky-400" />{tr.title}</h2>
             <p className="mt-1 text-xs text-gray-400">{tr.subtitle}</p>
           </div>
           <button type="button" onClick={onClose} className="shrink-0 rounded-lg p-2 hover:bg-white/10" aria-label={tr.close}>
@@ -119,7 +119,7 @@ export default function OrderCorrectionGlobalHistory({ onClose }) {
           </div>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:px-6">
-          {invalidDates && <p role="alert" className="rounded-lg bg-amber-900/20 p-3 text-sm text-amber-200">{language === "en" ? "End date must not be earlier than start date." : "La fecha final no puede ser anterior a la inicial."}</p>}
+          {invalidDates && <p role="alert" className="rounded-lg bg-sky-900/20 p-3 text-sm text-sky-200">{language === "en" ? "End date must not be earlier than start date." : "La fecha final no puede ser anterior a la inicial."}</p>}
           {isError && <p role="alert" className="rounded-lg border border-red-500/20 bg-red-950/40 p-4 text-sm text-red-200">{error?.response?.status === 403 ? tr.forbidden : tr.error}</p>}
           {isLoading && !invalidDates && <p className="py-8 text-center text-sm text-gray-400">{tr.loading}</p>}
           {!invalidDates && !isLoading && !isError && rows.length === 0 && <p className="rounded-xl bg-white/5 p-6 text-center text-sm text-gray-400">{tr.empty}</p>}
@@ -132,17 +132,17 @@ export default function OrderCorrectionGlobalHistory({ onClose }) {
                   <div className="text-xs text-gray-400">{tr.actor}: <span className="text-gray-200">{entry.actorName || tr.deleted}</span></div>
                   <time className="block text-xs text-gray-400">{fmtDate(entry.at)}</time>
                 </div>
-                <span className="rounded-md bg-amber-500/10 px-2 py-1 font-mono text-xs text-amber-200">{entry.code || "—"}</span>
+                <span className="rounded-md bg-sky-500/10 px-2 py-1 font-mono text-xs text-sky-200">{entry.code || "—"}</span>
               </div>
               <p className="mt-3 break-words text-sm text-gray-200">{entry.reason || "—"}</p>
               <div className="mt-3 flex flex-wrap gap-2">{(entry.changed || []).map((name, i) => <span key={`${name}:${i}`} className="rounded-md bg-white/10 px-2 py-1 text-[11px] text-gray-300">{name}</span>)}</div>
               <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-black/20 p-3 text-xs">
                 <div><div className="text-gray-400">{tr.before}</div><strong className="text-sm">{fmtMoney(entry.previousTotal)}</strong></div>
                 <div><div className="text-gray-400">{tr.after}</div><strong className="text-sm">{fmtMoney(entry.nextTotal)}</strong></div>
-                <div><div className="text-gray-400">{tr.change}</div><strong className={`text-sm ${delta >= 0 ? "text-emerald-300" : "text-amber-300"}`}>{delta > 0 ? "+" : ""}{fmtMoney(delta)}</strong></div>
+                <div><div className="text-gray-400">{tr.change}</div><strong className={`text-sm ${delta >= 0 ? "text-emerald-300" : "text-sky-300"}`}>{delta > 0 ? "+" : ""}{fmtMoney(delta)}</strong></div>
               </div>
               <div className="mt-3 flex justify-end"><button type="button" onClick={() => setDetailOrderId(entry.orderId)}
-                className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20">
+                className="inline-flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
                 {tr.detail}<ArrowRight className="h-4 w-4" />
               </button></div>
             </article>;

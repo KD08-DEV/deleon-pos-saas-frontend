@@ -244,7 +244,7 @@ export default function TableCard({
 
             {/* Header */}
 
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
 
                 <p className="text-white font-semibold">
 
@@ -264,7 +264,7 @@ export default function TableCard({
                     virtualType ===
                     "QUICK" ? (
 
-                        <span className="bg-yellow-600 text-xs px-2 py-1 rounded">
+                        <span className="bg-sky-600 text-xs px-2 py-1 rounded">
 
                             {t(
                                 "tableCard.quick"
@@ -274,7 +274,7 @@ export default function TableCard({
 
                     ) : (
 
-                        <span className="bg-yellow-600 text-xs px-2 py-1 rounded">
+                        <span className="bg-sky-600 text-xs px-2 py-1 rounded">
 
                             {t(
                                 "tableCard.delivery"
@@ -293,11 +293,11 @@ export default function TableCard({
                 ) : (
 
                     <span
-                        className={`px-2 py-1 rounded text-xs ${
+                        className={`px-3 py-2 rounded-lg text-base font-bold border whitespace-nowrap ${
                             status ===
                             "Disponible"
-                                ? "bg-yellow-700/40"
-                                : "bg-green-700/40"
+                                ? "bg-sky-700/40 text-sky-200 border-sky-400/50"
+                                : "bg-green-700/40 text-green-200 border-green-400/50"
                         }`}
                     >
 

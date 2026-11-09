@@ -68,7 +68,7 @@ const PAYMENT_METHODS = [
 ];
 
 const statusClass = {
-    pending: "bg-yellow-500/10 text-yellow-300 border-yellow-500/30",
+    pending: "bg-sky-500/10 text-sky-300 border-sky-500/30",
     partial: "bg-blue-500/10 text-blue-300 border-blue-500/30",
     paid: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
     void: "bg-red-500/10 text-red-300 border-red-500/30",
@@ -993,7 +993,7 @@ export default function AccountsReceivable() {
                                                                 </p>
                                                             )}
 
-                                                            <p className="text-[11px] text-[#f6b100]/80 mt-1">
+                                                            <p className="text-[11px] text-[#38bdf8]/80 mt-1">
                                                                 {expanded
                                                                     ? t(
                                                                         "accountsReceivable.grouped.hideDetails"
@@ -1077,7 +1077,7 @@ export default function AccountsReceivable() {
                                                                 )}
                                                             </p>
 
-                                                            <p className="text-sm font-bold text-yellow-300">
+                                                            <p className="text-sm font-bold text-sky-300">
                                                                 {money(
                                                                     customer.balance
                                                                 )}
@@ -1269,7 +1269,7 @@ export default function AccountsReceivable() {
                                                                                         )}
                                                                                     </p>
 
-                                                                                    <p className="text-sm font-bold text-yellow-300 mt-1">
+                                                                                    <p className="text-sm font-bold text-sky-300 mt-1">
                                                                                         {money(
                                                                                             row.balance
                                                                                         )}

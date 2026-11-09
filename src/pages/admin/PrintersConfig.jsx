@@ -5,7 +5,7 @@ import usePrinters from "../../hooks/usePrinters.js";
 
 const inputCls =
     "w-full p-3 border border-gray-800/50 rounded-xl bg-[#1a1a1a] text-white text-sm " +
-    "focus:outline-none focus:border-[#f6b100]/50 transition-colors";
+    "focus:outline-none focus:border-[#38bdf8]/50 transition-colors";
 
 const emptyForm = {
     alias: "",
@@ -121,8 +121,8 @@ export default function PrintersConfig() {
         <div className="space-y-6">
             <div className="p-6 rounded-2xl border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] shadow-xl">
                 <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-800/50">
-                    <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
-                        <Printer className="w-5 h-5 text-[#f6b100]" />
+                    <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20">
+                        <Printer className="w-5 h-5 text-[#38bdf8]" />
                     </div>
 
                     <div>
@@ -419,7 +419,7 @@ export default function PrintersConfig() {
                     <button
                         type="button"
                         onClick={submit}
-                        className="px-5 py-2 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633]"
+                        className="px-5 py-2 rounded-xl bg-[#38bdf8] text-black font-semibold hover:bg-[#7dd3fc]"
                     >
                         {editingId
                             ? t("printersConfig.actions.saveChanges")

@@ -22,7 +22,7 @@ import DominicanNcfConfig from "./DominicanNcfConfig.jsx";
 
 const inputCls =
     "w-full p-3 border border-gray-800/50 rounded-xl bg-[#1a1a1a] text-white text-sm " +
-    "focus:outline-none focus:border-[#f6b100]/50 transition-colors";
+    "focus:outline-none focus:border-[#38bdf8]/50 transition-colors";
 
 const VIEW_META = {
     regional: {
@@ -119,8 +119,8 @@ function Section({
         >
             {Icon && (
                 <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-800/50">
-                    <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
-                        <Icon className="w-5 h-5 text-[#f6b100]" />
+                    <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20">
+                        <Icon className="w-5 h-5 text-[#38bdf8]" />
                     </div>
 
                     <div>
@@ -169,7 +169,7 @@ function Switch({
                     : "cursor-pointer",
 
                 checked
-                    ? "bg-[#f6b100]"
+                    ? "bg-[#38bdf8]"
                     : "bg-gray-700",
             ].join(" ")}
             aria-pressed={checked}
@@ -1112,7 +1112,7 @@ export default function FiscalConfig({
     ) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t(
@@ -1770,7 +1770,7 @@ export default function FiscalConfig({
 
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
 
-                        <Receipt className="w-6 h-6 text-[#f6b100]" />
+                        <Receipt className="w-6 h-6 text-[#38bdf8]" />
 
                         {t(
                             viewMeta.titleKey
@@ -2029,14 +2029,14 @@ export default function FiscalConfig({
             ) && (
 
                 secondaryEcfBranch ? (
-                    <section className="rounded-2xl border border-amber-600/50 bg-[#17140c] p-5 space-y-3 text-sm text-gray-200">
-                        <h3 className="text-lg font-semibold text-amber-300">e-CF de esta sucursal — solo lectura</h3>
+                    <section className="rounded-2xl border border-sky-600/50 bg-[#0c1417] p-5 space-y-3 text-sm text-gray-200">
+                        <h3 className="text-lg font-semibold text-sky-300">e-CF de esta sucursal — solo lectura</h3>
                         <p>El RNC, certificado, firma digital, ambiente y secuencias pertenecen al contribuyente y se administran desde la sucursal principal.</p>
                         <p><strong>Sucursal preparada:</strong> {ecfProfile?.branch?.prepared ? "Sí" : "No"}</p>
                         <p><strong>Emisor fiscal:</strong> {ecfProfile?.issuer?.legalName || "Pendiente"} · {ecfProfile?.issuer?.rnc || "Sin RNC"}</p>
                         <p><strong>Entorno compartido:</strong> {ecfProfile?.environment || "No configurado"}</p>
                         <p><strong>Certificación:</strong> {ecfProfile?.certificationStatus || "Pendiente"}</p>
-                        <p className="text-amber-300">En sucursales secundarias solo se permite emisión de prueba en sandbox interno cuando estén preparadas y se cumplan los permisos y controles fiscales. No se permite editar ni subir certificados aquí.</p>
+                        <p className="text-sky-300">En sucursales secundarias solo se permite emisión de prueba en sandbox interno cuando estén preparadas y se cumplan los permisos y controles fiscales. No se permite editar ni subir certificados aquí.</p>
                     </section>
                 ) : <EcfConfig
                     form={form}
@@ -2079,7 +2079,7 @@ export default function FiscalConfig({
                     disabled={
                         saving
                     }
-                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#38bdf8] text-black font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-sky-500/20 hover:shadow-sky-500/40"
                 >
 
                     <Save className="w-4 h-4" />

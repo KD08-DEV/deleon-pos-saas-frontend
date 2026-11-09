@@ -1,3 +1,4 @@
+import { financeErrorMessage } from "./lib/financeErrorMessage";
 import {
     BrowserRouter as Router,
     Routes,
@@ -36,6 +37,8 @@ import { getUserData } from "./https"; // ajusta si tu export está en otra ruta
 
 
 import { QK } from "./queryKeys";
+import { refreshTableViews } from "./lib/tableOperations";
+import { refreshSalesViews } from "./lib/refreshSalesViews";
 import api, { getScope, setScope } from "./lib/api";
 import {
     formatMoney,
@@ -76,13 +79,14 @@ function SessionHeartbeat() {
         if (!isAuth || !userData?._id) return;
 
         let cancelled = false;
+        const heartbeatToken = localStorage.getItem("token");
 
         const ping = async () => {
             try {
                 await getUserData(); // <- ESTE debe ser el real en tu proyecto
             } catch (err) {
                 // si por alguna razón no entró por el interceptor, fuerza logout aquí también
-                if (err?.response?.status === 401) {
+                if (!cancelled && localStorage.getItem("token") === heartbeatToken && err?.response?.status === 401) {
                     dispatch(removeUser());
                     localStorage.removeItem("token");
                     if (window.location.pathname !== "/auth") {
@@ -153,7 +157,7 @@ function RealtimeTenantConfig() {
 
         if (!socketRef.current) {
             socketRef.current = connectSocket({ baseUrl: SOCKET_URL, tenantId });
-            socketRef.current.__tenantId = tenantId;
+            if (socketRef.current) socketRef.current.__tenantId = tenantId;
         }
 
         const s = socketRef.current;
@@ -181,13 +185,17 @@ function RealtimeTenantConfig() {
 
         const onTablesUpdated = (payload) => {
             if (payload?.tenantId && payload.tenantId !== tenantId) return;
-
-            queryClient.invalidateQueries({ queryKey: QK.TABLES, exact: true });
-            queryClient.invalidateQueries({ queryKey: QK.ORDERS, exact: true });
-
-            queryClient.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
-            queryClient.refetchQueries({ queryKey: QK.ORDERS, exact: true, type: "active" });
+            if (payload?.clientId && String(payload.clientId) !== String(getScope().clientId || "default")) return;
+            void refreshTableViews(queryClient);
         };
+        const onConnect = () => { void refreshTableViews(queryClient); };
+        const onOrderUpdated = payload => {
+            if (payload?.tenantId && payload.tenantId !== tenantId) return;
+            if (payload?.clientId && String(payload.clientId) !== String(getScope().clientId || "default")) return;
+            void refreshSalesViews(queryClient);
+        };
+        s.on("tenant:orderUpdated", onOrderUpdated);
+        s.on("connect", onConnect);
 
         s.off("tenant:configUpdated", onConfigUpdated);
         s.on("tenant:configUpdated", onConfigUpdated);
@@ -196,6 +204,8 @@ function RealtimeTenantConfig() {
         s.on("tenant:tablesUpdated", onTablesUpdated);
 
         return () => {
+            s.off("tenant:orderUpdated", onOrderUpdated);
+            s.off("connect", onConnect);
             s.off("tenant:configUpdated", onConfigUpdated);
             s.off("tenant:tablesUpdated", onTablesUpdated);
         };
@@ -245,6 +255,7 @@ function Layout() {
     const [pendingCashSession, setPendingCashSession] = useState(null);
     const [cashGateMode, setCashGateMode] = useState("open"); // "open" | "pending-close"
     const [openModal, setOpenModal] = useState(false);
+    const openingPending = useRef(false);
     const [openingAmount, setOpeningAmount] = useState("");
     const [cashGateError, setCashGateError] = useState("");
     const [showCloseCashConfirm, setShowCloseCashConfirm] = useState(false);
@@ -741,14 +752,16 @@ function Layout() {
     }, [isCajera, isCustomerDisplayRoute]);
 
     const handleOpenCash = async () => {
+        if (openingPending.current) return;
         setCashGateError("");
         const amount = Number(openingAmount || 0);
-        if (!amount || amount <= 0) {
+        if (!Number.isFinite(amount) || amount <= 0) {
             setCashGateError("Introduce un monto válido para la apertura.");
             return;
         }
 
         try {
+            openingPending.current = true;
             setCashGateLoading(true);
             const activeRegisterId =
                 activeCashRegisterId ||
@@ -801,10 +814,10 @@ function Layout() {
             }
 
             setCashGateError(
-                e?.response?.data?.message ||
-                "No se pudo abrir la caja. Verifica permisos y endpoint /cash-session/open."
+                financeErrorMessage(e, "No se pudo abrir la caja. Inténtalo de nuevo.")
             );
         } finally {
+            openingPending.current = false;
             setCashGateLoading(false);
         }
     };
@@ -879,7 +892,7 @@ function Layout() {
                                     </div>
 
                                     <div className="text-sm text-white/60 mt-3">{t("cashGate.openingFloat")}</div>
-                                    <div className="text-lg font-semibold text-yellow-400">
+                                    <div className="text-lg font-semibold text-sky-400">
                                         {money(
                                             pendingCashSession
                                                 ?.openingFloatInitial ||
@@ -922,7 +935,7 @@ function Layout() {
                                                 }`
                                             );
                                         }}
-                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                        className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3"
                                     >
                                         {t("cashGate.goToClose")}
                                     </button>
@@ -962,7 +975,7 @@ function Layout() {
                                         type="button"
                                         onClick={handleOpenCash}
                                         disabled={cashGateLoading}
-                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3 disabled:opacity-60"
+                                        className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3 disabled:opacity-60"
                                     >
                                         {cashGateLoading ? t("cashGate.saving") : t("cashGate.saveOpening")}
                                     </button>
@@ -999,7 +1012,7 @@ function Layout() {
                                             setShowCloseCashConfirm(false);
                                             setOpenModal(false);
                                         }}
-                                        className="flex-1 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                        className="flex-1 rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3"
                                     >
                                         {t("cashGate.close")}
                                     </button>

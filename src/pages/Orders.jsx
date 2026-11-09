@@ -1529,7 +1529,7 @@ const Orders = () => {
                     className="flex flex-col gap-4 px-4 sm:px-6 py-6"
                 >
 
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex flex-col gap-3">
 
                         <div className="flex items-center gap-4">
 
@@ -1571,13 +1571,13 @@ const Orders = () => {
                         </div>
 
 
-                        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                        <div className="orders-toolbar flex flex-wrap items-center gap-2 min-w-0">
 
                             {mayViewHistory && (
                                 <button
                                     type="button"
                                     onClick={() => setShowGlobalHistory(true)}
-                                    className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/35 bg-amber-400/10 px-4 py-2.5 text-sm font-semibold text-amber-200 transition-colors hover:bg-amber-400/20"
+                                    className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-200 transition-colors hover:bg-sky-400/20"
                                 >
                                     <History className="h-4 w-4" />
                                     {t("ordersPage.correctionHistoryAll")}
@@ -1589,7 +1589,7 @@ const Orders = () => {
                                 FILTRO DE FECHA
                             ========================== */}
 
-                            <div className="flex items-center gap-1 rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1 shadow-lg overflow-x-auto">
+                            <div className="flex flex-wrap items-center gap-1 max-w-full rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1">
 
                                 <div className="hidden sm:flex items-center gap-1 px-2 text-[#9ca3af] text-xs whitespace-nowrap">
 
@@ -1626,7 +1626,7 @@ const Orders = () => {
                                                     )
                                                 }
 
-                                                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
+                                                className={`px-2 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                                                     isActive
                                                         ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
                                                         : "text-[#ababab] hover:bg-[#222] hover:text-white border border-transparent"
@@ -1669,7 +1669,7 @@ const Orders = () => {
                                         )
                                     }
 
-                                    className="flex items-center justify-between gap-3 min-w-[220px] rounded-xl border border-[#2a2a2a]/70 bg-[#171717] px-3 py-2.5 text-sm text-[#f5f5f5] shadow-lg hover:border-blue-500/40 transition-all"
+                                    className="flex items-center justify-between gap-2 min-w-[160px] rounded-xl border border-[#2a2a2a]/70 bg-[#171717] px-3 py-2 text-xs text-[#f5f5f5] hover:border-blue-500/40 transition-all"
                                 >
 
                                     <div className="flex items-center gap-2 min-w-0">
@@ -1863,7 +1863,7 @@ const Orders = () => {
                                 MODO DE VISTA
                             ========================== */}
 
-                            <div className="flex items-center gap-1 rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1 shadow-lg overflow-x-auto">
+                            <div className="flex flex-wrap items-center gap-1 max-w-full rounded-xl border border-[#2a2a2a]/70 bg-[#171717] p-1">
 
                                 {VIEW_MODES.map(
                                     (
@@ -1888,7 +1888,7 @@ const Orders = () => {
                                                     )
                                                 }
 
-                                                className={`px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
+                                                className={`px-2 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                                                     isActive
                                                         ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
                                                         : "text-[#ababab] hover:bg-[#222] hover:text-white border border-transparent"

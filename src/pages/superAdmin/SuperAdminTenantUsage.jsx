@@ -51,7 +51,7 @@ const TenantUsageCard = ({ tenant }) => {
             <div className="flex justify-between mb-4">
                 <div>
                     <h2 className="text-xl font-semibold text-white">{tenant.name}</h2>
-                    <span className="text-xs px-2 py-1 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 rounded">
+                    <span className="text-xs px-2 py-1 bg-sky-500/10 border border-sky-500/40 text-sky-400 rounded">
                         {plan.toUpperCase()}
                     </span>
                 </div>
@@ -59,7 +59,7 @@ const TenantUsageCard = ({ tenant }) => {
                 <a
                     href="https://wa.link/vzbps9"
                     target="_blank"
-                    className="bg-yellow-500 text-black px-4 py-2 rounded-lg flex items-center gap-2"
+                    className="bg-sky-500 text-black px-4 py-2 rounded-lg flex items-center gap-2"
                 >
                     <MdUpgrade /> Upgrade
                 </a>
@@ -77,7 +77,7 @@ const TenantUsageCard = ({ tenant }) => {
 
                         <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
                             <div
-                                className="h-2 bg-yellow-500"
+                                className="h-2 bg-sky-500"
                                 style={{ width: `${progress(r.used, r.max)}%` }}
                             />
                         </div>

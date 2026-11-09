@@ -30,7 +30,7 @@ const errText = (e) => {
 const chipClass = (s) => ({
   verified: "text-emerald-300 border-emerald-600/50 bg-emerald-900/20",
   revoked: "text-red-300 border-red-600/50 bg-red-900/20",
-  pending: "text-amber-300 border-amber-600/50 bg-amber-900/20",
+  pending: "text-sky-300 border-sky-600/50 bg-sky-900/20",
 }[s] || "text-gray-300 border-neutral-700");
 const btn = "rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
 
@@ -140,7 +140,7 @@ export default function SuperAdminEcfAuthorizations() {
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-12 text-gray-100">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><h1 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck className="text-amber-400"/> Autorizaciones e-CF · DGII</h1>
+      <div><h1 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck className="text-sky-400"/> Autorizaciones e-CF · DGII</h1>
         <p className="mt-2 max-w-3xl text-sm text-gray-400">Consulta manual del estatus del contribuyente y verificación independiente de su incorporación a DeLeonSoft. Tú no necesitas ser el emisor de tus clientes. No consulta automáticamente ni modifica registros DGII; no activa producción.</p>
       </div>
       <button type="button" onClick={() => { void refresh(); if (selected) void loadDetail(selected); }} className={`${btn} flex gap-2 bg-neutral-800 hover:bg-neutral-700`}><RefreshCw size={16}/> Actualizar</button>
@@ -155,7 +155,7 @@ export default function SuperAdminEcfAuthorizations() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar empresa o RNC" className="w-full rounded-lg bg-neutral-900 border border-neutral-700 p-2.5 pl-9 text-sm text-white"/></label>
         <div className="mt-3 max-h-[600px] overflow-y-auto space-y-1">
           {loading ? <p className="p-3 text-sm text-gray-400">Cargando…</p> : filtered.length === 0 ? <p className="p-3 text-sm text-gray-400">No se encontraron empresas e-CF.</p> : filtered.map(r =>
-            <button key={r.tenantId} type="button" onClick={() => setSelected(r.tenantId)} className={`w-full rounded-lg p-3 text-left border transition-colors ${selected === r.tenantId ? "bg-amber-400/10 border-amber-500/50" : "border-transparent hover:bg-neutral-800"}`}>
+            <button key={r.tenantId} type="button" onClick={() => setSelected(r.tenantId)} className={`w-full rounded-lg p-3 text-left border transition-colors ${selected === r.tenantId ? "bg-sky-400/10 border-sky-500/50" : "border-transparent hover:bg-neutral-800"}`}>
               <p className="font-medium break-words text-sm">{r.company}</p><p className="text-xs text-gray-400 my-1">RNC {r.issuer?.rnc || "No configurado"}</p>
               <span className={`inline-flex px-2 py-0.5 rounded-full text-xs border ${chipClass(r.authorizationState)}`}>{labels[r.authorizationState]}</span>
             </button>)}</div>
@@ -171,7 +171,7 @@ export default function SuperAdminEcfAuthorizations() {
               <div><p className="text-xs text-gray-400">Estado técnico de certificación</p><p className="mt-1">{detail.certificationStatus}</p></div>
               <div><p className="text-xs text-gray-400">Fiscal / empresa</p><p className="mt-1">{detail.fiscalEnabled ? "Fiscal habilitado" : "Fiscal no habilitado"} · {detail.tenantStatus}</p></div>
             </div>
-            <div className="border-t border-neutral-700 pt-4 space-y-3"><h3 className="font-semibold flex gap-2 items-center"><FileCheck2 size={18} className="text-amber-400"/> Certificado digital (solo lectura)</h3>
+            <div className="border-t border-neutral-700 pt-4 space-y-3"><h3 className="font-semibold flex gap-2 items-center"><FileCheck2 size={18} className="text-sky-400"/> Certificado digital (solo lectura)</h3>
               <dl className="grid sm:grid-cols-2 gap-3 text-sm">
                 <div><dt className="text-gray-400 text-xs">Titular del certificado X.509</dt><dd className="break-words mt-1">{certificate.subjectName || "No disponible en certificado registrado anteriormente"}</dd></div>
                 <div><dt className="text-gray-400 text-xs">Número de serie</dt><dd className="font-mono break-all mt-1">{certificate.serialNumber || "No disponible"}</dd></div>
@@ -199,12 +199,12 @@ export default function SuperAdminEcfAuthorizations() {
               <p className="text-gray-400">{detail.certificationVerification?.verifiedAt ? `Confirmada internamente · ${fmt(detail.certificationVerification.verifiedAt)}` : "Sin comprobación del proceso de certificación o cambio de software ante DGII"}</p>
               <p className="text-xs text-gray-400">La consulta pública de RNC no acredita por sí sola que DeLeonSoft sea el software incorporado del emisor.</p>
             </div>
-            {detail.productionGuard?.errors?.length > 0 && <div className="rounded-lg border border-amber-800/50 p-3 text-xs text-amber-200"><p className="font-semibold mb-1">Controles que impiden validar para producción:</p><p className="break-words">{detail.productionGuard.errors.join(" · ")}</p></div>}
+            {detail.productionGuard?.errors?.length > 0 && <div className="rounded-lg border border-sky-800/50 p-3 text-xs text-sky-200"><p className="font-semibold mb-1">Controles que impiden validar para producción:</p><p className="break-words">{detail.productionGuard.errors.join(" · ")}</p></div>}
           </section>
           {detail.authorizationState !== "verified" && <>
-            <section className="rounded-xl border border-amber-800/60 bg-[#171511] p-5 space-y-4">
+            <section className="rounded-xl border border-sky-800/60 bg-[#111517] p-5 space-y-4">
               <h3 className="font-semibold flex gap-2 items-center"><ShieldCheck size={18}/> 1. Registrar verificación del emisor</h3>
-              <p className="text-sm text-amber-200">Verifica manualmente el RNC del CLIENTE en el portal oficial de DGII. No uses el RNC de otra empresa y no marques «Sí» si la consulta no lo muestra.</p>
+              <p className="text-sm text-sky-200">Verifica manualmente el RNC del CLIENTE en el portal oficial de DGII. No uses el RNC de otra empresa y no marques «Sí» si la consulta no lo muestra.</p>
               <a className="inline-flex gap-2 items-center text-sm text-sky-300 underline hover:text-sky-200" target="_blank" rel="noopener noreferrer" href="https://dgii.gov.do/">Abrir portal oficial DGII <ExternalLink size={15}/></a>
               <div className="grid sm:grid-cols-2 gap-4 text-sm">
                 <label className="block">Método de verificación
@@ -234,7 +234,7 @@ export default function SuperAdminEcfAuthorizations() {
               </label>
               <label className="flex gap-3 items-start text-sm"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-1"/><span>Confirmo que comprobé los datos de este emisor en una fuente auténtica. No equivale a certificar DeLeonSoft ni a habilitar producción.</span></label>
               <label className="block text-sm">Escribe <strong>VERIFIQUE AUTORIZACION DGII</strong><input value={approvePhrase} onChange={e => setApprovePhrase(e.target.value)} autoComplete="off" className="block w-full mt-1 rounded-lg bg-neutral-900 border border-neutral-600 p-2.5 text-white"/></label>
-              <button type="button" disabled={!mayApprove || busy} onClick={approve} className={`${btn} bg-amber-400 text-black hover:bg-amber-300`}>Guardar verificación (sin activar producción)</button>
+              <button type="button" disabled={!mayApprove || busy} onClick={approve} className={`${btn} bg-sky-400 text-black hover:bg-sky-300`}>Guardar verificación (sin activar producción)</button>
             </section>
             <section className="rounded-xl border border-neutral-700 bg-[#151515] p-5 space-y-3">
               <h3 className="font-semibold flex gap-2 items-center"><FileUp size={19}/> Adjunto PDF opcional</h3>

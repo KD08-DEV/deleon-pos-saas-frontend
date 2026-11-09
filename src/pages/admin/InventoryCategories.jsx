@@ -39,10 +39,10 @@ const iconOptions = [
 ];
 
 const colorOptions = [
-    "#f6b100",
+    "#38bdf8",
     "#3b82f6",
     "#10b981",
-    "#f59e0b",
+    "#0babf5",
     "#ef4444",
     "#8b5cf6",
     "#ec4899",
@@ -139,7 +139,7 @@ const InventoryCategories = () => {
         useState({
             name: "",
             description: "",
-            color: "#f6b100",
+            color: "#38bdf8",
             icon: "Package",
         });
 
@@ -255,7 +255,7 @@ const InventoryCategories = () => {
             setCategoryForm({
                 name: "",
                 description: "",
-                color: "#f6b100",
+                color: "#38bdf8",
                 icon: "Package",
             });
 
@@ -291,7 +291,7 @@ const InventoryCategories = () => {
 
             color:
                 category.color ||
-                "#f6b100",
+                "#38bdf8",
 
             icon:
                 category.icon ||
@@ -565,7 +565,7 @@ const InventoryCategories = () => {
     ) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t(
@@ -604,7 +604,7 @@ const InventoryCategories = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Tag className="w-6 h-6 text-[#f6b100]" />
+                        <Tag className="w-6 h-6 text-[#38bdf8]" />
 
                         {t(
                             "inventoryCategories.title"
@@ -623,7 +623,7 @@ const InventoryCategories = () => {
                     onClick={
                         openAddModal
                     }
-                    className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all"
                 >
                     <Plus className="w-4 h-4" />
 
@@ -660,7 +660,7 @@ const InventoryCategories = () => {
                                     .value
                             )
                         }
-                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                     />
                 </div>
             </div>
@@ -696,7 +696,7 @@ const InventoryCategories = () => {
                             key={
                                 category._id
                             }
-                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#f6b100]/50 transition-all group"
+                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#38bdf8]/50 transition-all group"
                             style={{
                                 borderLeftColor:
                                 category.color,
@@ -756,7 +756,7 @@ const InventoryCategories = () => {
                                                 category
                                             )
                                         }
-                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#f6b100] transition-colors"
+                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#38bdf8] transition-colors"
                                         title={
                                             t(
                                                 "inventoryCategories.actions.edit"
@@ -942,7 +942,7 @@ const InventoryCategories = () => {
                                             })
                                         )
                                     }
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     required
                                 />
 
@@ -981,7 +981,7 @@ const InventoryCategories = () => {
                                     rows={
                                         3
                                     }
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50 resize-none"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50 resize-none"
                                 />
 
                             </div>
@@ -1072,8 +1072,8 @@ const InventoryCategories = () => {
                                             })
                                         )
                                     }
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50 font-mono"
-                                    placeholder="#f6b100"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50 font-mono"
+                                    placeholder="#38bdf8"
                                 />
 
                             </div>
@@ -1108,7 +1108,7 @@ const InventoryCategories = () => {
                                             })
                                         )
                                     }
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 >
 
                                     {iconOptions.map(
@@ -1158,7 +1158,7 @@ const InventoryCategories = () => {
                                         createMutation.isPending ||
                                         updateMutation.isPending
                                     }
-                                    className="flex-1 px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="flex-1 px-4 py-2.5 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
 
                                     <Save className="w-4 h-4" />
