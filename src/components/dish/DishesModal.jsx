@@ -148,7 +148,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                                     value={dishData.sellMode}
                                     onChange={handleInputChange}
                                     className="w-full appearance-none rounded-xl bg-[#0b0b0b] border border-gray-800 px-4 py-3 text-white
-                 focus:outline-none focus:ring-2 focus:ring-yellow-500/40"
+                 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                                 >
                                     <option className="bg-[#0b0b0b] text-white" value="unit">Unidad / Plato</option>
                                     <option className="bg-[#0b0b0b] text-white" value="weight">Libra / Peso</option>
@@ -172,7 +172,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                                             value={dishData.weightUnit}
                                             onChange={handleInputChange}
                                             className="w-full appearance-none rounded-xl bg-[#0b0b0b] border border-gray-800 px-4 py-3 text-white
-                 focus:outline-none focus:ring-2 focus:ring-yellow-500/40"
+                 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                                         >
                                             <option className="bg-[#0b0b0b] text-white" value="lb">Libra (lb)</option>
                                             <option className="bg-[#0b0b0b] text-white" value="kg">Kilogramo (kg)</option>
@@ -225,7 +225,7 @@ const DishModal = ({ setIsDishesModalOpen }) => {
                     <button
                         type="submit"
                         disabled={dishMutation.isPending}
-                        className="w-full rounded-lg py-3 text-lg bg-yellow-400 text-gray-900 font-bold disabled:opacity-60"
+                        className="w-full rounded-lg py-3 text-lg bg-sky-400 text-gray-900 font-bold disabled:opacity-60"
                     >
                         {dishMutation.isPending ? "Guardando..." : "Agregar plato"}
                     </button>

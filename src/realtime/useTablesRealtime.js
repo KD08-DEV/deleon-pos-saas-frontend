@@ -1,7 +1,7 @@
+import { refreshTableViews } from "../lib/tableOperations";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {  connectSocket, getSocket } from "./socket";
-import { QK } from "../queryKeys";
 import { getScope } from "../lib/api";
 
 const EVENTS = ["tenant:tablesUpdated", "tablesUpdated", "tenant:orderUpdated"];
@@ -25,8 +25,7 @@ export const useTablesRealtime = ({ tenantId, baseUrl } = {}) => {
             const activeClientId = String(getScope().clientId || "default");
             if (payload?.clientId && String(payload.clientId) !== activeClientId) return;
 
-            qc.invalidateQueries({ queryKey: QK.TABLES, exact: true });
-            qc.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
+            void refreshTableViews(qc);
         };
 
         EVENTS.forEach((ev) => {
@@ -36,7 +35,7 @@ export const useTablesRealtime = ({ tenantId, baseUrl } = {}) => {
 
         // al reconectar, fuerza refresh inmediato (clave para “instant”)
         const onConnect = () => {
-            qc.refetchQueries({ queryKey: QK.TABLES, exact: true, type: "active" });
+            void refreshTableViews(qc);
         };
         socket.off("connect", onConnect);
         socket.on("connect", onConnect);

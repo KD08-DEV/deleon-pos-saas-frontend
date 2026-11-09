@@ -2651,8 +2651,8 @@ const MenuContainer = ({
                         text-[#f5f5f5]
                         outline-none
                         focus:ring-1
-                        focus:ring-[#f6b100]
-                        focus:border-[#f6b100]
+                        focus:ring-[#38bdf8]
+                        focus:border-[#38bdf8]
                     "
                 />
 
@@ -2758,7 +2758,7 @@ const MenuContainer = ({
 
                                 <div>
 
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#f6b100]">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#38bdf8]">
 
                                         {editingCartEntry
                                             ? t(
@@ -2900,7 +2900,7 @@ const MenuContainer = ({
                                                                     className={`flex items-center justify-between gap-3 rounded-xl border p-3 transition ${
                                                                         selectedQty >
                                                                         0
-                                                                            ? "border-[#f6b100]/40 bg-[#f6b100]/10"
+                                                                            ? "border-[#38bdf8]/40 bg-[#38bdf8]/10"
                                                                             : "border-white/10 bg-black/20"
                                                                     }`}
                                                                 >
@@ -2912,7 +2912,7 @@ const MenuContainer = ({
                                                                         </p>
 
 
-                                                                        <p className="mt-1 text-sm font-bold text-[#f6b100]">
+                                                                        <p className="mt-1 text-sm font-bold text-[#38bdf8]">
 
                                                                             +{" "}
 
@@ -3009,7 +3009,7 @@ const MenuContainer = ({
                                                                             items-center
                                                                             justify-center
                                                                             rounded-full
-                                                                            bg-[#f6b100]
+                                                                            bg-[#38bdf8]
                                                                             text-black
                                                                             disabled:opacity-30
                                                                         "
@@ -3190,7 +3190,7 @@ const MenuContainer = ({
                                             text-sm
                                             text-white
                                             outline-none
-                                            focus:border-[#f6b100]/50
+                                            focus:border-[#38bdf8]/50
                                         "
                                     />
 
@@ -3340,7 +3340,7 @@ const MenuContainer = ({
                                                     </span>
 
 
-                                                    <span className="text-[#f6b100]">
+                                                    <span className="text-[#38bdf8]">
 
                                                         {money(
                                                             finalTotal
@@ -3392,12 +3392,12 @@ const MenuContainer = ({
                                                     className="
                                                         w-full
                                                         rounded-xl
-                                                        bg-[#f6b100]
+                                                        bg-[#38bdf8]
                                                         px-4
                                                         py-3
                                                         font-bold
                                                         text-black
-                                                        hover:bg-[#ffd633]
+                                                        hover:bg-[#7dd3fc]
                                                     "
                                                 >
 
@@ -3571,7 +3571,7 @@ const MenuContainer = ({
                                         text-white
                                         text-sm
                                         focus:outline-none
-                                        focus:border-[#f6b100]/50
+                                        focus:border-[#38bdf8]/50
                                     "
 
                                     placeholder={
@@ -3933,14 +3933,14 @@ const MenuContainer = ({
 
                                                 <div className="flex items-center gap-3">
 
-                                                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#f6b100] shadow-[0_0_12px_rgba(246,177,0,0.5)]" />
+                                                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.5)]" />
 
 
                                                     <h3
                                                         className={`text-lg tracking-wide font-semibold transition-colors ${
                                                             isOpen
-                                                                ? "text-[#f6b100]"
-                                                                : "text-[#f5f5f5] group-hover:text-[#f6b100]"
+                                                                ? "text-[#38bdf8]"
+                                                                : "text-[#f5f5f5] group-hover:text-[#38bdf8]"
                                                         }`}
                                                     >
 
@@ -4153,7 +4153,7 @@ const MenuContainer = ({
                                                                                         </h4>
 
 
-                                                                                        <p className="text-[#f6b100] font-semibold mt-2">
+                                                                                        <p className="text-[#38bdf8] font-semibold mt-2">
 
                                                                                             {money(
                                                                                                 Number(
@@ -4243,8 +4243,8 @@ const MenuContainer = ({
                                                                                                         text-[#f5f5f5]
                                                                                                         outline-none
                                                                                                         focus:ring-1
-                                                                                                        focus:ring-[#f6b100]
-                                                                                                        focus:border-[#f6b100]
+                                                                                                        focus:ring-[#38bdf8]
+                                                                                                        focus:border-[#38bdf8]
                                                                                                     "
 
                                                                                                         placeholder={
@@ -4255,7 +4255,7 @@ const MenuContainer = ({
                                                                                                     />
 
 
-                                                                                                    <p className="mt-2 text-sm font-semibold text-[#f6b100]">
+                                                                                                    <p className="mt-2 text-sm font-semibold text-[#38bdf8]">
 
                                                                                                         {money(
                                                                                                             Number(
@@ -4423,7 +4423,7 @@ const MenuContainer = ({
                                                                                                     "
                                                                                                     >
 
-                                                                                                    <span className="rounded-full border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f6b100]">
+                                                                                                    <span className="rounded-full border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#38bdf8]">
 
                                                                                                         {t(
                                                                                                             "menu.added"
@@ -4469,9 +4469,9 @@ const MenuContainer = ({
                                                                                                             ],
 
                                                                                                             boxShadow: [
-                                                                                                                "0 0 0 rgba(246,177,0,0)",
-                                                                                                                "0 0 0 6px rgba(246,177,0,0.10)",
-                                                                                                                "0 0 0 rgba(246,177,0,0)",
+                                                                                                                "0 0 0 rgba(56,189,248,0)",
+                                                                                                                "0 0 0 6px rgba(56,189,248,0.10)",
+                                                                                                                "0 0 0 rgba(56,189,248,0)",
                                                                                                             ],
                                                                                                         }
                                                                                                         : {
@@ -4479,7 +4479,7 @@ const MenuContainer = ({
                                                                                                                 1,
 
                                                                                                             boxShadow:
-                                                                                                                "0 0 0 rgba(246,177,0,0)",
+                                                                                                                "0 0 0 rgba(56,189,248,0)",
                                                                                                         }
                                                                                                 }
 

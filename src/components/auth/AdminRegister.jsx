@@ -1049,7 +1049,7 @@ const AdminRegister = () => {
 
                         <div>
 
-                            <h1 className="text-2xl sm:text-3xl font-bold text-[#f6b100]">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-[#38bdf8]">
 
                                 {t(
                                     "adminRegisterPage.title"
@@ -1078,7 +1078,7 @@ const AdminRegister = () => {
                                 )
                             }
 
-                            className="bg-[#f6b100] text-black px-4 py-2 rounded-lg font-semibold hover:bg-[#ffd633] text-sm"
+                            className="bg-[#38bdf8] text-black px-4 py-2 rounded-lg font-semibold hover:bg-[#7dd3fc] text-sm"
                         >
 
                             ←{" "}
@@ -1107,7 +1107,7 @@ const AdminRegister = () => {
                             className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                                 activeTab ===
                                 "users"
-                                    ? "bg-[#f6b100] text-black"
+                                    ? "bg-[#38bdf8] text-black"
                                     : "bg-[#262626] text-[#ababab] hover:bg-[#333]"
                             }`}
                         >
@@ -1131,7 +1131,7 @@ const AdminRegister = () => {
                             className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                                 activeTab ===
                                 "registers"
-                                    ? "bg-[#f6b100] text-black"
+                                    ? "bg-[#38bdf8] text-black"
                                     : "bg-[#262626] text-[#ababab] hover:bg-[#333]"
                             }`}
                         >
@@ -1163,7 +1163,7 @@ const AdminRegister = () => {
                                         {t(
                                             "adminRegisterPage.users.formTitle"
                                         )}
-                                            <span className="ml-2 text-amber-300 text-xs">({activeBranchName})</span>
+                                            <span className="ml-2 text-sky-300 text-xs">({activeBranchName})</span>
 
                                     </h2>
 
@@ -1208,7 +1208,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
 
                                                 required
                                             />
@@ -1248,7 +1248,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
 
                                                 required
                                             />
@@ -1297,7 +1297,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
                                             />
 
                                         </div>
@@ -1331,7 +1331,7 @@ const AdminRegister = () => {
 
                                                 placeholder="••••••••"
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
 
                                                 required
                                             />
@@ -1375,7 +1375,7 @@ const AdminRegister = () => {
                                                             className={`px-4 py-3 rounded-lg font-semibold transition text-sm ${
                                                                 formData.role ===
                                                                 roleOption.value
-                                                                    ? "bg-[#f6b100] text-black"
+                                                                    ? "bg-[#38bdf8] text-black"
                                                                     : "bg-[#262626] text-[#ababab] hover:bg-[#333]"
                                                             }`}
                                                         >
@@ -1402,7 +1402,7 @@ const AdminRegister = () => {
                                                     .isPending
                                             }
 
-                                            className="w-full mt-6 py-3 bg-[#f6b100] text-black font-bold rounded-lg text-lg hover:bg-[#ffd633] transition disabled:opacity-60"
+                                            className="w-full mt-6 py-3 bg-[#38bdf8] text-black font-bold rounded-lg text-lg hover:bg-[#7dd3fc] transition disabled:opacity-60"
                                         >
 
                                             {registerMutation
@@ -1444,7 +1444,7 @@ const AdminRegister = () => {
                                                 refetchUsers()
                                             }
 
-                                            className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#f6b100]"
+                                            className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#38bdf8]"
                                         >
 
                                             {t(
@@ -1456,7 +1456,7 @@ const AdminRegister = () => {
                                     </div>
 
 
-                                    <p className="text-xs text-amber-300 mb-2">Personal de: {activeBranchName}. Los límites de usuarios se aplican al negocio completo.</p>
+                                    <p className="text-xs text-sky-300 mb-2">Personal de: {activeBranchName}. Los límites de usuarios se aplican al negocio completo.</p>
                                     {usersLoading ? (
 
                                         <div className="text-sm text-[#ababab]">
@@ -1514,7 +1514,7 @@ const AdminRegister = () => {
                                                         </div>
 
 
-                                                        <div className="text-xs text-[#f6b100] mt-2">
+                                                        <div className="text-xs text-[#38bdf8] mt-2">
 
                                                             {getRoleLabel(
                                                                 item.role
@@ -1576,7 +1576,7 @@ const AdminRegister = () => {
                                                     handleCancelRegisterEdit
                                                 }
 
-                                                className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#f6b100]"
+                                                className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#38bdf8]"
                                             >
 
                                                 {t(
@@ -1630,7 +1630,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white uppercase focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white uppercase focus:ring-2 focus:ring-[#38bdf8] outline-none"
 
                                                 required
                                             />
@@ -1670,7 +1670,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
 
                                                 required
                                             />
@@ -1710,7 +1710,7 @@ const AdminRegister = () => {
                                                     )
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
                                             />
 
                                         </div>
@@ -1742,7 +1742,7 @@ const AdminRegister = () => {
                                                     handleRegisterFormChange
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
                                             />
 
                                         </div>
@@ -1773,7 +1773,7 @@ const AdminRegister = () => {
                                                     handleRegisterFormChange
                                                 }
 
-                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#f6b100] outline-none"
+                                                className="w-full bg-[#262626] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#38bdf8] outline-none"
                                             >
 
                                                 <option value="">
@@ -1833,7 +1833,7 @@ const AdminRegister = () => {
                                                     handleRegisterFormChange
                                                 }
 
-                                                className="accent-[#f6b100]"
+                                                className="accent-[#38bdf8]"
                                             />
 
 
@@ -1854,7 +1854,7 @@ const AdminRegister = () => {
                                                     .isPending
                                             }
 
-                                            className="w-full mt-4 py-3 bg-[#f6b100] text-black font-bold rounded-lg text-lg hover:bg-[#ffd633] transition disabled:opacity-60"
+                                            className="w-full mt-4 py-3 bg-[#38bdf8] text-black font-bold rounded-lg text-lg hover:bg-[#7dd3fc] transition disabled:opacity-60"
                                         >
 
                                             {editingRegisterId
@@ -1938,7 +1938,7 @@ const AdminRegister = () => {
                                                         )
                                                     }
 
-                                                    className="accent-[#f6b100]"
+                                                    className="accent-[#38bdf8]"
                                                 />
 
 
@@ -1956,7 +1956,7 @@ const AdminRegister = () => {
                                                     refetchRegisters()
                                                 }
 
-                                                className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#f6b100]"
+                                                className="text-sm bg-[#262626] px-3 py-2 rounded-lg hover:bg-[#333] text-[#38bdf8]"
                                             >
 
                                                 {t(
@@ -2024,7 +2024,7 @@ const AdminRegister = () => {
                                                                     </h3>
 
 
-                                                                    <span className="text-xs px-2 py-1 rounded-full bg-[#2d2d2d] text-[#f6b100]">
+                                                                    <span className="text-xs px-2 py-1 rounded-full bg-[#2d2d2d] text-[#38bdf8]">
 
                                                                     {
                                                                         item.code

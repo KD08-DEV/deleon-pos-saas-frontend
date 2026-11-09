@@ -1,4 +1,9 @@
-import React, { useState, memo, useCallback, useEffect } from "react";
+import CustomerManager from '../menu/CustomerManager';
+import DeleteCustomerAction from '../menu/DeleteCustomerAction';
+import useRncLookup from '../../hooks/useRncLookup';
+import api from '../../lib/api';
+import {customerErrorMessage} from '../../lib/customerErrors';
+import React, { useState, useRef, memo, useCallback, useEffect } from "react";
 import { Home, ListOrdered, Table2, Settings, Plus, Wallet } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Modal from "./Modal";
@@ -12,9 +17,9 @@ import {
 } from "../../redux/slices/customerSlice";
 
 import { removeAllItems } from "../../redux/slices/cartSlice";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { enqueueSnackbar } from "notistack";
-import { addOrder, getCustomers, createCustomer } from "../../https";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { getCustomers, createCustomer } from "../../https";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
@@ -103,6 +108,14 @@ const BottomNav = memo(() => {
         useState(false);
 
 
+    const queryClient=useQueryClient(),customerLock=useRef(false);
+    const [customerBusy,setCustomerBusy]=useState(false),[customerError,setCustomerError]=useState('');
+    const [needsConfirmation,setNeedsConfirmation]=useState(false),[distinctConfirmed,setDistinctConfirmed]=useState(false);
+    const [managerOpen,setManagerOpen]=useState(false),[managerCustomer,setManagerCustomer]=useState(null);
+    const [selectedCustomer,setSelectedCustomer]=useState(null);
+    const [taxIdentity,setTaxIdentity]=useState({countryCode:'DO',type:'RNC',value:''});
+    const rncLookup=useRncLookup({value:taxIdentity.value,name,onName:value=>{setName(value);setDistinctConfirmed(false);},enabled:isModalOpen&&taxIdentity.countryCode==='DO'&&['RNC','CEDULA'].includes(taxIdentity.type)});
+    const clearCustomer=()=>{setSelectedCustomerId(null);setSelectedCustomer(null);setName('');setPhone('');setAddress('');setTaxIdentity({countryCode:'DO',type:'RNC',value:''});setDistinctConfirmed(false);setNeedsConfirmation(false);setCustomerError('');};
     const openModal =
         useCallback(
             () => {
@@ -123,6 +136,7 @@ const BottomNav = memo(() => {
                 );
 
 
+                clearCustomer();
                 setName("");
                 setPhone("");
                 setGuestCount(0);
@@ -142,8 +156,7 @@ const BottomNav = memo(() => {
 
     const closeModal =
         useCallback(
-            () =>
-                setIsModalOpen(false),
+            () => {if(!customerLock.current)setIsModalOpen(false);},
             []
         );
 
@@ -154,10 +167,7 @@ const BottomNav = memo(() => {
      * ==========================================
      */
 
-    if (
-        userData?.role ===
-        "SuperAdmin"
-    ) {
+    const renderSuperAdmin = () => {
         return (
             <motion.div
                 initial={{
@@ -413,7 +423,7 @@ const BottomNav = memo(() => {
                                             );
                                         }}
 
-                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#f6b100] text-[#1f1f1f]"
+                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#38bdf8] text-[#1f1f1f]"
                                     >
 
                                         {t(
@@ -434,7 +444,7 @@ const BottomNav = memo(() => {
 
             </motion.div>
         );
-    }
+    };
 
 
     /*
@@ -499,6 +509,7 @@ const BottomNav = memo(() => {
     const pickCustomer = (
         customer
     ) => {
+        setSelectedCustomer(customer);setTaxIdentity(customer?.taxIdentity||{countryCode:'DO',type:'RNC',value:''});setCustomerError('');setDistinctConfirmed(false);setNeedsConfirmation(false);setIsCustomerPickerOpen(false);
         setSelectedCustomerId(
             customer?._id ||
             null
@@ -566,394 +577,25 @@ const BottomNav = memo(() => {
      * permanecen intactos.
      */
 
-    const createOrder =
-        useMutation({
-            mutationFn:
-                (
-                    payload
-                ) =>
-                    addOrder(
-                        payload
-                    ),
-
-            onSuccess:
-                (
-                    response,
-                    variables
-                ) => {
-                    const orderId =
-                        response
-                            ?.data
-                            ?.data
-                            ?._id;
-
-
-                    if (
-                        !orderId
-                    ) {
-                        enqueueSnackbar(
-                            t(
-                                "bottomNav.messages.createOrderMissingId"
-                            ),
-                            {
-                                variant:
-                                    "error",
-                            }
-                        );
-
-                        return;
-                    }
-
-
-                    const details =
-                        variables
-                            ?.customerDetails ||
-                        {};
-
-
-                    dispatch(
-                        setCustomer({
-                            customerId:
-                                variables
-                                    ?.customerId ||
-                                null,
-
-                            name:
-                                details
-                                    ?.name ||
-                                "Consumidor Final",
-
-                            phone:
-                                details
-                                    ?.phone ||
-                                "",
-
-                            address:
-                                details
-                                    ?.address ||
-                                "",
-
-                            guests:
-                                Number(
-                                    details
-                                        ?.guests ||
-                                    0
-                                ),
-                        })
-                    );
-
-
-                    setName("");
-                    setPhone("");
-                    setGuestCount(0);
-                    setAddress("");
-                    setSearch("");
-                    setSelectedCustomerId(null);
-                    setShowResults(false);
-
-                    closeModal();
-
-
-                    navigate(
-                        `/menu?orderId=${orderId}`
-                    );
-                },
-
-            onError:
-                (
-                    error
-                ) => {
-                    enqueueSnackbar(
-                        error
-                            ?.response
-                            ?.data
-                            ?.message ||
-                        t(
-                            "bottomNav.messages.createOrderFailed"
-                        ),
-                        {
-                            variant:
-                                "error",
-                        }
-                    );
-                },
-        });
-
-
-    const handleCreateOrder =
-        async () => {
-            const cleanName =
-                String(
-                    name ||
-                    ""
-                ).trim();
-
-
-            const cleanPhone =
-                String(
-                    phone ||
-                    ""
-                ).trim();
-
-
-            const cleanAddress =
-                String(
-                    address ||
-                    ""
-                ).trim();
-
-
-            const guests =
-                Number(
-                    guestCount ||
-                    0
-                );
-
-
-            const finalName =
-                cleanName ||
-                "Consumidor Final";
-
-
-            const openTablePickerWithCustomer =
-                (
-                    customerPayload
-                ) => {
-                    dispatch(
-                        setCustomer(
-                            customerPayload
-                        )
-                    );
-
-
-                    dispatch(
-                        setDraftContext({
-                            table:
-                                null,
-
-                            isVirtual:
-                                false,
-
-                            virtualType:
-                                null,
-
-                            orderSource:
-                                "DINE_IN",
-                        })
-                    );
-
-
-                    setName("");
-                    setPhone("");
-                    setGuestCount(0);
-                    setAddress("");
-                    setSearch("");
-                    setSelectedCustomerId(null);
-                    setShowResults(false);
-
-                    closeModal();
-
-
-                    navigate(
-                        "/tables"
-                    );
-                };
-
-
-            try {
-                let resolvedCustomerId =
-                    selectedCustomerId ||
-                    null;
-
-
-                let resolvedName =
-                    finalName;
-
-
-                let resolvedPhone =
-                    cleanPhone;
-
-
-                let resolvedAddress =
-                    cleanAddress;
-
-
-                if (
-                    !resolvedCustomerId
-                ) {
-                    const shouldCreateCustomer =
-                        Boolean(
-                            cleanName
-                        ) ||
-                        Boolean(
-                            cleanPhone
-                        );
-
-
-                    if (
-                        shouldCreateCustomer
-                    ) {
-                        const created =
-                            await createCustomerMutation
-                                .mutateAsync({
-                                    name:
-                                        cleanName ||
-                                        "Consumidor Final",
-
-                                    phone:
-                                    cleanPhone,
-
-                                    address:
-                                    cleanAddress,
-                                });
-
-
-                        const createdCustomer =
-                            created
-                                ?.data
-                                ?.data;
-
-
-                        resolvedCustomerId =
-                            createdCustomer
-                                ?._id ||
-                            null;
-
-
-                        resolvedName =
-                            createdCustomer
-                                ?.name ||
-                            finalName;
-
-
-                        resolvedPhone =
-                            createdCustomer
-                                ?.phone ||
-                            cleanPhone;
-
-
-                        resolvedAddress =
-                            createdCustomer
-                                ?.address ||
-                            cleanAddress;
-                    }
-                }
-
-
-                openTablePickerWithCustomer({
-                    customerId:
-                    resolvedCustomerId,
-
-                    name:
-                    resolvedName,
-
-                    phone:
-                    resolvedPhone,
-
-                    address:
-                    resolvedAddress,
-
-                    guests,
-                });
-
-            } catch (
-                error
-                ) {
-                const status =
-                    error
-                        ?.response
-                        ?.status;
-
-
-                const code =
-                    error
-                        ?.response
-                        ?.data
-                        ?.code;
-
-
-                if (
-                    status ===
-                    409 &&
-                    code ===
-                    "PHONE_ALREADY_EXISTS"
-                ) {
-                    const existing =
-                        error
-                            ?.response
-                            ?.data
-                            ?.data;
-
-
-                    if (
-                        existing?._id
-                    ) {
-                        enqueueSnackbar(
-                            t(
-                                "bottomNav.messages.phoneExists"
-                            ),
-                            {
-                                variant:
-                                    "info",
-                            }
-                        );
-
-
-                        openTablePickerWithCustomer({
-                            customerId:
-                            existing._id,
-
-                            name:
-                                existing.name ||
-                                cleanName ||
-                                "Consumidor Final",
-
-                            phone:
-                                existing.phone ||
-                                cleanPhone,
-
-                            address:
-                                existing.address ||
-                                cleanAddress,
-
-                            guests,
-                        });
-
-
-                        return;
-                    }
-                }
-
-
-                enqueueSnackbar(
-                    t(
-                        "bottomNav.messages.customerSaveFailed"
-                    ),
-                    {
-                        variant:
-                            "warning",
-                    }
-                );
-
-
-                openTablePickerWithCustomer({
-                    customerId:
-                        null,
-
-                    name:
-                    finalName,
-
-                    phone:
-                    cleanPhone,
-
-                    address:
-                    cleanAddress,
-
-                    guests,
-                });
+    if (userData?.role === "SuperAdmin") return renderSuperAdmin();
+
+    const handleCreateOrder = async () => {
+        if(customerLock.current)return;customerLock.current=true;setCustomerBusy(true);setCustomerError('');
+        try {
+            const body={name:name.trim()||'Consumidor Final',phone:phone.trim(),address:address.trim(),taxIdentity:taxIdentity.value?.trim()?taxIdentity:null,confirmDistinctPerson:distinctConfirmed};
+            let customer={...body,_id:null};
+            if(selectedCustomerId||name.trim()||phone.trim()||taxIdentity.value?.trim()){
+                const response=selectedCustomerId?await api.patch('/api/customer/'+selectedCustomerId,body):await createCustomerMutation.mutateAsync(body);
+                customer=response.data?.data;
+                if(!customer?._id)throw Error('CUSTOMER_RESPONSE_INVALID');
+                await queryClient.invalidateQueries({queryKey:['customers']});
             }
-        };
-
+            dispatch(setCustomer({customerId:customer._id,name:customer.name,phone:customer.phone,address:customer.address,taxIdentity:customer.taxIdentity,guests:Number(guestCount||0)}));
+            dispatch(setDraftContext({table:null,isVirtual:false,virtualType:null,orderSource:'DINE_IN'}));
+            setIsModalOpen(false);navigate('/tables');
+        } catch(error){setCustomerError(customerErrorMessage(error.response?.data?.code));setNeedsConfirmation(error.response?.data?.code==='HOMONYM_CONFIRMATION_REQUIRED');setDistinctConfirmed(false);}
+        finally{customerLock.current=false;setCustomerBusy(false);}
+    };
 
     /*
      * ==========================================
@@ -1304,7 +946,7 @@ const BottomNav = memo(() => {
                         }
                     >
 
-                        <div className="space-y-4 text-white max-h-[calc(100vh-180px)] overflow-y-auto pr-1">
+                        <fieldset disabled={customerBusy} className="space-y-4 text-white max-h-[calc(100vh-180px)] overflow-y-auto pr-1" onChangeCapture={e=>{if(e.target.type!=='checkbox')setDistinctConfirmed(false);}}>
 
                             {/* CLIENTE GUARDADO */}
 
@@ -1423,7 +1065,7 @@ const BottomNav = memo(() => {
                                         </div>
 
 
-                                        <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-[#1f1f1f]">
+                                        <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-[#1f1f1f]">{customersQuery.isError&&<p role="alert">No se pudo cargar la lista. <button type="button" onClick={()=>customersQuery.refetch()}>Reintentar</button></p>}
 
                                             {customersQuery
                                                 .isLoading && (
@@ -1469,10 +1111,7 @@ const BottomNav = memo(() => {
                                                     customer
                                                 ) => (
 
-                                                    <button
-                                                        key={
-                                                            customer._id
-                                                        }
+                                                    <div key={customer._id}><button
 
                                                         type="button"
 
@@ -1511,7 +1150,7 @@ const BottomNav = memo(() => {
 
                                                         </div>
 
-                                                    </button>
+                                                    </button><div className="flex justify-end gap-3 mb-2"><button type="button" className="text-xs text-blue-300 px-2 py-2" onClick={()=>{setManagerCustomer(customer);setManagerOpen(true);}}>Editar</button><DeleteCustomerAction customer={customer} onDeleted={c=>{if(c._id===selectedCustomerId)clearCustomer();}}/></div></div>
 
                                                 )
                                             )}
@@ -1548,6 +1187,7 @@ const BottomNav = memo(() => {
                             </div>
 
 
+                            <div className="flex flex-wrap gap-3 text-sm"><button type="button" className="text-blue-300" onClick={()=>{setManagerCustomer(null);setManagerOpen(true);}}>Administrar clientes</button>{selectedCustomer&&<><button type="button" className="text-blue-300" onClick={()=>{setManagerCustomer(selectedCustomer);setManagerOpen(true);}}>Editar cliente guardado</button><DeleteCustomerAction customer={selectedCustomer} onDeleted={clearCustomer}/><button type="button" onClick={clearCustomer}>Usar otro cliente</button></>}</div>
                             {/* NOMBRE */}
 
                             <div>
@@ -1582,15 +1222,6 @@ const BottomNav = memo(() => {
                                                 .target
                                                 .value
                                         );
-
-
-                                        if (
-                                            selectedCustomerId
-                                        ) {
-                                            setSelectedCustomerId(
-                                                null
-                                            );
-                                        }
                                     }}
                                 />
 
@@ -1673,6 +1304,9 @@ const BottomNav = memo(() => {
                             </div>
 
 
+                            <details><summary className="cursor-pointer text-sm text-white/70">Identificación fiscal (opcional)</summary><div className="grid gap-2 mt-2"><input aria-label="País fiscal" value={taxIdentity.countryCode||''} onChange={e=>setTaxIdentity(v=>({...v,countryCode:e.target.value.toUpperCase()}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><input aria-label="Tipo fiscal" value={taxIdentity.type||''} onChange={e=>setTaxIdentity(v=>({...v,type:e.target.value.toUpperCase()}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><input aria-label="RNC o cédula" placeholder="RNC o cédula" value={taxIdentity.value||''} onChange={e=>setTaxIdentity(v=>({...v,value:e.target.value}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><p role="status" className="text-xs text-white/60">{{LOADING:'Consultando RNC…',FOUND:'Encontrado; se conserva el nombre manual.',NOT_FOUND:'No encontrado. Completa el nombre manualmente.',ERROR:'Error consultando RNC.'}[rncLookup.status]}</p></div></details>
+                            {customerError&&<p role="alert" className="text-sm text-red-300">{customerError}</p>}
+                            {needsConfirmation&&<label className="flex items-start gap-2 text-sm text-sky-200"><input type="checkbox" checked={distinctConfirmed} onChange={e=>setDistinctConfirmed(e.target.checked)}/>Confirmo que es otra persona con una identificación fiscal distinta.</label>}
                             {/* PERSONAS */}
 
                             <div>
@@ -1759,16 +1393,12 @@ const BottomNav = memo(() => {
                                         handleCreateOrder
                                     }
 
-                                    disabled={
-                                        createOrder
-                                            .isPending
-                                    }
+                                    disabled={customerBusy}
 
                                     className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-400 to-blue-800 text-black font-semibold hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-70 transition-all"
                                 >
 
-                                    {createOrder
-                                        .isPending
+                                    {customerBusy
                                         ? t(
                                             "bottomNav.creating"
                                         )
@@ -1781,7 +1411,7 @@ const BottomNav = memo(() => {
 
                             </div>
 
-                        </div>
+                        </fieldset>
 
                     </Modal>
 
@@ -1789,6 +1419,7 @@ const BottomNav = memo(() => {
 
             </AnimatePresence>
 
+            {managerOpen&&<CustomerManager key={managerCustomer?._id||'list'} initialCustomer={managerCustomer} onSaved={c=>{if(c){pickCustomer(c);setManagerOpen(false);}}} onClose={()=>setManagerOpen(false)}/>}
         </>
     );
 });

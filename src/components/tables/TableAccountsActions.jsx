@@ -62,7 +62,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
     if (account?.hasEcf) return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
     if (account?.hasFiscal) return "border-sky-500/40 bg-sky-500/10 text-sky-300";
     if (String(account?.paymentStatus) === "Pagado") return "border-indigo-500/40 bg-indigo-500/10 text-indigo-300";
-    return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+    return "border-sky-500/40 bg-sky-500/10 text-sky-300";
   };
 
   // El backend decide la elegibilidad con tenant, sucursal, NCF, inventario y estado financiero.
@@ -183,7 +183,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
         type="button"
         onClick={openSplit}
         title="Separar productos en dos cuentas"
-        className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-[#f6b100]/60 text-[#f6b100] bg-[#f6b100]/5 hover:bg-[#f6b100]/12 whitespace-nowrap shadow-sm"
+        className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-[#38bdf8]/60 text-[#38bdf8] bg-[#38bdf8]/5 hover:bg-[#38bdf8]/12 whitespace-nowrap shadow-sm"
       >
         Dividir cuenta
       </button>
@@ -221,7 +221,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
 
         {ecfOn && printed.length > 0 && (
           <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-2">
-            <div className="text-xs text-[#f6b100] font-semibold uppercase tracking-wide">e-CF emitidas · solo lectura</div>
+            <div className="text-xs text-[#38bdf8] font-semibold uppercase tracking-wide">e-CF emitidas · solo lectura</div>
             {printed.map((a) => (
               <button
                 key={a.orderId}
@@ -239,7 +239,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
                 type="button"
                 disabled={busy}
                 onClick={askNewConsumption}
-                className="w-full rounded-lg p-2.5 text-sm font-semibold text-black bg-[#f6b100] hover:bg-[#ffd633] disabled:opacity-50"
+                className="w-full rounded-lg p-2.5 text-sm font-semibold text-black bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-50"
               >
                 + Nuevo consumo
               </button>
@@ -261,7 +261,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
           </div>
 
           <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/75 leading-5">
-            <p>• Las <span className="text-[#f6b100] font-semibold">facturas electrónicas (e-CF)</span> no se pueden dividir después de emitidas.</p>
+            <p>• Las <span className="text-[#38bdf8] font-semibold">facturas electrónicas (e-CF)</span> no se pueden dividir después de emitidas.</p>
             <p>• Puedes dividir cuentas <span className="text-sky-300 font-semibold">no electrónicas aún modificables</span> y pendientes de cobro. Los NCF ya emitidos solo admiten división del pago, no de artículos.</p>
           </div>
 
@@ -276,14 +276,14 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
                       key={a.orderId}
                       type="button"
                       onClick={() => { setSplitOrderId(a.orderId); setQuantities({}); }}
-                      className={`text-left rounded-xl border px-3 py-3 transition ${selected ? "border-[#f6b100] bg-[#f6b100]/10" : "border-white/10 bg-[#1a1a1a] hover:bg-[#202020]"}`}
+                      className={`text-left rounded-xl border px-3 py-3 transition ${selected ? "border-[#38bdf8] bg-[#38bdf8]/10" : "border-white/10 bg-[#1a1a1a] hover:bg-[#202020]"}`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="font-semibold text-sm text-white">Cuenta {i + 1}</div>
                           <div className="text-xs text-white/65 mt-1">RD${Number(a.total || 0).toFixed(2)} · {getVisualStatus(a)}</div>
                         </div>
-                        {selected && <span className="rounded-full bg-[#f6b100] text-black text-[11px] font-bold px-2 py-1">Seleccionada</span>}
+                        {selected && <span className="rounded-full bg-[#38bdf8] text-black text-[11px] font-bold px-2 py-1">Seleccionada</span>}
                       </div>
                     </button>
                   );
@@ -307,7 +307,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
                   step="1"
                   value={quantities[i.lineId] ?? 0}
                   onChange={(e) => setQuantities((x) => ({ ...x, [i.lineId]: e.target.value }))}
-                  className="w-24 rounded-xl bg-[#242424] border border-white/15 px-3 py-2 text-right text-white font-semibold outline-none focus:border-[#f6b100]"
+                  className="w-24 rounded-xl bg-[#242424] border border-white/15 px-3 py-2 text-right text-white font-semibold outline-none focus:border-[#38bdf8]"
                 />
               </div>
             ))}
@@ -315,12 +315,12 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
 
           <div className="rounded-xl border border-white/10 bg-white/5 p-3 flex items-center justify-between gap-3 text-sm">
             <span className="text-white/70">Base estimada de la nueva cuenta</span>
-            <span className="font-bold text-[#f6b100]">RD${splitTotal.toFixed(2)}</span>
+            <span className="font-bold text-[#38bdf8]">RD${splitTotal.toFixed(2)}</span>
           </div>
 
           <div className="flex gap-2">
             <button type="button" className="flex-1 rounded-xl p-2.5 bg-white/8 border border-white/10 text-white" disabled={busy} onClick={() => setShowSplit(false)}>Cancelar</button>
-            <button type="button" className="flex-1 rounded-xl p-2.5 bg-[#f6b100] text-black font-semibold disabled:opacity-50" disabled={busy} onClick={confirmSplit}>Crear segunda cuenta</button>
+            <button type="button" className="flex-1 rounded-xl p-2.5 bg-[#38bdf8] text-black font-semibold disabled:opacity-50" disabled={busy} onClick={confirmSplit}>Crear segunda cuenta</button>
           </div>
         </div>
       </div>,
@@ -342,7 +342,7 @@ export default function TableAccountsActions({ table, variant = "split", onOpenO
           </div>
           <div className="flex gap-2">
             <button type="button" className="flex-1 rounded-xl p-2.5 bg-white/8 border border-white/10 text-white" disabled={busy} onClick={() => setShowNewConsumptionConfirm(false)}>Cancelar</button>
-            <button type="button" className="flex-1 rounded-xl p-2.5 bg-[#f6b100] text-black font-semibold disabled:opacity-50" disabled={busy} onClick={newConsumption}>Sí, abrir nueva cuenta</button>
+            <button type="button" className="flex-1 rounded-xl p-2.5 bg-[#38bdf8] text-black font-semibold disabled:opacity-50" disabled={busy} onClick={newConsumption}>Sí, abrir nueva cuenta</button>
           </div>
         </div>
       </div>,

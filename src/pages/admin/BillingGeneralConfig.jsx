@@ -176,7 +176,7 @@ export default function BillingGeneralConfig({
                                             logoUploading ||
                                             !logoFile
                                                 ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                                                : "bg-[#f6b100] text-[#1f1f1f] hover:opacity-90"
+                                                : "bg-[#38bdf8] text-[#1f1f1f] hover:opacity-90"
                                         }`}
                                     >
                                         <UploadCloud className="w-4 h-4" />

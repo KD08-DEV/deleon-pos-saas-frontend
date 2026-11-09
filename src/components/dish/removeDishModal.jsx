@@ -68,7 +68,7 @@ const RemoveDishModal = ({ setIsRemoveDishModalOpen }) => {
                             <select
                                 value={selectedDishId}
                                 onChange={(e) => setSelectedDishId(e.target.value)}
-                                className="w-full bg-[#2a2a2a] border border-gray-600 rounded-lg p-3 text-[#f5f5f5] focus:outline-none focus:ring-2 focus:ring-yellow-500/40"
+                                className="w-full bg-[#2a2a2a] border border-gray-600 rounded-lg p-3 text-[#f5f5f5] focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                                 required
                             >
                                 <option value="">Seleccionar plato</option>
@@ -84,7 +84,7 @@ const RemoveDishModal = ({ setIsRemoveDishModalOpen }) => {
                                     type="button"
                                     disabled={!selectedDish}
                                     onClick={() => setIsEditOpen(true)}
-                                    className="w-1/2 bg-yellow-500 hover:bg-yellow-600 text-black py-2 rounded-lg transition-all disabled:opacity-60"
+                                    className="w-1/2 bg-sky-500 hover:bg-sky-600 text-black py-2 rounded-lg transition-all disabled:opacity-60"
                                 >
                                     Editar
                                 </button>

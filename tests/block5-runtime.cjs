@@ -1,0 +1,19 @@
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const esbuild=require('../node_modules/esbuild'),puppeteer=require('../../pos-backend/node_modules/puppeteer');
+const root=path.resolve(__dirname,'..');
+(async()=>{
+ const bundle=await esbuild.build({entryPoints:[path.join(__dirname,'block5-runtime.fixture.jsx')],bundle:true,write:false,format:'iife',jsx:'automatic',define:{'import.meta.env':'{}'},plugins:[{name:'local',setup(b){
+  b.onResolve({filter:/^(react-i18next|notistack)$|\/(Invoice|Ticket)$/},a=>({path:a.path.split('/').pop(),namespace:'mock'}));
+  b.onLoad({filter:/.*/,namespace:'mock'},a=>({loader:'jsx',resolveDir:root,contents:a.path==='react-i18next'?'export const useTranslation=()=>({t:(key,o)=>typeof o==="string"?o:o?.defaultValue||key,i18n:{language:"es"}});':a.path==='notistack'?'export const enqueueSnackbar=(text)=>window.messages.push(text); export const useSnackbar=()=>({enqueueSnackbar});':a.path==='Invoice'?'export default function Invoice(props){window.invoiceProps=props;return <div id="invoice-preview">Factura</div>}':'export default function Ticket(){return null}'}));
+  b.onResolve({filter:/^@\//},a=>({path:path.join(root,'src',a.path.slice(2)+'.js')}));
+ }}]});
+ const server=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/app.js'?'application/javascript':'text/html');res.end(req.url==='/app.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/app.js"></script>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;let browser;const results=[];
+ try{browser=await puppeteer.launch({headless:true});
+  const run=async(name,query,fn)=>{const page=await browser.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));await page.setRequestInterception(true);page.on('request',r=>r.url().startsWith(origin+'/')?r.continue():r.abort());try{await page.goto(origin+'/'+query);await page.waitForSelector('button');await fn(page);assert.deepEqual(errors,[]);results.push({name,status:'PASS'});}catch(e){results.push({name,status:'FAIL',error:e.message,errors,diagnostic:await page.evaluate(()=>({messages:window.messages,requests:window.requests}))});}finally{await page.close();}};
+
+ await run('Crédito: revocar permiso oculta opción y reactivarlo la restaura','',async p=>{await p.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='bill.paymentMethods.credit'));await p.evaluate(()=>window.setCreditAllowed(false));await p.waitForFunction(()=>![...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='bill.paymentMethods.credit'));await p.evaluate(()=>window.setCreditAllowed(true));await p.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='bill.paymentMethods.credit'));});
+ await run('Reporte muestra cargos separados, criterio de reparto y conciliación','?report',async p=>{await p.waitForSelector('table');const text=await p.$eval('table',e=>e.textContent);assert.match(text,/Propina adicional/);assert.match(text,/Comida/);assert.ok(await p.evaluate(()=>document.body.textContent.includes('se prorratean por el subtotal original')));assert.ok(await p.evaluate(()=>document.body.textContent.includes('Sin base para asignar')));const cells=await p.$$eval('tbody tr:first-child td',es=>es.map(e=>e.textContent));assert.match(cells.at(-2),/10/);assert.match(cells.at(-1),/5/);});
+
+ }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
+ fs.writeFileSync(path.resolve(root,'../BLOQUE_5_2026-11-05/frontend-runtime.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));if(results.some(r=>r.status==='FAIL'))process.exitCode=1;
+})().catch(e=>{console.error(e.message);process.exitCode=1;});

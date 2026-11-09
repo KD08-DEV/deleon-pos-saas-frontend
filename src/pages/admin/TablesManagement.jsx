@@ -445,7 +445,7 @@ const TablesManagement = () => {
             case "reservada":
             case "reservado":
             case "reserved":
-                return "bg-amber-500/20 text-amber-400 border-amber-500/40";
+                return "bg-sky-500/20 text-sky-400 border-sky-500/40";
 
 
             default:
@@ -961,7 +961,7 @@ const TablesManagement = () => {
         return (
             <div className="text-center py-8 text-gray-400">
 
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
 
                 <p className="mt-2">
@@ -1003,7 +1003,7 @@ const TablesManagement = () => {
 
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
 
-                        <Table2 className="w-6 h-6 text-[#f6b100]" />
+                        <Table2 className="w-6 h-6 text-[#38bdf8]" />
 
 
                         {t(
@@ -1031,7 +1031,7 @@ const TablesManagement = () => {
                         openAddModal
                     }
 
-                    className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all"
                 >
 
                     <Plus className="w-4 h-4" />
@@ -1078,7 +1078,7 @@ const TablesManagement = () => {
                             )
                         }
 
-                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                     />
 
                 </div>
@@ -1186,16 +1186,16 @@ const TablesManagement = () => {
                                 table._id
                             }
 
-                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#f6b100]/50 transition-all group"
+                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#38bdf8]/50 transition-all group"
                         >
 
                             <div className="flex items-center justify-between mb-4">
 
                                 <div className="flex items-center gap-3">
 
-                                    <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
+                                    <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20">
 
-                                        <Table2 className="w-5 h-5 text-[#f6b100]" />
+                                        <Table2 className="w-5 h-5 text-[#38bdf8]" />
 
                                     </div>
 
@@ -1239,7 +1239,7 @@ const TablesManagement = () => {
                                             )
                                         }
 
-                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#f6b100] transition-colors"
+                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#38bdf8] transition-colors"
 
                                         title={
                                             t(
@@ -1550,7 +1550,7 @@ const TablesManagement = () => {
                                         )
                                     }
 
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
 
                                     required
                                 />
@@ -1600,7 +1600,7 @@ const TablesManagement = () => {
                                         )
                                     }
 
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
 
                                     required
                                 />
@@ -1647,7 +1647,7 @@ const TablesManagement = () => {
                                         )
                                     }
 
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
 
                                     required
                                 >
@@ -1730,7 +1730,7 @@ const TablesManagement = () => {
                                         updateMutation.isPending
                                     }
 
-                                    className="flex-1 px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="flex-1 px-4 py-2.5 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
 
                                     <Save className="w-4 h-4" />

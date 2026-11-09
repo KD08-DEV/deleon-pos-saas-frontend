@@ -19,7 +19,7 @@ import {
 import { addDish, getDishes, deleteDish, updateDish } from "../../https";
 import { enqueueSnackbar } from "notistack";
 import { useTranslation } from "react-i18next";
-import api from "../../lib/api";
+import api, { getScope } from "../../lib/api";
 import { resolveImageUrl } from "../../lib/imageUrl";
 import useTenant from "../../hooks/useTenant";
 import {
@@ -341,7 +341,7 @@ const MenuManagement = ({ currentUser }) => {
     const [invCatForm, setInvCatForm] = useState({
         name: "",
         description: "",
-        color: "#f6b100",
+        color: "#38bdf8",
         icon: "Package",
     });
 
@@ -390,6 +390,20 @@ const MenuManagement = ({ currentUser }) => {
         staleTime: 30_000,
     });
 
+    const { data: customizationData, isError: customizationError, isFetching: customizationLoading, refetch: refreshCustomization } = useQuery({
+        queryKey: ["customization-inventory-options", tenantId, getScope().clientId],
+        enabled: Boolean(tenantId && showDishModal), staleTime: 0, refetchOnWindowFocus: "always",
+        queryFn: async () => {
+            const rows = []; let page = 1; let pages = 1;
+            do {
+                const response = await getDishes({tenantId, page, limit: 200, includeInventory: true});
+                rows.push(...extractDishList(response));
+                pages = response?.data?.data?.totalPages || 1; page++;
+            } while (page <= pages);
+            return rows;
+        },
+    });
+    const customizationOptions = customizationData || [];
     const dishes = useMemo(() => extractDishList(data), [data]);
     const allDishes = useMemo(() => extractDishList(allDishesData), [allDishesData]);
 
@@ -601,7 +615,7 @@ const MenuManagement = ({ currentUser }) => {
             setInvCatForm({
                 name: "",
                 description: "",
-                color: "#f6b100",
+                color: "#38bdf8",
                 icon: "Package",
             });
         },
@@ -863,7 +877,7 @@ const MenuManagement = ({ currentUser }) => {
     };
 
     const selectExistingExtraDish = (localId, dishId) => {
-        const selectedDish = allDishes.find(
+        const selectedDish = customizationOptions.find(
             (dish) => String(dish?._id) === String(dishId)
         );
 
@@ -968,6 +982,7 @@ const MenuManagement = ({ currentUser }) => {
 
         const cleanedIngredients = (dishForm.removableIngredients || [])
             .map((item) => ({
+                ...(item._id ? {_id:item._id} : {}),
                 ingredientDishId: item?.ingredientDishId || null,
                 name: String(item?.name || "").trim(),
                 active: item?.active !== false,
@@ -976,6 +991,7 @@ const MenuManagement = ({ currentUser }) => {
 
         const cleanedExtras = (dishForm.extras || [])
             .map((item) => ({
+                ...(item._id ? {_id:item._id} : {}),
                 extraDishId: item?.extraDishId || null,
                 name: String(item?.name || "").trim(),
                 price: Number(item?.price || 0),
@@ -1186,7 +1202,7 @@ const MenuManagement = ({ currentUser }) => {
     if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t(
@@ -1212,7 +1228,7 @@ const MenuManagement = ({ currentUser }) => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Package className="w-6 h-6 text-[#f6b100]" />
+                        <Package className="w-6 h-6 text-[#38bdf8]" />
 
                         {t(
                             "menuManagement.title"
@@ -1228,7 +1244,7 @@ const MenuManagement = ({ currentUser }) => {
                 {canCreateProduct && (
                     <button
                         onClick={openAddModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all"
                     >
                         <Plus className="w-4 h-4" />
                         {t(
@@ -1254,14 +1270,14 @@ const MenuManagement = ({ currentUser }) => {
                             onChange={(e) => {
                                 setSearchTerm(e.target.value);
                             }}
-                            className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
 
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        className="p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                     >
                         <option value="">
                             {t(
@@ -1278,7 +1294,7 @@ const MenuManagement = ({ currentUser }) => {
 
                 {isFetching && debouncedSearch && (
                     <div className="mt-3 flex items-center gap-2 text-sm text-gray-400">
-                        <div className="h-4 w-4 rounded-full border-2 border-[#f6b100] border-t-transparent animate-spin" />
+                        <div className="h-4 w-4 rounded-full border-2 border-[#38bdf8] border-t-transparent animate-spin" />
                         {t(
                             "menuManagement.filters.searching"
                         )}
@@ -1291,7 +1307,7 @@ const MenuManagement = ({ currentUser }) => {
                 {filteredDishes.map((dish) => (
                     <div
                         key={dish._id}
-                        className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg overflow-hidden hover:border-[#f6b100]/50 transition-all group"
+                        className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg overflow-hidden hover:border-[#38bdf8]/50 transition-all group"
                     >
                         {/* Imagen */}
                         <div className="relative h-48 bg-[#1a1a1a] overflow-hidden">
@@ -1314,7 +1330,7 @@ const MenuManagement = ({ currentUser }) => {
                                     {canEditProduct && (
                                         <button
                                             onClick={() => openEditModal(dish)}
-                                            className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-[#f6b100] transition-colors"
+                                            className="p-2 bg-[#1a1a1a]/90 rounded-lg hover:bg-[#38bdf8] transition-colors"
                                             title={
                                                 t(
                                                     "menuManagement.actions.edit"
@@ -1346,7 +1362,7 @@ const MenuManagement = ({ currentUser }) => {
                         <div className="p-4">
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="text-lg font-semibold text-white">{dish.name}</h3>
-                                <span className="px-2 py-1 bg-[#f6b100]/20 text-[#f6b100] text-xs rounded-full border border-[#f6b100]/40">
+                                <span className="px-2 py-1 bg-[#38bdf8]/20 text-[#38bdf8] text-xs rounded-full border border-[#38bdf8]/40">
                                      {getDishCategoryLabel(dish)}
                                 </span>
                             </div>
@@ -1434,7 +1450,7 @@ const MenuManagement = ({ currentUser }) => {
                                     type="text"
                                     value={dishForm.name}
                                     onChange={(e) => setDishForm((f) => ({ ...f, name: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     required
                                 />
                             </div>
@@ -1446,7 +1462,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <select
                                     value={dishForm.productionArea}
                                     onChange={(e) => setDishForm((f) => ({ ...f, productionArea: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 >
                                     <option value="kitchen">
                                         {t(
@@ -1477,7 +1493,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <div className="flex items-start justify-between gap-3 mb-3">
                                     <div>
                                         <label className="text-sm font-semibold text-white flex items-center gap-2">
-                                            <Tag className="w-4 h-4 text-[#f6b100]" />
+                                            <Tag className="w-4 h-4 text-[#38bdf8]" />
                                             {t(
                                                 "menuManagement.category.title"
                                             )} *
@@ -1490,7 +1506,7 @@ const MenuManagement = ({ currentUser }) => {
                                     </div>
 
                                     {dishForm.category && (
-                                        <span className="px-2.5 py-1 rounded-full text-xs border border-[#f6b100]/30 bg-[#f6b100]/10 text-[#f6b100]">
+                                        <span className="px-2.5 py-1 rounded-full text-xs border border-[#38bdf8]/30 bg-[#38bdf8]/10 text-[#38bdf8]">
                 {dishForm.category}
             </span>
                                     )}
@@ -1521,7 +1537,7 @@ const MenuManagement = ({ currentUser }) => {
                                                 category: String(selectedCategory?.name || "").trim(),
                                             }));
                                         }}
-                                        className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="flex-1 p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                         required
                                     >
                                         <option value="">
@@ -1540,7 +1556,7 @@ const MenuManagement = ({ currentUser }) => {
                                     <button
                                         type="button"
                                         onClick={() => setShowInvCatModal(true)}
-                                        className="px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all whitespace-nowrap"
+                                        className="px-4 py-2.5 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all whitespace-nowrap"
                                     >
                                         {t(
                                             "menuManagement.actions.create"
@@ -1559,7 +1575,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <div className="flex items-start justify-between gap-3 mb-4">
                                     <div>
                                         <label className="text-sm font-semibold text-white flex items-center gap-2">
-                                            <Package className="w-4 h-4 text-[#f6b100]" />
+                                            <Package className="w-4 h-4 text-[#38bdf8]" />
                                             {t(
                                                 "menuManagement.productType.title"
                                             )}
@@ -1571,7 +1587,7 @@ const MenuManagement = ({ currentUser }) => {
                                         </p>
                                     </div>
 
-                                    <span className="px-2.5 py-1 rounded-full text-xs border border-[#f6b100]/30 bg-[#f6b100]/10 text-[#f6b100]">
+                                    <span className="px-2.5 py-1 rounded-full text-xs border border-[#38bdf8]/30 bg-[#38bdf8]/10 text-[#38bdf8]">
            {t(
                MENU_PRODUCT_TYPES.find(
                    (type) =>
@@ -1603,7 +1619,7 @@ const MenuManagement = ({ currentUser }) => {
                                                 }}
                                                 className={`text-left rounded-2xl border p-4 transition-all ${
                                                     active
-                                                        ? "border-[#f6b100]/60 bg-[#f6b100]/10 text-white"
+                                                        ? "border-[#38bdf8]/60 bg-[#38bdf8]/10 text-white"
                                                         : "border-white/10 bg-black/20 text-gray-300 hover:border-white/20"
                                                 }`}
                                             ><div className="text-sm font-bold">
@@ -1623,8 +1639,8 @@ const MenuManagement = ({ currentUser }) => {
                                 </div>
 
                                 {dishForm.inventoryType === "direct" && (
-                                    <div className="mt-4 rounded-2xl border border-[#f6b100]/20 bg-[#f6b100]/5 p-4">
-                                        <div className="text-sm font-semibold text-[#f6b100]">
+                                    <div className="mt-4 rounded-2xl border border-[#38bdf8]/20 bg-[#38bdf8]/5 p-4">
+                                        <div className="text-sm font-semibold text-[#38bdf8]">
                                             {t(
                                                 "menuManagement.directStock.title"
                                             )}
@@ -1739,7 +1755,7 @@ const MenuManagement = ({ currentUser }) => {
                                     <select
                                         value={dishForm.sellMode}
                                         onChange={(e) => setDishForm((f) => ({ ...f, sellMode: e.target.value }))}
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     >
                                         <option value="unit">
                                             {t(
@@ -1756,7 +1772,7 @@ const MenuManagement = ({ currentUser }) => {
                                 </div>
                             )}
                             {taxConfig?.enabled === true && (
-                                <div className="rounded-xl border border-[#f6b100]/20 bg-[#f6b100]/5 p-4 space-y-4">
+                                <div className="rounded-xl border border-[#38bdf8]/20 bg-[#38bdf8]/5 p-4 space-y-4">
 
                                     <div>
                                         <h4 className="text-sm font-semibold text-white">
@@ -1798,7 +1814,7 @@ const MenuManagement = ({ currentUser }) => {
                                                         })
                                                     )
                                                 }
-                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             >
                                                 <option value="">
                                                     {t(
@@ -1853,7 +1869,7 @@ const MenuManagement = ({ currentUser }) => {
                                                         })
                                                     )
                                                 }
-                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             >
                                                 <option value="inherit">
                                                     {t(
@@ -1918,7 +1934,7 @@ const MenuManagement = ({ currentUser }) => {
                                             <div className="rounded-lg border border-gray-800/50 bg-[#111] p-3">
                                                 <div className="flex flex-wrap items-center gap-2 text-xs">
 
-                        <span className="font-semibold text-[#f6b100]">
+                        <span className="font-semibold text-[#38bdf8]">
                             {
                                 selectedTax.name
                             }
@@ -1985,7 +2001,7 @@ const MenuManagement = ({ currentUser }) => {
                                             <select
                                                 value={dishForm.weightUnit}
                                                 onChange={(e) => setDishForm((f) => ({ ...f, weightUnit: e.target.value }))}
-                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             >
                                                 <option value="lb">
                                                     {t(
@@ -2018,7 +2034,7 @@ const MenuManagement = ({ currentUser }) => {
                                                 value={dishForm.pricePerLb}
                                                 onWheel={(e) => e.currentTarget.blur()}
                                                 onChange={(e) => setDishForm((f) => ({ ...f, pricePerLb: e.target.value }))}
-                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                                className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                                 required
                                             />
                                         </div>
@@ -2038,7 +2054,7 @@ const MenuManagement = ({ currentUser }) => {
                                             value={dishForm.price}
                                             onWheel={(e) => e.currentTarget.blur()}
                                             onChange={(e) => setDishForm((f) => ({ ...f, price: e.target.value }))}
-                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             required
                                         />
                                     </div>
@@ -2058,7 +2074,7 @@ const MenuManagement = ({ currentUser }) => {
                                             min="0"
                                             value={dishForm.avgCost}
                                             onChange={(e) => setDishForm((f) => ({ ...f, avgCost: e.target.value }))}
-                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             placeholder={
                                                 t(
                                                     "menuManagement.placeholders.averageCost"
@@ -2077,7 +2093,7 @@ const MenuManagement = ({ currentUser }) => {
                                             min="0"
                                             value={dishForm.lastCost}
                                             onChange={(e) => setDishForm((f) => ({ ...f, lastCost: e.target.value }))}
-                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                            className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                             placeholder={
                                                 t(
                                                     "menuManagement.placeholders.lastCost"
@@ -2089,7 +2105,7 @@ const MenuManagement = ({ currentUser }) => {
                             )}
 
                             {productCustomizationEnabled && !dishForm.isInventoryItem && (
-                                <div className="rounded-2xl border border-[#f6b100]/20 bg-[#111111] p-4">
+                                <div className="rounded-2xl border border-[#38bdf8]/20 bg-[#111111] p-4">
                                     <div className="flex items-start justify-between gap-4">
                                         <div>
                                             <h4 className="text-sm font-semibold text-white">
@@ -2120,7 +2136,7 @@ const MenuManagement = ({ currentUser }) => {
                                             }
                                             className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${
                                                 dishForm.customizationEnabled
-                                                    ? "bg-[#f6b100]"
+                                                    ? "bg-[#38bdf8]"
                                                     : "bg-[#333333]"
                                             } ${
                                                 dishForm.sellMode === "weight"
@@ -2139,7 +2155,7 @@ const MenuManagement = ({ currentUser }) => {
                                     </div>
 
                                     {dishForm.sellMode === "weight" && (
-                                        <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                                        <p className="mt-3 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
                                             {t(
                                                 "menuManagement.customization.unitOnly"
                                             )}                                        </p>
@@ -2166,7 +2182,7 @@ const MenuManagement = ({ currentUser }) => {
                                                     <button
                                                         type="button"
                                                         onClick={addRemovableIngredient}
-                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-2 text-xs font-semibold text-[#f6b100] hover:bg-[#f6b100]/20"
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-3 py-2 text-xs font-semibold text-[#38bdf8] hover:bg-[#38bdf8]/20"
                                                     >
                                                         <Plus className="h-4 w-4" />
                                                         {t(
@@ -2176,6 +2192,8 @@ const MenuManagement = ({ currentUser }) => {
                                                 </div>
 
                                                 <div className="mt-3 space-y-2">
+                                                    <button type="button" onClick={() => refreshCustomization()} disabled={customizationLoading}>Actualizar ingredientes y extras</button>
+                                                    {customizationError && <p role="alert">No se pudo cargar el inventario de esta sucursal. Reintenta la consulta.</p>}
                                                     {(dishForm.removableIngredients || []).length === 0 ? (
                                                         <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-gray-500">
                                                             {t(
@@ -2188,6 +2206,14 @@ const MenuManagement = ({ currentUser }) => {
                                                                 key={ingredient.localId}
                                                                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2"
                                                             >
+                                                                <select aria-label="Ingrediente de inventario" value={ingredient.ingredientDishId || ""} onChange={event => {
+                                                                    const selected = customizationOptions.find(d => String(d._id) === event.target.value);
+                                                                    updateRemovableIngredient(ingredient.localId, {ingredientDishId: selected?._id || null, ...(selected ? {name:selected.name} : {})});
+                                                                }} className="bg-[#1a1a1a] text-white rounded p-2 max-w-48">
+                                                                    <option value="">Solo indicación de cocina</option>
+                                                                    {ingredient.ingredientDishId && !customizationOptions.some(d=>String(d._id)===String(ingredient.ingredientDishId)) && <option value={ingredient.ingredientDishId}>Referencia no disponible</option>}
+                                                                    {customizationOptions.filter(d=>["direct","ingredient"].includes(d.inventoryType) || d.isInventoryItem).map(d=><option key={d._id} value={d._id}>{d.name}</option>)}
+                                                                </select>
                                                                 <input
                                                                     type="text"
                                                                     value={ingredient.name}
@@ -2202,7 +2228,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                             "menuManagement.placeholders.ingredient"
                                                                         )
                                                                     }
-                                                                    className="min-w-0 flex-1 rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                    className="min-w-0 flex-1 rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#38bdf8]/50"
                                                                 />
 
                                                                 <label className="flex items-center gap-2 whitespace-nowrap text-xs text-gray-400">
@@ -2215,7 +2241,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                 { active: event.target.checked }
                                                                             )
                                                                         }
-                                                                        className="accent-[#f6b100]"
+                                                                        className="accent-[#38bdf8]"
                                                                     />
                                                                     {t(
                                                                         "menuManagement.status.active"
@@ -2262,7 +2288,7 @@ const MenuManagement = ({ currentUser }) => {
                                                     <button
                                                         type="button"
                                                         onClick={addExtra}
-                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#f6b100]/30 bg-[#f6b100]/10 px-3 py-2 text-xs font-semibold text-[#f6b100] hover:bg-[#f6b100]/20"
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-3 py-2 text-xs font-semibold text-[#38bdf8] hover:bg-[#38bdf8]/20"
                                                     >
                                                         <Plus className="h-4 w-4" />
 
@@ -2327,14 +2353,14 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     event.target.value
                                                                                 )
                                                                             }
-                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#38bdf8]/50"
                                                                         >
                                                                             <option value="">
                                                                                 {t(
                                                                                     "menuManagement.customization.extras.manualExtra"
                                                                                 )}
                                                                             </option>
-                                                                            {allDishes
+                                                                            {customizationOptions
                                                                                 .filter(
                                                                                     (dish) =>
                                                                                         String(dish?._id) !==
@@ -2370,7 +2396,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     "menuManagement.placeholders.extraName"
                                                                                 )
                                                                             }
-                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#38bdf8]/50"
                                                                         />
                                                                     </div>
 
@@ -2400,7 +2426,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     "menuManagement.placeholders.extraPrice"
                                                                                 )
                                                                             }
-                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#38bdf8]/50"
                                                                         />
                                                                     </div>
 
@@ -2420,7 +2446,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     maxQuantity: event.target.value,
                                                                                 })
                                                                             }
-                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#f6b100]/50"
+                                                                            className="w-full rounded-lg border border-gray-800/50 bg-[#1a1a1a] px-3 py-2 text-sm text-white outline-none focus:border-[#38bdf8]/50"
                                                                         />
                                                                     </div>
 
@@ -2433,7 +2459,7 @@ const MenuManagement = ({ currentUser }) => {
                                                                                     active: event.target.checked,
                                                                                 })
                                                                             }
-                                                                            className="accent-[#f6b100]"
+                                                                            className="accent-[#38bdf8]"
                                                                         />
                                                                         {t(
                                                                             "menuManagement.customization.extras.active"
@@ -2459,7 +2485,7 @@ const MenuManagement = ({ currentUser }) => {
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => setDishForm((f) => ({ ...f, imageFile: e.target.files?.[0] || null }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50 file:mr-4 file:py-1 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#f6b100] file:text-black hover:file:bg-[#ffd633]"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50 file:mr-4 file:py-1 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#38bdf8] file:text-black hover:file:bg-[#7dd3fc]"
                                 />
                                 {editingDish?.imageUrl && !dishForm.imageFile && (
                                     <p className="text-xs text-gray-500 mt-1">{t(
@@ -2482,7 +2508,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <button
                                     type="submit"
                                     disabled={createMutation.isPending || updateMutation.isPending}
-                                    className="flex-1 px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="flex-1 px-4 py-2.5 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
                                     <Save className="w-4 h-4" />
                                     {createMutation.isPending ||
@@ -2652,7 +2678,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <input
                                     value={invCatForm.name}
                                     onChange={(e) => setInvCatForm((f) => ({ ...f, name: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 />
                             </div>
 
@@ -2663,7 +2689,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <input
                                     value={invCatForm.description}
                                     onChange={(e) => setInvCatForm((f) => ({ ...f, description: e.target.value }))}
-                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                    className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 />
                             </div>
 
@@ -2680,7 +2706,7 @@ const MenuManagement = ({ currentUser }) => {
                                 <button
                                     type="submit"
                                     disabled={createInvCatMutation.isPending}
-                                    className="flex-1 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] disabled:opacity-60"
+                                    className="flex-1 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] disabled:opacity-60"
                                 >
                                     {createInvCatMutation.isPending
                                         ? t(
@@ -2723,7 +2749,7 @@ const MenuManagement = ({ currentUser }) => {
                     <button
                         onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
                         disabled={page >= totalPages}
-                        className="px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold disabled:opacity-50"
+                        className="px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold disabled:opacity-50"
                     >
                         {t(
                             "menuManagement.pagination.next"

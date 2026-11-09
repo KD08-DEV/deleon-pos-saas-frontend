@@ -46,7 +46,7 @@ const PopularDishItem = memo(
         const rankClass =
             index ===
             0
-                ? "bg-gradient-to-br from-yellow-400 to-amber-500 text-black"
+                ? "bg-gradient-to-br from-sky-400 to-sky-500 text-black"
 
                 : index ===
                 1
@@ -90,7 +90,7 @@ const PopularDishItem = memo(
                         1.01,
                 }}
 
-                className="group relative flex items-center gap-4 bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-xl px-4 sm:px-6 py-4 hover:from-[#252525] hover:to-[#2a2a2a] transition-all duration-200 border border-[#2a2a2a]/50 hover:border-yellow-500/30 cursor-pointer"
+                className="group relative flex items-center gap-4 bg-gradient-to-r from-[#1f1f1f] to-[#252525] rounded-xl px-4 sm:px-6 py-4 hover:from-[#252525] hover:to-[#2a2a2a] transition-all duration-200 border border-[#2a2a2a]/50 hover:border-sky-500/30 cursor-pointer"
             >
 
                 {/* RANKING */}
@@ -118,7 +118,7 @@ const PopularDishItem = memo(
                     {index <
                         3 && (
 
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full opacity-75" />
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-sky-400 rounded-full opacity-75" />
 
                         )}
 
@@ -138,7 +138,7 @@ const PopularDishItem = memo(
                         dish.name
                     }
 
-                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border-2 border-[#2a2a2a] group-hover:border-yellow-500/50 transition-all duration-200 group-hover:scale-105"
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border-2 border-[#2a2a2a] group-hover:border-sky-500/50 transition-all duration-200 group-hover:scale-105"
 
                     onError={(
                         event
@@ -159,10 +159,10 @@ const PopularDishItem = memo(
 
                     <div className="flex items-center gap-2 mb-1">
 
-                        <ChefHat className="text-yellow-400 w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                        <ChefHat className="text-sky-400 w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
 
-                        <h1 className="text-[#f5f5f5] text-sm sm:text-base font-semibold tracking-wide truncate group-hover:text-yellow-400 transition-colors duration-200">
+                        <h1 className="text-[#f5f5f5] text-sm sm:text-base font-semibold tracking-wide truncate group-hover:text-sky-400 transition-colors duration-200">
 
                             {dish.name}
 
@@ -189,7 +189,7 @@ const PopularDishItem = memo(
                     </p>
 
 
-                    <p className="text-yellow-400 text-xs sm:text-sm font-bold mt-1">
+                    <p className="text-sky-400 text-xs sm:text-sm font-bold mt-1">
 
                         {t(
                             "homeDashboard.popularDishes.sold"
@@ -328,7 +328,7 @@ const PopularDishes = memo(
 
                     {/* HEADER */}
 
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 sm:px-6 py-4 gap-2 sm:gap-0 bg-gradient-to-r from-yellow-500/5 to-amber-500/5 border-b border-yellow-500/10">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-4 sm:px-6 py-4 gap-2 sm:gap-0 bg-gradient-to-r from-sky-500/5 to-sky-500/5 border-b border-sky-500/10">
 
                         <div className="flex items-center gap-2">
 
@@ -354,7 +354,7 @@ const PopularDishes = memo(
                                 }}
                             >
 
-                                <Trophy className="text-yellow-400 w-5 h-5" />
+                                <Trophy className="text-sky-400 w-5 h-5" />
 
                             </motion.div>
 
@@ -403,7 +403,7 @@ const PopularDishes = memo(
                                 }
 
                                 div::-webkit-scrollbar-thumb:hover {
-                                    background-color: #f6b100;
+                                    background-color: #38bdf8;
                                 }
                             `}
                         </style>

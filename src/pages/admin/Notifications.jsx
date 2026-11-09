@@ -59,7 +59,7 @@ const Notifications = () => {
 
             <div className="mb-6">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <Bell className="w-6 h-6 text-[#f6b100]" />
+                    <Bell className="w-6 h-6 text-[#38bdf8]" />
 
                     {t("notificationsPage.title")}
                 </h2>
@@ -76,7 +76,7 @@ const Notifications = () => {
 
                 <div className="rounded-lg border border-gray-800/50 bg-gradient-to-br from-[#111111] to-[#0a0a0a] p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <Settings className="w-5 h-5 text-[#f6b100]" />
+                        <Settings className="w-5 h-5 text-[#38bdf8]" />
 
                         {t("notificationsPage.channels.title")}
                     </h3>
@@ -118,7 +118,7 @@ const Notifications = () => {
 
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
                                         notificationSettings.emailEnabled
-                                            ? "bg-[#f6b100]"
+                                            ? "bg-[#38bdf8]"
                                             : "bg-gray-700"
                                     }`}
 
@@ -171,7 +171,7 @@ const Notifications = () => {
                                             )
                                         }
 
-                                        className="w-full p-2.5 bg-[#0a0a0a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#0a0a0a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
                             )}
@@ -212,7 +212,7 @@ const Notifications = () => {
 
                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
                                         notificationSettings.smsEnabled
-                                            ? "bg-[#f6b100]"
+                                            ? "bg-[#38bdf8]"
                                             : "bg-gray-700"
                                     }`}
 
@@ -265,7 +265,7 @@ const Notifications = () => {
                                             )
                                         }
 
-                                        className="w-full p-2.5 bg-[#0a0a0a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#0a0a0a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
                             )}
@@ -483,7 +483,7 @@ const Notifications = () => {
                             handleSave
                         }
 
-                        className="flex items-center gap-2 px-6 py-3 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
+                        className="flex items-center gap-2 px-6 py-3 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all shadow-lg shadow-sky-500/20 hover:shadow-sky-500/40"
                     >
                         <Save className="w-4 h-4" />
 
@@ -562,7 +562,7 @@ function NotificationToggle({
 
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
                         checked
-                            ? "bg-[#f6b100]"
+                            ? "bg-[#38bdf8]"
                             : "bg-gray-700"
                     }`}
 

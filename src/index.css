@@ -3,6 +3,38 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.finance-workspace { container-type: inline-size; }
+.finance-metrics { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.expense-create { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
+.expense-form-heading, .category-form-heading { grid-column: 1 / -1; }
+.expense-create input, .expense-create select { min-height: 44px; }
+.expense-filters input, .expense-filters select { max-width: 100%; }
+.expense-list-header, .expense-list-row { min-width: 960px; }
+.expense-list-row > div { min-width: 0; overflow-wrap: anywhere; }
+.category-create { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; }
+.category-list-row > div:last-child { display: flex; flex-wrap: wrap; gap: .5rem; }
+@container (max-width: 700px) {
+    .category-create { grid-template-columns: minmax(0, 1fr); }
+    .category-list-header { display: none; }
+    .category-list-row { grid-template-columns: minmax(0, 1fr); }
+    .category-list-row > div { grid-column: 1; text-align: left; }
+    .category-list-row > div:last-child { justify-content: flex-start; }
+}
+
+/* Keep the stock table at every width; scroll only inside its panel. */
+.inventory-panel { min-width: 0; }
+.inventory-stock { max-width: 100%; overflow-x: auto; scrollbar-width: auto; padding-bottom: .5rem; }
+.inventory-stock-table { min-width: 850px; table-layout: fixed; }
+.inventory-stock-table th, .inventory-stock-table td { font-size: .8125rem; padding: .75rem .5rem; overflow-wrap: anywhere; }
+.inventory-stock-table th:first-child { width: 20%; min-width: 0; }
+.inventory-stock-table th:last-child { width: 24%; min-width: 0; }
+.inventory-stock-table td:first-child > div { font-size: .875rem; }
+.inventory-stock-table td:first-child > div + div { font-size: .625rem; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.inventory-stock-table td:last-child > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .375rem; }
+.inventory-stock-table td:last-child button { width: 100%; min-width: 0; min-height: 36px; padding: .375rem; font-size: .75rem; }
+.inventory-stock-table td:last-child svg { width: .875rem; height: .875rem; }
+
 html,
 body,
 #root {
@@ -117,11 +149,11 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #f6b100, #e7b400);
+  background: linear-gradient(to bottom, #38bdf8, #009ee7);
 }
 
 :not(.dark) ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #e7b400, #d6a300);
+  background: linear-gradient(to bottom, #009ee7, #0092d6);
 }
 
 /* Scrollbar específico para RecentOrders */
@@ -141,7 +173,7 @@ body {
 }
 
 .recent-orders-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #f6b100, #e7b400);
+  background: linear-gradient(to bottom, #38bdf8, #009ee7);
 }
 
 /* Animaciones personalizadas */
@@ -207,7 +239,7 @@ body {
 
 .spinner {
   border: 4px solid rgba(255, 255, 255, 0.3);
-  border-top: 4px solid #f6b100; /* Blue color for spinner */
+  border-top: 4px solid #38bdf8; /* Blue color for spinner */
   border-radius: 50%;
   width: 50px;
   height: 50px;
@@ -242,32 +274,32 @@ input[type="number"] {
 .modern-scroll::-webkit-scrollbar-thumb {
     background: linear-gradient(
             180deg,
-            #ffd447,
-            #f6b100,
-            #c98a00
+            #47c5ff,
+            #38bdf8,
+            #0089c9
     );
     border-radius: 999px;
     border: 3px solid #111111;
     background-clip: padding-box;
-    box-shadow: 0 0 12px rgba(246,177,0,0.35);
+    box-shadow: 0 0 12px rgba(56,189,248,0.35);
     transition: all .25s ease;
 }
 
 .modern-scroll::-webkit-scrollbar-thumb:hover {
     background: linear-gradient(
             180deg,
-            #fff0a3,
-            #ffd447,
-            #f6b100
+            #a3e2ff,
+            #47c5ff,
+            #38bdf8
     );
-    box-shadow: 0 0 18px rgba(246,177,0,0.6);
+    box-shadow: 0 0 18px rgba(56,189,248,0.6);
 }
 
 
 /* Firefox */
 .modern-scroll {
     scrollbar-width: auto;
-    scrollbar-color: #f6b100 rgba(255,255,255,0.05);
+    scrollbar-color: #38bdf8 rgba(255,255,255,0.05);
 }
 /* FIX: impresión de facturas en fondo blanco y centrado */
 @media print {
@@ -331,9 +363,14 @@ input[type="number"] {
         background: #ffffff !important;
     }
 }
-/* FIX: select visible en modales claros */
-select,
-select option {
-    color: #111827;
-    background-color: #ffffff;
+/* Inherit the form theme; explicit light/dark utility classes take precedence. */
+@layer base {
+    select {
+        color: inherit;
+        background-color: inherit;
+    }
+    select option {
+        color: inherit;
+        background-color: inherit;
+    }
 }

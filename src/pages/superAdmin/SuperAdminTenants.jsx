@@ -246,8 +246,8 @@ const SuperAdminTenants = () => {
                     <p className="text-sm">MongoDB: <strong>{deletePreview.totalDocuments}</strong> documentos detectados.</p>
                     {Object.entries(deletePreview.counts || {}).filter(([, n]) => n > 0).map(([collection, n]) => <div key={collection} className="flex justify-between text-xs text-gray-400"><span>{collection}</span><span>{n}</span></div>)}
                     {deletePreview.unknownCollections?.length > 0 && <p className="text-red-400">Bloqueado: hay colecciones de esta empresa pendientes de auditar.</p>}
-                    {deletePreview.tenant.status !== "suspended" && <p className="text-amber-300">Primero debes suspender la empresa.</p>}
-                    {!deletePreview.deletionEnabled && <p className="text-amber-300">El borrado permanente está desactivado en el servidor. Requiere ENABLE_PERMANENT_TENANT_DELETE=true.</p>}
+                    {deletePreview.tenant.status !== "suspended" && <p className="text-sky-300">Primero debes suspender la empresa.</p>}
+                    {!deletePreview.deletionEnabled && <p className="text-sky-300">El borrado permanente está desactivado en el servidor. Requiere ENABLE_PERMANENT_TENANT_DELETE=true.</p>}
                     <p className="text-xs text-gray-400">Se requiere respaldo probado. Los archivos en almacenamiento externo pueden necesitar verificación adicional; el servidor informará si no pudo limpiarlos.</p>
                     <label className="flex gap-2 text-sm"><input type="checkbox" checked={backupConfirmed} onChange={e => setBackupConfirmed(e.target.checked)} /> He respaldado los datos y revisado las obligaciones legales de conservación.</label>
                     <label className="block text-sm">Escribe exactamente: <strong>BORRAR {deletePreview.tenant.name}</strong></label>

@@ -501,7 +501,7 @@ const Ticket = ({
                 clientName:
                 customerName,
 
-                clientTaxIdentity,
+                clientTaxIdentity: customerTaxIdentity,
 
                 clientTaxIdLabel:
                 customerTaxLabel,
@@ -630,39 +630,39 @@ const Ticket = ({
                         background: #ffffff !important;
                         color: #111827 !important;
                       }
-                
+
                       .ticket-root *:not(.ticket-qty-badge) {
                         color: #111827 !important;
                       }
-                
+
                       .ticket-root .ticket-muted {
                         color: #4b5563 !important;
                       }
-                
+
                       .ticket-root .ticket-qty-badge {
                         background: #111827 !important;
                         color: #ffffff !important;
                       }
-                
+
                       .ticket-divider {
                         border-top: 1px dashed #111827;
                         margin: 8px 0;
                       }
-                
+
                       @media print {
                         @page { size: 80mm auto; margin: 0mm; }
-                
+
                         body {
                           -webkit-print-color-adjust: exact;
                           print-color-adjust: exact;
                           background: #ffffff !important;
                           color: #111827 !important;
                         }
-                
+
                         .no-print {
                           display: none !important;
                         }
-                
+
                         .ticket-root {
                           width: 80mm;
                           margin: 0 auto;
@@ -891,7 +891,7 @@ const Ticket = ({
                             </div>
                         )}
                         {printerCategory !== "kitchen" && primaryPrinters.length === 0 && kitchenPrinters.length > 0 && (
-                            <div className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-2 py-2">
+                            <div className="text-[11px] text-sky-600 bg-sky-50 border border-sky-200 rounded-md px-2 py-2">
                                 {t(
                                     "ticket.fallbackKitchenPrinter",
                                     {

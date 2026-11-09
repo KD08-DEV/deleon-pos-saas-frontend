@@ -1,5 +1,10 @@
+import DeleteCustomerAction from "./DeleteCustomerAction";
+import {customerErrorMessage} from "../../lib/customerErrors";
+import CustomerManager from "./CustomerManager";
+import useRncLookup from "../../hooks/useRncLookup";
 import React, {
     useMemo,
+    useEffect,
     useState,
 } from "react";
 
@@ -422,6 +427,11 @@ const CustomerInfo = ({
     // =====================================================
     // DATOS DEL CLIENTE
     // =====================================================
+
+    const [managerOpen,setManagerOpen]=useState(false),[managerCustomer,setManagerCustomer]=useState(null);
+    const [editNeedsConfirmation,setEditNeedsConfirmation]=useState(false),[editDistinctConfirmed,setEditDistinctConfirmed]=useState(false),[editCustomerError,setEditCustomerError]=useState('');
+    useEffect(()=>{setEditDistinctConfirmed(false);setEditNeedsConfirmation(false);setEditCustomerError('');},[editName,editPhone,editTaxValue,editTaxCountryCode,editTaxType,isEditOpen]);
+    const editorLookup=useRncLookup({value:editTaxValue,name:editName,onName:setEditName,enabled:isEditOpen&&editTaxCountryCode==='DO'&&['RNC','CEDULA'].includes(editTaxType)});
 
     const rawCustomerName =
         useMemo(
@@ -1230,11 +1240,7 @@ const CustomerInfo = ({
                     };
 
 
-                    dispatch(
-                        setCustomer(
-                            customerPayload
-                        )
-                    );
+
 
 
                     // ==================================
@@ -1257,12 +1263,15 @@ const CustomerInfo = ({
                                 address,
 
                                 taxIdentity,
+                                confirmDistinctPerson:editDistinctConfirmed,
                             }
                         );
                     }
 
 
                     // ==================================
+                    dispatch(setCustomer(customerPayload));
+
                     // SIN ORDEN AÚN
                     // ==================================
 
@@ -1386,6 +1395,8 @@ const CustomerInfo = ({
                     error
                 ) => {
 
+                    setEditCustomerError(customerErrorMessage(error?.response?.data?.code));
+                    setEditNeedsConfirmation(error?.response?.data?.code==='HOMONYM_CONFIRMATION_REQUIRED');setEditDistinctConfirmed(false);
                     console.error(
                         "[CUSTOMER INFO] Error actualizando cliente:",
                         error
@@ -1476,7 +1487,7 @@ const CustomerInfo = ({
                             }
                         >
 
-                            <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide group-hover:text-[#f6b100] transition-colors">
+                            <h1 className="text-md text-[#f5f5f5] font-semibold tracking-wide group-hover:text-[#38bdf8] transition-colors">
 
                                 {customerName}
 
@@ -1533,7 +1544,7 @@ const CustomerInfo = ({
             text-[#777]
             transition
             hover:bg-white/5
-            hover:text-[#f6b100]
+            hover:text-[#38bdf8]
         "
                         >
 
@@ -1590,7 +1601,7 @@ const CustomerInfo = ({
                     }
 
                     className="
-                        bg-[#f6b100]
+                        bg-[#38bdf8]
                         p-3
                         text-xl
                         font-bold
@@ -1735,6 +1746,7 @@ const CustomerInfo = ({
                         </div>
 
 
+                        <button type="button" className="m-5 text-sky-300" onClick={()=>{setManagerCustomer(null);setManagerOpen(true);}}>Administrar clientes</button>
                         {/* BUSCADOR */}
 
                         <div className="p-5 border-b border-white/10">
@@ -1777,9 +1789,9 @@ const CustomerInfo = ({
                         outline-none
                         transition
                         placeholder:text-white/20
-                        focus:border-[#f6b100]/70
+                        focus:border-[#38bdf8]/70
                         focus:ring-1
-                        focus:ring-[#f6b100]/30
+                        focus:ring-[#38bdf8]/30
                     "
                             />
 
@@ -1861,10 +1873,7 @@ const CustomerInfo = ({
 
                                     return (
 
-                                        <button
-                                            key={
-                                                customer._id
-                                            }
+                                        <div key={customer._id}><button
 
                                             type="button"
 
@@ -1892,7 +1901,7 @@ const CustomerInfo = ({
                                     disabled:opacity-50
                                     ${
                                                 isCurrent
-                                                    ? "border-[#f6b100]/50 bg-[#f6b100]/10"
+                                                    ? "border-[#38bdf8]/50 bg-[#38bdf8]/10"
                                                     : "border-white/5 bg-white/[0.025] hover:border-white/10 hover:bg-white/5"
                                             }
                                 `}
@@ -1944,7 +1953,7 @@ const CustomerInfo = ({
 
                                                 {isCurrent && (
 
-                                                    <span className="shrink-0 rounded-full border border-[#f6b100]/30 bg-[#f6b100]/10 px-2 py-1 text-[10px] font-semibold text-[#f6b100]">
+                                                    <span className="shrink-0 rounded-full border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-2 py-1 text-[10px] font-semibold text-[#38bdf8]">
 
                                             {t(
                                                 "customerInfo.savedCustomers.current"
@@ -1956,7 +1965,7 @@ const CustomerInfo = ({
 
                                             </div>
 
-                                        </button>
+                                        </button><div className="flex justify-end gap-3 mb-2"><button type="button" className="text-xs text-blue-300 px-2 py-2" onClick={()=>{setManagerCustomer(customer);setManagerOpen(true);}}>Editar</button><DeleteCustomerAction customer={customer}/></div></div>
 
                                     );
 
@@ -2217,9 +2226,9 @@ const CustomerInfo = ({
                                                 outline-none
                                                 transition
                                                 placeholder:text-white/20
-                                                focus:border-[#f6b100]/70
+                                                focus:border-[#38bdf8]/70
                                                 focus:ring-1
-                                                focus:ring-[#f6b100]/30
+                                                focus:ring-[#38bdf8]/30
                                             "
                                         />
 
@@ -2295,9 +2304,9 @@ const CustomerInfo = ({
                                                 outline-none
                                                 transition
                                                 placeholder:text-white/20
-                                                focus:border-[#f6b100]/70
+                                                focus:border-[#38bdf8]/70
                                                 focus:ring-1
-                                                focus:ring-[#f6b100]/30
+                                                focus:ring-[#38bdf8]/30
                                             "
                                         />
 
@@ -2376,9 +2385,9 @@ const CustomerInfo = ({
                                                     text-white
                                                     outline-none
                                                     transition
-                                                    focus:border-[#f6b100]/70
+                                                    focus:border-[#38bdf8]/70
                                                     focus:ring-1
-                                                    focus:ring-[#f6b100]/30
+                                                    focus:ring-[#38bdf8]/30
                                                 "
                                             >
 
@@ -2473,9 +2482,9 @@ const CustomerInfo = ({
                                                         outline-none
                                                         transition
                                                         placeholder:text-white/20
-                                                        focus:border-[#f6b100]/70
+                                                        focus:border-[#38bdf8]/70
                                                         focus:ring-1
-                                                        focus:ring-[#f6b100]/30
+                                                        focus:ring-[#38bdf8]/30
                                                     "
                                                 />
 
@@ -2533,9 +2542,9 @@ const CustomerInfo = ({
                                                         outline-none
                                                         transition
                                                         placeholder:text-white/20
-                                                        focus:border-[#f6b100]/70
+                                                        focus:border-[#38bdf8]/70
                                                         focus:ring-1
-                                                        focus:ring-[#f6b100]/30
+                                                        focus:ring-[#38bdf8]/30
                                                     "
                                                 />
 
@@ -2600,9 +2609,9 @@ const CustomerInfo = ({
                                                     outline-none
                                                     transition
                                                     placeholder:text-white/20
-                                                    focus:border-[#f6b100]/70
+                                                    focus:border-[#38bdf8]/70
                                                     focus:ring-1
-                                                    focus:ring-[#f6b100]/30
+                                                    focus:ring-[#38bdf8]/30
                                                 "
                                             />
 
@@ -2627,7 +2636,7 @@ const CustomerInfo = ({
 
                             {/* INFORMACIÓN */}
 
-                            <div className="mt-4 rounded-xl border border-[#f6b100]/10 bg-[#f6b100]/5 px-4 py-3">
+                            <div className="mt-4 rounded-xl border border-[#38bdf8]/10 bg-[#38bdf8]/5 px-4 py-3">
 
                                 <p className="text-xs leading-5 text-[#c8c8c8]">
 
@@ -2635,7 +2644,7 @@ const CustomerInfo = ({
                                         "customerInfo.emptyNameInfo"
                                     )}{" "}
 
-                                    <span className="font-semibold text-[#f6b100]">
+                                    <span className="font-semibold text-[#38bdf8]">
 
                                         {t(
                                             "customerInfo.finalConsumer"
@@ -2650,6 +2659,10 @@ const CustomerInfo = ({
                             </div>
 
 
+                            <p role="status" className="text-xs text-sky-200">{{LOADING:'Consultando RNC…',FOUND:'Encontrado; se conserva el nombre manual.',NOT_FOUND:'No encontrado. Completa el nombre manualmente.',ERROR:'Error consultando RNC.'}[editorLookup.status]}</p>
+                            {editCustomerError&&<p role="alert" className="mt-3 text-sm text-red-300">{editCustomerError}</p>}
+                            {editNeedsConfirmation&&<label className="flex gap-2 mt-3 text-sm text-sky-200"><input type="checkbox" checked={editDistinctConfirmed} onChange={e=>setEditDistinctConfirmed(e.target.checked)}/>Confirmo que es otra persona con una identificación fiscal distinta.</label>}
+                            {currentCustomerId&&<div className="mt-3"><DeleteCustomerAction customer={{_id:currentCustomerId,name:editName}} onDeleted={()=>setIsEditOpen(false)}/></div>}
                             {/* BOTONES */}
 
                             <div className="mt-6 grid grid-cols-2 gap-3">
@@ -2708,13 +2721,13 @@ const CustomerInfo = ({
                                     className="
                                         w-full
                                         rounded-xl
-                                        bg-[#f6b100]
+                                        bg-[#38bdf8]
                                         px-4
                                         py-3
                                         font-bold
                                         text-black
                                         transition
-                                        hover:bg-[#ffc526]
+                                        hover:bg-[#26baff]
                                         disabled:cursor-not-allowed
                                         disabled:opacity-50
                                     "
@@ -2742,7 +2755,8 @@ const CustomerInfo = ({
 
             )}
 
-        </>
+        {managerOpen&&<CustomerManager key={managerCustomer?._id||'list'} initialCustomer={managerCustomer} onClose={()=>setManagerOpen(false)}/>}
+            </>
     );
 };
 

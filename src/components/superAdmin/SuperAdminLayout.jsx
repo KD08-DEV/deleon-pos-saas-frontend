@@ -23,7 +23,7 @@ const SuperAdminLayout = () => {
                         ["/superadmin/rnc-registry", "Padrón RNC"],
                         ["/superadmin/tenant-usage", "Uso"],
                     ].map(([to, name]) => <NavLink key={to} to={to} end={to === "/superadmin"}
-                        className={({isActive}) => `shrink-0 rounded-lg border px-3 py-2 ${isActive ? "border-amber-500 text-amber-300" : "border-neutral-700 text-gray-300"}`}>
+                        className={({isActive}) => `shrink-0 rounded-lg border px-3 py-2 ${isActive ? "border-sky-500 text-sky-300" : "border-neutral-700 text-gray-300"}`}>
                         {name}
                     </NavLink>)}
                 </nav>

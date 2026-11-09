@@ -677,7 +677,7 @@ const CartInfo = ({
 
                                             boxShadow:
                                                 isHighlighted
-                                                    ? "0 0 0 1px rgba(246,177,0,0.35), 0 12px 30px rgba(246,177,0,0.12)"
+                                                    ? "0 0 0 1px rgba(56,189,248,0.35), 0 12px 30px rgba(56,189,248,0.12)"
                                                     : "0 0 0 1px rgba(255,255,255,0.02)",
                                         }}
 
@@ -707,14 +707,14 @@ const CartInfo = ({
 
                                         className={`relative rounded-lg px-4 py-4 mb-2 border overflow-hidden ${
                                             isHighlighted
-                                                ? "bg-gradient-to-r from-[#1f1f1f] via-[#242018] to-[#1f1f1f] border-[#f6b100]/40"
+                                                ? "bg-gradient-to-r from-[#1f1f1f] via-[#182024] to-[#1f1f1f] border-[#38bdf8]/40"
                                                 : "bg-[#1f1f1f] border-white/5"
                                         }`}
                                     >
 
                                         {isHighlighted && (
 
-                                            <span className="absolute right-3 top-3 rounded-full border border-[#f6b100]/30 bg-[#f6b100]/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f6b100]">
+                                            <span className="absolute right-3 top-3 rounded-full border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#38bdf8]">
 
                                                 {t(
                                                     "cart.added"
@@ -899,7 +899,7 @@ const CartInfo = ({
                                             ""
                                         ).trim() && (
 
-                                            <p className="mt-2 text-xs text-[#f6b100]">
+                                            <p className="mt-2 text-xs text-[#38bdf8]">
 
                                                 {t(
                                                     "cart.note"
@@ -1014,7 +1014,7 @@ const CartInfo = ({
                                                                 }
                                                             }}
 
-                                                            className="text-[#ababab] hover:text-[#f6b100] transition-colors"
+                                                            className="text-[#ababab] hover:text-[#38bdf8] transition-colors"
 
                                                             title={
                                                                 t(
@@ -1056,7 +1056,7 @@ const CartInfo = ({
                                                         )
                                                     }
 
-                                                    className="text-[#ababab] hover:text-[#f6b100] transition-colors"
+                                                    className="text-[#ababab] hover:text-[#38bdf8] transition-colors"
 
                                                     title={
                                                         t(

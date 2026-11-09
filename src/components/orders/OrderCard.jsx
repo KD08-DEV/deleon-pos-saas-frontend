@@ -1,3 +1,4 @@
+import useRncLookup from "../../hooks/useRncLookup";
 import React, {
     useCallback,
     useEffect,
@@ -51,9 +52,9 @@ const getStatusConfig = (status) => {
     };
     return configs[status] || {
         icon: Clock,
-        bg: "from-yellow-500/20 to-amber-500/20",
-        text: "text-yellow-400",
-        border: "border-yellow-500/30",
+        bg: "from-sky-500/20 to-sky-500/20",
+        text: "text-sky-400",
+        border: "border-sky-500/30",
     };
 };
 
@@ -448,10 +449,10 @@ const getWaitTimeConfig = (
                 `${minutes} min`,
 
             badge:
-                "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+                "bg-sky-500/15 text-sky-300 border border-sky-500/30",
 
             cardBorder:
-                "border-amber-500/25",
+                "border-sky-500/25",
         };
     }
 
@@ -735,6 +736,7 @@ const OrderCard = ({
     const [lastSplitBills, setLastSplitBills] = useState([]);
     const [invoiceOrderOverride, setInvoiceOrderOverride] = useState(null);
     const [isUpdating, setIsUpdating] = useState(false);
+    const statusUpdateLock = useRef(false);
     const [invoiceOrderSnapshot, setInvoiceOrderSnapshot] = useState(null);
     const [showOrderDetails, setShowOrderDetails] = useState(false);
     const [showCancelNoteModal, setShowCancelNoteModal] = useState(false);
@@ -1041,7 +1043,7 @@ const OrderCard = ({
         !isFiscalOrder && String(localOrder?.orderStatus || "") === "Completado";
 
     const canOpenCorrection = canCorrectOrder &&
-        !isFiscalOrder && !localOrder?.ecf?.exists && !localOrder?.accountReceivableId &&
+        !localOrder?.fiscal?.ecfDocumentType && !localOrder?.ecf?.exists && !localOrder?.ecf?.eNCF && !localOrder?.eNCF && !localOrder?.accountReceivableId &&
         localOrder?.paymentMethod !== "Credito" &&
         !["Cancelado", "Cancelled", "Canceled"].includes(localOrder?.orderStatus);
 
@@ -1104,38 +1106,12 @@ const OrderCard = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allowedNcfTypes.join("|")]);
 
-    // Autocompletado DGII (solo RNC 9 dígitos)
-    useEffect(() => {
-        if (!showFiscalModal) return;
-        const clean = String(fiscalRnc || "").replace(/\D/g, "");
-        if (!isLikelyRnc(clean)) return;
-        if (fiscalName?.trim()) return;
-
-        const t = setTimeout(async () => {
-            try {
-                setDgiiLoading(true);
-                const res = await api.get(`/api/dgii/rnc/${clean}`);
-                console.log("DGII response:", res?.data);
-                const name =
-                    res?.data?.data?.name ||
-                    res?.data?.name ||
-                    res?.data?.data?.nombre ||
-                    res?.data?.data?.razonSocial ||
-                    "";
-
-                if (name) setFiscalName(name);
-            } catch (e) {
-                // no rompemos flujo
-            } finally {
-                setDgiiLoading(false);
-            }
-        }, 450);
-
-        return () => clearTimeout(t);
-    }, [fiscalRnc, fiscalName, showFiscalModal]);
+    const fiscalLookup=useRncLookup({value:fiscalRnc,name:fiscalName,onName:setFiscalName,enabled:showFiscalModal});
+    useEffect(()=>setDgiiLoading(fiscalLookup.loading),[fiscalLookup.loading]);
 
     const handleStatusUpdate = async (nextStatus, extraPayload = {}) => {
-        if (!localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
+        if (statusUpdateLock.current || localOrder?.tableReleasedAt || !localOrder?._id || !nextStatus || nextStatus === currentStatus) return;
+        statusUpdateLock.current = true;
 
         try {
             setIsUpdating(true);
@@ -1165,6 +1141,10 @@ const OrderCard = ({
                 statusPayload.orderNote = String(extraPayload.orderNote);
             }
 
+            if(nextStatus === "Cancelado" && localOrder.inventoryDeducted){
+                if(!window.confirm("Cancelar puede devolver existencias. Confirma que los ingredientes pueden volver físicamente al inventario; si fueron enviados a cocina o preparados, se requiere un administrador.")) return;
+                statusPayload.inventoryReturnConfirmed = true;
+            }
             const res = await updateOrder(localOrder._id, statusPayload);
 
             const updated = unwrapOrder(res);
@@ -1179,6 +1159,7 @@ const OrderCard = ({
             // ✅ IMPORTANTÍSIMO: guarda la orden COMPLETA (con fiscal, invoiceUrl, etc.)
             setLocalOrder(safeUpdatedOrder);
             onStatusChanged?.(safeUpdatedOrder);
+            setShowOrderDetails(false);
 
         } catch (err) {
             console.error("Error updating status:", err);
@@ -1188,6 +1169,7 @@ const OrderCard = ({
                 { variant: "error" }
             );
         } finally {
+            statusUpdateLock.current = false;
             setIsUpdating(false);
         }
     };
@@ -1238,19 +1220,19 @@ const OrderCard = ({
         setShowCancelNoteModal(false);
 
         await handleStatusUpdate("Cancelado", {
-            orderNote: String(cancelOrderNote || "").trim(),
+            ...(localOrder?.paymentStatus !== "Pagado" ? {orderNote:String(cancelOrderNote || "").trim()} : {}),
         });
     };
 
     const handleCompleteNow = () => {
-        setShowOrderDetails(false);
         if (["Completado", "Cancelado"].includes(currentStatus)) return;
         handleStatusUpdate("Completado");
     };
 
     const handlePayNow = async () => {
-        if (!localOrder?._id) return;
+        if (statusUpdateLock.current || localOrder?.tableReleasedAt || !localOrder?._id) return;
         if (String(localOrder?.paymentStatus || "Pendiente") === "Pagado") return;
+        statusUpdateLock.current = true;
 
         try {
             setIsUpdating(true);
@@ -1290,6 +1272,7 @@ const OrderCard = ({
                 }
             );
         } finally {
+            statusUpdateLock.current = false;
             setIsUpdating(false);
         }
     };
@@ -1517,7 +1500,7 @@ const OrderCard = ({
                         {/* AVATAR mejorado */}
                         <motion.div
                             whileHover={{ scale: 1.1, rotate: 5 }}
-                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
+                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-sky-500 text-black font-bold text-lg shadow-lg shrink-0"
                         >
                             {getAvatarInitial(
                                 getCustomerDisplayName(
@@ -1552,7 +1535,7 @@ const OrderCard = ({
                                         )}
                                     </span>
                                 </div>
-                                
+
                                 {localOrder?.table && (
                                     <>
                                         <span className="text-[#666]">•</span>
@@ -1604,7 +1587,7 @@ const OrderCard = ({
                                     </span>
                                 ))}
                                 {(localOrder?.ncfNumber || localOrder?.fiscal?.requested) && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-medium">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-[10px] font-medium">
                                         <Receipt className="w-3 h-3" />
                                         {localOrder?.ncfNumber ? `NCF: ${localOrder.ncfNumber}` : "NCF solicitado"}
                                     </span>
@@ -1733,7 +1716,7 @@ const OrderCard = ({
                                         )}
 
                                         {itemSummary.note && (
-                                            <p className="mt-1 text-xs text-amber-300">
+                                            <p className="mt-1 text-xs text-sky-300">
                                                 {t(
                                                     "orderCard.note"
                                                 )}: {itemSummary.note}
@@ -1784,10 +1767,10 @@ const OrderCard = ({
 
                     {/* Nota de la orden */}
                     {String(localOrder?.orderNote || "").trim() && (
-                        <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/5 rounded-lg p-3 border border-amber-500/20">
+                        <div className="bg-gradient-to-r from-sky-500/10 to-sky-500/5 rounded-lg p-3 border border-sky-500/20">
                             <div className="flex items-center gap-2 mb-1">
-                                <MessageSquareText className="w-4 h-4 text-amber-300 shrink-0" />
-                                <span className="uppercase tracking-wide text-xs text-amber-300 font-semibold">
+                                <MessageSquareText className="w-4 h-4 text-sky-300 shrink-0" />
+                                <span className="uppercase tracking-wide text-xs text-sky-300 font-semibold">
                               <span>
                                     {t(
                                         "orderCard.note"
@@ -1807,7 +1790,7 @@ const OrderCard = ({
                         {waitTimeConfig && (
                             <>
                                 <span className="text-[#666]">•</span>
-                                <span className={waitTimeConfig.badge.replace("bg-emerald-500/15 ", "").replace("bg-amber-500/15 ", "").replace("bg-red-500/15 ", "").replace("border border-emerald-500/30", "").replace("border border-amber-500/30", "").replace("border border-red-500/30", "")}>
+                                <span className={waitTimeConfig.badge.replace("bg-emerald-500/15 ", "").replace("bg-sky-500/15 ", "").replace("bg-red-500/15 ", "").replace("border border-emerald-500/30", "").replace("border border-sky-500/30", "").replace("border border-red-500/30", "")}>
                                     {waitTimeConfig.label}
                                 </span>
                             </>
@@ -1821,7 +1804,7 @@ const OrderCard = ({
                     <motion.button
                         type="button"
                         onClick={handleBack}
-                        disabled={!canGoBack}
+                        disabled={!canGoBack || isUpdating}
                         whileHover={canGoBack ? { scale: 1.05 } : {}}
                         whileTap={canGoBack ? { scale: 0.95 } : {}}
                         className={`flex items-center justify-center gap-1.5 flex-1 min-w-[80px] rounded-lg border px-3 py-2 text-xs font-semibold transition-all duration-200 ${
@@ -1839,15 +1822,15 @@ const OrderCard = ({
                         <motion.button
                             type="button"
                             onClick={handleCompleteNow}
+                            disabled={isUpdating || Boolean(localOrder?.tableReleasedAt)}
+                            aria-busy={isUpdating}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             className="flex items-center justify-center gap-1.5 flex-1 min-w-[120px] rounded-lg px-3 py-2 text-xs font-semibold bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-green-500/30 transition-all duration-200"
                         >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>
-                                {t(
-                                    "orderCard.actions.complete"
-                                )}
+                                {isUpdating ? "Procesando..." : t("orderCard.actions.complete")}
                             </span>
                         </motion.button>
                     )}
@@ -1882,7 +1865,7 @@ const OrderCard = ({
                             onClick={() => setShowOrderDetails(false)}
                             className="fixed inset-0 z-50 backdrop-blur-md bg-black/60"
                         />
-                        
+
                         {/* Modal centrado */}
                         <motion.div
                             initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1897,7 +1880,7 @@ const OrderCard = ({
                                     <div className="flex items-center gap-3">
                                         <motion.div
                                             whileHover={{ scale: 1.1, rotate: 5 }}
-                                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
+                                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-sky-500 text-black font-bold text-lg shadow-lg shrink-0"
                                         >
                                             {getAvatarInitial(
                                                 getCustomerDisplayName(
@@ -2150,7 +2133,7 @@ const OrderCard = ({
                                                                 )}
 
                                                                 {itemSummary.note && (
-                                                                    <p className="mt-2 text-xs text-amber-300">
+                                                                    <p className="mt-2 text-xs text-sky-300">
                                                                         {t(
                                                                             "orderCard.note"
                                                                         )}: {itemSummary.note}
@@ -2199,7 +2182,7 @@ const OrderCard = ({
                                     {(localOrder?.ncfNumber || localOrder?.fiscal?.requested || localOrder?.bills?.split?.enabled) && (
                                         <div className="flex flex-wrap gap-2">
                                             {(localOrder?.ncfNumber || localOrder?.fiscal?.requested) && (
-                                                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-medium">
+                                                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-medium">
                                                     <Receipt className="w-3.5 h-3.5" />
                                                     {localOrder?.ncfNumber ? `NCF: ${localOrder.ncfNumber}` : "NCF solicitado"}
                                                 </span>
@@ -2227,7 +2210,7 @@ const OrderCard = ({
                                     {/* Acciones */}
                                     <div className="pt-4 border-t border-[#2a2a2a]/50 dark:border-[#2a2a2a]/50 border-gray-300/50 space-y-3">
                                         <h3 className="text-sm font-semibold text-[#ababab] dark:text-[#ababab] text-gray-600 uppercase tracking-wide mb-3">{t("orderCard.actionsLabel")}</h3>
-                                        
+
                                         <div className="grid grid-cols-2 gap-3">
                                             {/* Atrás */}
                                             <motion.button
@@ -2267,14 +2250,14 @@ const OrderCard = ({
                                             <motion.button
                                                 type="button"
                                                 onClick={handleCompleteNow}
+                                                disabled={isUpdating || Boolean(localOrder?.tableReleasedAt)}
+                                                aria-busy={isUpdating}
                                                 whileHover={{ scale: 1.02 }}
                                                 whileTap={{ scale: 0.98 }}
                                                 className="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/30"
                                             >
                                                 <CheckCircle2 className="w-4 h-4" />
-                                                <span>{t(
-                                                    "orderCard.actions.markCompleted"
-                                                )}</span>
+                                                <span>{isUpdating ? "Procesando..." : t("orderCard.actions.markCompleted")}</span>
                                             </motion.button>
                                         )}
 
@@ -2285,7 +2268,7 @@ const OrderCard = ({
                                                     onClick={() => handleRecoverCancelled("En Progreso")}
                                                     whileHover={{ scale: 1.02 }}
                                                     whileTap={{ scale: 0.98 }}
-                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-sky-400 to-sky-500 text-black hover:shadow-lg hover:shadow-sky-500/30"
                                                 >
                                                     <ArrowRight className="w-4 h-4" />
                                                     <span>{t(
@@ -2335,7 +2318,7 @@ const OrderCard = ({
                                                     </span>
                                                 </motion.button>
                                             )}
-                                            
+
 
 
                                             {/* Comprobante Fiscal */}
@@ -2348,8 +2331,8 @@ const OrderCard = ({
                                                     whileTap={currentStatus !== "Cancelado" ? { scale: 0.98 } : {}}
                                                     className={`flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 ${
                                                         currentStatus === "Cancelado"
-                                                            ? "bg-amber-900/40 text-amber-300 cursor-not-allowed opacity-50"
-                                                            : "bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
+                                                            ? "bg-sky-900/40 text-sky-300 cursor-not-allowed opacity-50"
+                                                            : "bg-gradient-to-r from-sky-400 to-sky-500 text-black hover:shadow-lg hover:shadow-sky-500/30"
                                                     }`}
                                                 >
                                                     <Receipt className="w-4 h-4" />
@@ -2380,7 +2363,7 @@ const OrderCard = ({
                                         {/* Corrección auditada de órdenes normales */}
                                         {canOpenCorrection && (
                                             <button type="button" onClick={openCorrection}
-                                                className="w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-200 hover:bg-amber-400/20">
+                                                className="w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-200 hover:bg-sky-400/20">
                                                 {t("orderCard.correction.action")}
                                             </button>
                                         )}
@@ -2563,6 +2546,7 @@ const OrderCard = ({
                                     className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-white outline-none"
                                     placeholder="Ej: 101234567 o 001-0000000-0"
                                 />
+                                <p role="status" className="text-xs text-gray-400">{{FOUND:'Encontrado; se conserva el nombre manual.',NOT_FOUND:'No encontrado. Completa el nombre manualmente.',ERROR:'Error consultando RNC.'}[fiscalLookup.status]}</p>
                                 {dgiiLoading && (
                                     <span className="absolute right-3 top-8 text-[11px] text-gray-400">
                     Buscando DGII...
@@ -2607,7 +2591,7 @@ const OrderCard = ({
                                 onClick={saveFiscal}
                                 disabled={savingFiscal}
                                 className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-black ${
-                                    savingFiscal ? "bg-amber-900/40 text-amber-300 cursor-not-allowed" : "bg-amber-400 hover:bg-amber-300"
+                                    savingFiscal ? "bg-sky-900/40 text-sky-300 cursor-not-allowed" : "bg-sky-400 hover:bg-sky-300"
                                 }`}
                             >
                                 {savingFiscal ? "Guardando..." : "Guardar y generar"}

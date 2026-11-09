@@ -47,9 +47,9 @@ export default function OrderCorrectionHistory({ orderId, onClose }) {
       onClick={onClose}>
       <section role="dialog" aria-modal="true" aria-label={t.title}
         onClick={e => e.stopPropagation()}
-        className="flex h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-amber-500/25 bg-[#151515] text-white shadow-2xl">
+        className="flex h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-sky-500/25 bg-[#151515] text-white shadow-2xl">
         <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 px-5 py-4">
-          <div><h2 className="flex items-center gap-2 text-lg font-bold"><History className="h-5 w-5 text-amber-400" />{t.title}</h2>
+          <div><h2 className="flex items-center gap-2 text-lg font-bold"><History className="h-5 w-5 text-sky-400" />{t.title}</h2>
             <p className="mt-1 text-xs text-gray-400">{t.description}</p></div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-white/10" aria-label={t.close}><X className="h-5 w-5" /></button>
         </header>
@@ -70,10 +70,10 @@ export default function OrderCorrectionHistory({ orderId, onClose }) {
                 <div><div className="text-xs text-gray-400">{t.after}</div><strong className="text-emerald-300">{money(row.nextTotal)}</strong></div>
                 {row.previousPaymentMethod !== row.nextPaymentMethod && <div className="col-span-2 text-xs">{t.payment}: {row.previousPaymentMethod} → {row.nextPaymentMethod}</div>}
               </div>
-              {row.settlement && <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 p-3 text-xs text-amber-200">
+              {row.settlement && <div className="mt-3 flex items-start gap-2 rounded-lg border border-sky-500/20 p-3 text-xs text-sky-200">
                 <ReceiptText className="h-4 w-4 shrink-0"/><span>{t.cash}: {row.settlement.direction} {money(row.settlement.amount)} · {t.manual}
                 <span className="mt-1 block font-mono">{t.reference}: {row.code || row.settlement.reference || t.unknown}</span>
-                <span className="mt-1 block text-amber-200/70">{t.noEvidence}</span></span>
+                <span className="mt-1 block text-sky-200/70">{t.noEvidence}</span></span>
               </div>}
               <details className="group mt-3 rounded-lg border border-white/10 p-3">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm">{t.detail}<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180"/></summary>

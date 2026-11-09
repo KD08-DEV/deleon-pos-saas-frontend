@@ -272,7 +272,7 @@ const Suppliers = () => {
     if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t("suppliers.loading")}
@@ -300,7 +300,7 @@ const Suppliers = () => {
 
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Store className="w-6 h-6 text-[#f6b100]" />
+                        <Store className="w-6 h-6 text-[#38bdf8]" />
 
                         {t("suppliers.title")}
                     </h2>
@@ -314,7 +314,7 @@ const Suppliers = () => {
                 <button
                     type="button"
                     onClick={openAddModal}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all"
                 >
                     <Plus className="w-4 h-4" />
 
@@ -339,7 +339,7 @@ const Suppliers = () => {
                                 event.target.value
                             )
                         }
-                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                        className="w-full pl-10 p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                     />
                 </div>
             </div>
@@ -402,13 +402,13 @@ const Suppliers = () => {
                     (supplier) => (
                         <div
                             key={supplier._id}
-                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#f6b100]/50 transition-all group"
+                            className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-5 hover:border-[#38bdf8]/50 transition-all group"
                         >
                             <div className="flex items-start justify-between mb-4">
 
                                 <div className="flex items-center gap-3 flex-1">
-                                    <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
-                                        <Store className="w-5 h-5 text-[#f6b100]" />
+                                    <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20">
+                                        <Store className="w-5 h-5 text-[#38bdf8]" />
                                     </div>
 
 
@@ -440,7 +440,7 @@ const Suppliers = () => {
                                                 supplier
                                             )
                                         }
-                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#f6b100] transition-colors"
+                                        className="p-2 bg-[#1a1a1a] rounded-lg hover:bg-[#38bdf8] transition-colors"
                                         title={t("suppliers.actions.edit")}
                                         aria-label={t("suppliers.actions.edit")}
                                     >
@@ -628,7 +628,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                         required
                                     />
                                 </div>
@@ -650,7 +650,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
 
@@ -671,7 +671,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
 
@@ -692,7 +692,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
 
@@ -713,7 +713,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
 
@@ -733,7 +733,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     >
                                         <option value="active">
                                             {t("suppliers.status.active")}
@@ -762,7 +762,7 @@ const Suppliers = () => {
                                                 })
                                             )
                                         }
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                     />
                                 </div>
 
@@ -783,7 +783,7 @@ const Suppliers = () => {
                                             )
                                         }
                                         rows={3}
-                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50 resize-none"
+                                        className="w-full p-2.5 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50 resize-none"
                                     />
                                 </div>
 
@@ -807,7 +807,7 @@ const Suppliers = () => {
                                         createMutation.isPending ||
                                         updateMutation.isPending
                                     }
-                                    className="flex-1 px-4 py-2.5 bg-[#f6b100] text-black rounded-lg font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="flex-1 px-4 py-2.5 bg-[#38bdf8] text-black rounded-lg font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
                                     <Save className="w-4 h-4" />
 

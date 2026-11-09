@@ -1190,7 +1190,7 @@ const ProductReports = () => {
         return (
             <div className="text-center py-8 text-gray-400">
 
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
 
                 <p className="mt-2">
@@ -1249,7 +1249,7 @@ const ProductReports = () => {
 
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
 
-                        <Package className="w-6 h-6 text-[#f6b100]" />
+                        <Package className="w-6 h-6 text-[#38bdf8]" />
 
 
                         {t(
@@ -1277,7 +1277,7 @@ const ProductReports = () => {
                         downloadExcel
                     }
 
-                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                 >
 
                     <Download className="w-4 h-4" />
@@ -1335,7 +1335,7 @@ const ProductReports = () => {
                                 )
                             }
 
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
 
                     </div>
@@ -1376,7 +1376,7 @@ const ProductReports = () => {
                                 )
                             }
 
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
 
                     </div>
@@ -1405,7 +1405,7 @@ const ProductReports = () => {
                         </p>
 
 
-                        <Package className="w-4 h-4 text-[#f6b100]" />
+                        <Package className="w-4 h-4 text-[#38bdf8]" />
 
                     </div>
 
@@ -1527,7 +1527,7 @@ const ProductReports = () => {
 
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
 
-                    <Award className="w-5 h-5 text-[#f6b100]" />
+                    <Award className="w-5 h-5 text-[#38bdf8]" />
 
 
                     {t(
@@ -1577,7 +1577,7 @@ const ProductReports = () => {
 
                                             <div className="flex items-center gap-3">
 
-                                                <div className="w-8 h-8 rounded-full bg-[#f6b100]/20 flex items-center justify-center text-[#f6b100] font-bold text-sm">
+                                                <div className="w-8 h-8 rounded-full bg-[#38bdf8]/20 flex items-center justify-center text-[#38bdf8] font-bold text-sm">
 
                                                     {index + 1}
 
@@ -1610,7 +1610,7 @@ const ProductReports = () => {
 
                                             <div className="text-right">
 
-                                                <p className="text-sm font-bold text-[#f6b100]">
+                                                <p className="text-sm font-bold text-[#38bdf8]">
 
                                                     {product
                                                         .totalQuantity
@@ -1642,7 +1642,7 @@ const ProductReports = () => {
                                         <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
 
                                             <div
-                                                className="h-2 bg-gradient-to-r from-[#f6b100] to-[#ffd633] rounded-full transition-all"
+                                                className="h-2 bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] rounded-full transition-all"
 
                                                 style={{
                                                     width:
@@ -1670,7 +1670,7 @@ const ProductReports = () => {
 
                 <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
 
-                    <TrendingUp className="w-5 h-5 text-[#f6b100]" />
+                    <TrendingUp className="w-5 h-5 text-[#38bdf8]" />
 
 
                     {t(
@@ -1720,7 +1720,7 @@ const ProductReports = () => {
 
                                             <div className="flex items-center gap-3">
 
-                                                <div className="w-8 h-8 rounded-full bg-[#f6b100]/20 flex items-center justify-center text-[#f6b100] font-bold text-sm">
+                                                <div className="w-8 h-8 rounded-full bg-[#38bdf8]/20 flex items-center justify-center text-[#38bdf8] font-bold text-sm">
 
                                                     {index + 1}
 
@@ -1753,7 +1753,7 @@ const ProductReports = () => {
 
                                             <div className="text-right">
 
-                                                <p className="text-sm font-bold text-[#f6b100]">
+                                                <p className="text-sm font-bold text-[#38bdf8]">
 
                                                     {currency(
                                                         product
@@ -1785,7 +1785,7 @@ const ProductReports = () => {
                                         <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
 
                                             <div
-                                                className="h-2 bg-gradient-to-r from-[#f6b100] to-[#ffd633] rounded-full transition-all"
+                                                className="h-2 bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] rounded-full transition-all"
 
                                                 style={{
                                                     width:
@@ -1845,7 +1845,7 @@ const ProductReports = () => {
                             )
                         }
 
-                        className="w-full md:w-64 px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#f6b100]/50"
+                        className="w-full md:w-64 px-3 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#38bdf8]/50"
                     />
 
                 </div>
@@ -1896,7 +1896,7 @@ const ProductReports = () => {
                                     )}
 
 
-                                    <span className="text-[10px] text-[#f6b100]">
+                                    <span className="text-[10px] text-[#38bdf8]">
 
                                             {productSort.key ===
                                             "totalQuantity"
@@ -1933,7 +1933,7 @@ const ProductReports = () => {
                                     )}
 
 
-                                    <span className="text-[10px] text-[#f6b100]">
+                                    <span className="text-[10px] text-[#38bdf8]">
 
                                             {productSort.key ===
                                             "totalRevenue"
@@ -2138,7 +2138,7 @@ const ProductReports = () => {
                                         </h4>
 
 
-                                        <p className="text-sm font-bold text-[#f6b100]">
+                                        <p className="text-sm font-bold text-[#38bdf8]">
 
                                             {currency(
                                                 stats

@@ -1,4 +1,10 @@
+import useRncLookup from "../../hooks/useRncLookup";
+import OrderCorrectionEditor from "../orders/OrderCorrectionEditor";
+import { hasOrdinaryInvoice, invoiceHasChanges, invoicePreview } from "../../lib/ordinaryInvoice";
+import { refreshSalesViews } from "../../lib/refreshSalesViews";
+import { refreshTableViews } from "../../lib/tableOperations";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import { createPortal } from "react-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { enqueueSnackbar } from "notistack";
@@ -41,16 +47,19 @@ const isLikelyRncOrCedula = (value) => {
     const cleaned = String(value || "").replace(/[^\d]/g, "");
     return cleaned.length === 9 || cleaned.length === 11; // RNC (9) o Cédula (11)
 };
-function Switch({ checked, onChange, disabled }) {
+function Switch({ checked, onChange, disabled, label }) {
     return (
         <button
             type="button"
             disabled={disabled}
             onClick={() => !disabled && onChange(!checked)}
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
             className={[
                 "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200",
                 disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
-                checked ? "bg-[#f6b100]" : "bg-gray-700",
+                checked ? "bg-[#38bdf8]" : "bg-gray-700",
             ].join(" ")}
             aria-pressed={checked}
         >
@@ -63,6 +72,7 @@ function Switch({ checked, onChange, disabled }) {
         </button>
     );
 }
+Switch.propTypes = { checked: PropTypes.bool, onChange: PropTypes.func, disabled: PropTypes.bool, label: PropTypes.string };
 const normalizeText = (v) => String(v || "").trim().toLowerCase();
 
 const stableArray = (arr) => {
@@ -287,6 +297,9 @@ const getTableIdFromAny = (value) => {
 };
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
+    const [ordinaryCorrection, setOrdinaryCorrection] = useState(null);
+    const ordinaryInvoiceLock = useRef(false);
+    const [ordinaryInvoiceBusy, setOrdinaryInvoiceBusy] = useState(false);
     const {
         t,
     } =
@@ -448,26 +461,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
 
     const commissionPct = commissionRate ? Math.round(commissionRate * 100) : 0;
-    const { data: usageSummary } = useQuery({
-        queryKey: ["checkout-plan-usage"],
-        queryFn: async () => {
-            const res = await api.get("/api/admin/usage");
-            return res.data?.data || res.data;
-        },
-        staleTime: 60_000,
-    });
-
-    const rawPlan = String(
-        usageSummary?.plan ||
-        tenantInfo?.plan ||
-        tenantInfo?.subscriptionPlan ||
-        tenantInfo?.subscription?.plan ||
-        ""
-    )
-        .trim()
-        .toLowerCase();
-
-    const canUseCreditSales = rawPlan ? rawPlan !== "emprendedor" : false;
+    const creditAccess=useQuery({queryKey:['credit-sale-access',tenantInfo?.tenantId,getScope().clientId],queryFn:async()=>(await api.get('/api/order/credit-access')).data,staleTime:0,refetchInterval:15000,refetchOnWindowFocus:'always',retry:false});
+    const canUseCreditSales=creditAccess.data?.canCreateCredit===true&&!creditAccess.isError;
 
     const discountEnabledByTenant = tenantFeatures?.discount?.enabled === true;
     const tipEnabledByTenant =
@@ -676,6 +671,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [manualTip, setManualTip] =
         useState("");
 
+    const [legalTipEnabled, setLegalTipEnabled] = useState(true);
     const [taxEnabled, setTaxEnabled] =
         useState(true);
 
@@ -788,6 +784,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             order?.bills ||
             {};
 
+        setLegalTipEnabled(bills.legalTipEnabled !== false);
         const savedTax =
             bills?.taxEnabled;
 
@@ -1087,6 +1084,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 deliveryFee:
                 deliveryFeePreview,
 
+                legalTipEnabled,
                 taxEnabled:
                 taxEnabled,
 
@@ -1098,6 +1096,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 discountPreview,
                 deliveryFeePreview,
                 taxEnabled,
+                legalTipEnabled,
                 orderSource,
             ]
         );
@@ -1370,79 +1369,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         }
     }, [allowedNcfTypes, ncfType]);
 
-    // DGII lookup (solo si el cliente pide fiscal y escribe RNC/Cédula)
-    const lookupDgii = async (doc) => {
-        if (
-            !isDominicanTenant
-        ) {
-            setDgiiStatus("");
-            setDgiiFound(null);
-
-            return;
-        }
-        const cleaned = String(doc || "").replace(/[^\d]/g, "");
-
-        // solo buscar si parece RNC/Cédula
-        if (!isLikelyRncOrCedula(cleaned)) {
-            setDgiiStatus("");
-            setDgiiFound(null);
-            return;
-        }
-
-        try {
-            setDgiiLoading(true);
-            setDgiiStatus("");
-            setDgiiFound(null);
-
-            const res = await api.get(`/api/dgii/rnc/${cleaned}`);
-
-            // soporta varias respuestas posibles:
-            // 1) { ok:true, data:{...} }
-            // 2) { data:{ ok:true, data:{...} } }
-            // 3) { data:{ data:{...} } }
-            const payload = res?.data;
-            const data =
-                payload?.data?.data ??
-                payload?.data ??
-                payload ??
-                null;
-
-            const foundName =
-                data?.name ||
-                data?.nombre ||
-                data?.razonSocial ||
-                data?.razon_social ||
-                "";
-
-            if (foundName) {
-                setCustomerName(foundName);
-                setDgiiStatus("FOUND");
-                setDgiiFound(data);
-            } else {
-                setDgiiStatus("NOT_FOUND");
-                setDgiiFound(null);
-
-                // ✅ Aviso claro si no se autocompleta
-                if (wantsFiscal && effectiveLegacyNcfCapable && !String(customerName || "").trim()) {
-                    enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
-                        variant: "warning",
-                    });
-                }
-            }
-        } catch (e) {
-            setDgiiStatus("ERROR");
-            setDgiiFound(null);
-
-            if (wantsFiscal && effectiveLegacyNcfCapable && !String(customerName || "").trim()) {
-                enqueueSnackbar("No se pudo autocompletar, introduzca el nombre manualmente.", {
-                    variant: "warning",
-                });
-            }
-        } finally {
-            setDgiiLoading(false);
-        }
-    };
-
+    const rncLookup=useRncLookup({value:customerRnc,name:customerName,onName:setCustomerName,enabled:isDominicanTenant});
+    useEffect(()=>{setDgiiLoading(rncLookup.loading);setDgiiStatus(rncLookup.status);setDgiiFound(rncLookup.record);},[rncLookup.loading,rncLookup.status,rncLookup.record]);
 
     // Construye payload multi-tenant seguro (backend debe validar tenantId)
     const buildOrderPayload = (target = submitActionRef.current || "invoice") => {
@@ -1557,6 +1485,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ),
 
             taxEnabled,
+            legalTipEnabled,
 
             deliveryFee:
                 num(
@@ -2056,6 +1985,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     fallback.bills?.totalWithTax ??
                     0,
 
+                legalTipEnabled: server.bills?.legalTipEnabled ?? fallback.bills?.legalTipEnabled ?? true,
                 taxEnabled:
                     server.bills?.taxEnabled ??
                     fallback.bills?.taxEnabled ??
@@ -2665,8 +2595,32 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         } catch(e) {enqueueSnackbar(e?.response?.data?.code||e?.message||"No se pudo recuperar la factura original", {variant:"error"});}
     };
 
+    const openOrdinaryInvoice = async () => {
+        if (ordinaryInvoiceLock.current) return;
+        ordinaryInvoiceLock.current = true;
+        setOrdinaryInvoiceBusy(true);
+        try {
+            const response = await api.get(`/api/order/${encodeURIComponent(String(effectiveOrderId))}`);
+            const original = response?.data?.data;
+            if (!original?._id) throw Error("No se encontró la factura original.");
+            const draft = buildOrderPayload("invoice");
+            if (invoiceHasChanges(original, draft)) {
+                setOrdinaryCorrection({order:original,initialValues:draft});
+            } else {
+                setOrderInfo(invoicePreview(original));
+                setShowInvoice(true);
+            }
+        } catch (error) {
+            enqueueSnackbar(error?.response?.data?.message || "No se pudo recuperar la factura.", {variant:"error"});
+        } finally { ordinaryInvoiceLock.current = false; setOrdinaryInvoiceBusy(false); }
+    };
+
     const handlePlaceOrder = (target = "invoice") => {
-        if (target === "invoice" && isEcfMode && hasExistingEcf) {
+        if (target === "invoice" && !isEcfMode && !hasExistingEcf && effectiveOrderId && hasOrdinaryInvoice(order)) {
+            void openOrdinaryInvoice();
+            return;
+        }
+        if (target === "invoice" && hasExistingEcf) {
             void openIssuedEcfForPrint(); // mismo e-NCF + mismo QR, nunca emisión nueva
             return;
         }
@@ -2837,18 +2791,21 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         setConfirmReleaseInvoice(true);
     };
 
+    const releaseInvoiceLock = useRef(false);
     const confirmFinishAndReleaseTable = async () => {
-        if (releaseFromInvoiceLoading) return;
+        if (releaseInvoiceLock.current || releaseFromInvoiceLoading) return;
         const invoiceOrderId = orderInfo?._id || orderId || order?._id || null;
         if (!invoiceOrderId) {
             enqueueSnackbar("No se pudo identificar la orden facturada.", { variant: "error" });
             return;
         }
+        releaseInvoiceLock.current = true;
         try {
             setReleaseFromInvoiceLoading(true);
             // Endpoint dedicado: NO vuelve a facturar ni modifica XML, NCF,
             // pagos o detalles. La mesa se libera en servidor con scope.
             await api.post(`/api/order/${encodeURIComponent(String(invoiceOrderId))}/close-and-vacate`);
+            await refreshTableViews(queryClient);
             setConfirmReleaseInvoice(false);
             handleInvoiceClose();
             await Promise.all([
@@ -2871,6 +2828,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             console.error("[BILL] Cerrar y desocupar:", code || e?.response?.data || e);
             enqueueSnackbar(messages[code] || t("bill.messages.closeTableError", "No se pudo cerrar y desocupar la mesa."), { variant: "error" });
         } finally {
+            releaseInvoiceLock.current = false;
             setReleaseFromInvoiceLoading(false);
         }
     };
@@ -3043,7 +3001,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 value={draftOrderNote}
                                 onChange={(e) => setDraftOrderNote(e.target.value)}
                                 rows={4}
-                                className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 placeholder={
                                     t(
                                         "bill.notePlaceholder"
@@ -3116,7 +3074,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 const val = e.target.value.trim();
                                 setDiscountValue(val === "" ? 0 : Number(val));
                             }}
-                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#facc15]"
+                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#15b1fa]"
                             placeholder="0.00"
                         />
                     </div>
@@ -3173,7 +3131,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     );
                                 }}
                                 placeholder="0.00"
-                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 pl-7 text-[#f5f5f5] text-right outline-none focus:ring-1 focus:ring-[#facc15]"
+                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 pl-7 text-[#f5f5f5] text-right outline-none focus:ring-1 focus:ring-[#15b1fa]"
                             />
                         </div>
 
@@ -3187,7 +3145,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     <div className="flex items-center justify-between mt-3">
                         <div>
             <span className="text-xs text-[#ababab]">
-                {t("bill.taxes")}
+                {isDominicanTenant ? "ITBIS" : t("bill.taxes")}
             </span>
 
                             <p className="text-[10px] text-[#666] mt-0.5">
@@ -3197,10 +3155,17 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                         <Switch
                             checked={taxEnabled}
+                            label={isDominicanTenant ? "ITBIS" : "Impuestos"}
                             onChange={
                                 setTaxEnabled
                             }
                         />
+                    </div>
+                )}
+                {tenantInfo?.features?.serviceCharges?.enabled && tenantInfo.features.serviceCharges.charges?.some(charge => charge.active !== false && charge.code === "LEGAL_TIP") && (
+                    <div className="flex items-center justify-between mt-3">
+                        <span className="text-xs text-[#ababab]">Propina legal</span>
+                        <Switch checked={legalTipEnabled} onChange={setLegalTipEnabled} label="Propina legal" />
                     </div>
                 )}
                 {isInternalDelivery && (
@@ -3214,7 +3179,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 const val = e.target.value.trim();
                                 setDeliveryFee(val === "" ? 0 : Number(val));
                             }}
-                            className="w-28 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#facc15]"
+                            className="w-28 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#15b1fa]"
                             placeholder="0.00"
                         />
                     </div>
@@ -3398,7 +3363,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     return;
                                 }
 
-                                paymentMethodMutation.mutate("Efectivo");
+                                if (!hasOrdinaryInvoice(order)) paymentMethodMutation.mutate("Efectivo");
                             }}
                             className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
                                 paymentMethod === "Efectivo"
@@ -3419,7 +3384,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                 // ✅ solo persiste si ya existe orderId
                                 if (orderId) {
-                                    paymentMethodMutation.mutate("Tarjeta");
+                                    if (!hasOrdinaryInvoice(order)) paymentMethodMutation.mutate("Tarjeta");
                                 }
                             }}
                             className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
@@ -3441,7 +3406,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                 // ✅ solo persiste si ya existe orderId
                                 if (orderId) {
-                                    paymentMethodMutation.mutate("Transferencia");
+                                    if (!hasOrdinaryInvoice(order)) paymentMethodMutation.mutate("Transferencia");
                                 }
                             }}
                             className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
@@ -3461,7 +3426,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     setPaymentMethod("Credito");
 
                                     if (orderId) {
-                                        paymentMethodMutation.mutate("Credito");
+                                        if (!hasOrdinaryInvoice(order)) paymentMethodMutation.mutate("Credito");
                                     }
                                 }}
                                 className={`min-h-[52px] px-3 py-3 w-full rounded-xl font-semibold text-sm sm:text-base leading-tight text-center transition-all ${
@@ -3478,7 +3443,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     </>
                 )}
             </div>
-            
+
 
             {/* Datos del cliente + Fiscal */}
             <div className="px-5 mt-4">
@@ -3574,7 +3539,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                     {/* ✅ Mensaje claro cuando no autocompleta */}
                                     {!dgiiLoading && (dgiiStatus === "NOT_FOUND" || dgiiStatus === "ERROR") && (
-                                        <p className="text-xs text-yellow-300 mt-1">
+                                        <p className="text-xs text-sky-300 mt-1">
                                             No se pudo autocompletar, introduzca el nombre manualmente.
                                         </p>
                                     )}
@@ -3587,7 +3552,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         type="text"
                                         value={customerRnc}
                                         onChange={(e) => setCustomerRnc(e.target.value)}
-                                        onBlur={() => lookupDgii(customerRnc)}
+
                                         className="w-full bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
                                         placeholder="RNC / Cédula"
                                     />
@@ -3632,10 +3597,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         setSubmitAction("invoice");
                         handlePlaceOrder("invoice");
                     }}
-                    disabled={orderMutation.isPending}
-                    className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
+                    disabled={orderMutation.isPending || ordinaryInvoiceBusy}
+                    className="px-4 py-3 w-full rounded-lg bg-[#38bdf8] text-[#1f1f1f] font-semibold text-lg"
                 >
-                    {t("bill.invoice")}
+                    {ordinaryInvoiceBusy ? "Procesando..." : t("bill.invoice")}
                 </button>
 
                 {/* 3) Actualizar: oculto en canal rápido */}
@@ -3690,7 +3655,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                     <div className="flex items-center justify-between text-sm mt-3">
                                         <span className="text-white/50">{t("bill.leaveTable.currentTotal")}</span>
-                                        <span className="font-semibold text-[#f6b100]">
+                                        <span className="font-semibold text-[#38bdf8]">
                              {money(subtotal)}
                             </span>
                                     </div>
@@ -3701,7 +3666,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         type="button"
                                         onClick={handleSaveItemsAndLeave}
                                         disabled={leaveTableModal.loading || orderMutation.isPending}
-                                        className="w-full px-4 py-3 rounded-2xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] transition-all disabled:opacity-50"
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#38bdf8] text-black font-bold hover:bg-[#7dd3fc] transition-all disabled:opacity-50"
                                     >
                                         {leaveTableModal.loading
                                             ? t("bill.leaveTable.saving")
@@ -3746,7 +3711,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             <button
                                 type="button"
                                 onClick={() => setCashReceived(num(totalToPay).toFixed(2))}
-                                className="px-3 py-2 rounded-lg bg-[#f6b100] text-[#111] text-xs font-bold hover:opacity-90"
+                                className="px-3 py-2 rounded-lg bg-[#38bdf8] text-[#111] text-xs font-bold hover:opacity-90"
                             >
                                 {t("bill.cash.exact")}
                             </button>
@@ -3763,7 +3728,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         const val = e.target.value.replace(/[^\d.]/g, "");
                                         setCashReceived(val);
                                     }}
-                                    className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#f6b100]"
+                                    className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#38bdf8]"
                                     placeholder={t("bill.cash.placeholder")}                                />
                             </div>
 
@@ -3773,7 +3738,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         "bill.cash.change"
                                     )}
                                 </p>
-                                <p className="text-2xl font-bold text-[#f6b100]">
+                                <p className="text-2xl font-bold text-[#38bdf8]">
                                     {money(cashChange)}
                                 </p>
 
@@ -3840,10 +3805,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !releaseFromInvoiceLoading) setConfirmReleaseInvoice(false); }}>
                     <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-release-title"
                         aria-describedby="confirm-release-description"
-                        className="w-full max-w-md rounded-2xl border border-amber-500/25 bg-[#171719] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.65)] sm:p-6"
+                        className="w-full max-w-md rounded-2xl border border-sky-500/25 bg-[#171719] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.65)] sm:p-6"
                         style={{ maxHeight: "calc(100dvh - 7rem)", overflowY: "auto" }}>
                         <div className="flex items-start gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-400">
                                 <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
                             </div>
                             <div className="min-w-0 flex-1">
@@ -3860,7 +3825,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 className="rounded-xl border border-gray-600 bg-[#2a2a2d] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#38383d] disabled:opacity-50">Cancelar</button>
                             <button type="button" disabled={releaseFromInvoiceLoading}
                                 onClick={confirmFinishAndReleaseTable}
-                                className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60">
+                                className="rounded-xl bg-sky-500 px-4 py-3 text-sm font-bold text-black transition hover:bg-sky-400 disabled:cursor-wait disabled:opacity-60">
                                 {releaseFromInvoiceLoading ? "Cerrando mesa…" : "Sí, cerrar y desocupar"}
                             </button>
                         </div>
@@ -3868,6 +3833,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 </div>, document.body
             )}
 
+            {ordinaryCorrection && <OrderCorrectionEditor
+                order={ordinaryCorrection.order} initialValues={ordinaryCorrection.initialValues}
+                onClose={() => setOrdinaryCorrection(null)}
+                onSaved={async corrected => {
+                    setOrdinaryCorrection(null);
+                    setOrderInfo(invoicePreview(corrected));
+                    setShowInvoice(true);
+                    await refreshSalesViews(queryClient);
+                }} />}
             {showInvoice && orderInfo && (
                 <Invoice
                     order={orderInfo}

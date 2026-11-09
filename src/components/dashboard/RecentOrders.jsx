@@ -89,7 +89,7 @@ const RecentOrders = () => {
               border: 2px solid #1a1a1a;
             }
             div::-webkit-scrollbar-thumb:hover {
-              background-color: #f6b100;
+              background-color: #38bdf8;
             }
           `}
                 </style>
@@ -151,7 +151,7 @@ const RecentOrders = () => {
                                                     ? "text-blue-600"
                                                     : status === "Cancelado"
                                                         ? "text-red-500"
-                                                        : "text-yellow-500"
+                                                        : "text-sky-500"
                                         }`}
                                         value={status}
                                         onChange={(e) =>
@@ -219,7 +219,7 @@ const RecentOrders = () => {
                                                 ? "text-blue-600"
                                                 : status === "Cancelado"
                                                     ? "text-red-500"
-                                                    : "text-yellow-500"
+                                                    : "text-sky-500"
                                     }`}
                                     value={status}
                                     onChange={(e) =>

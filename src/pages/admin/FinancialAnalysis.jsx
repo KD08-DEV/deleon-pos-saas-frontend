@@ -1968,7 +1968,7 @@ const FinancialAnalysis = () => {
     ) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t(
@@ -2003,7 +2003,7 @@ const FinancialAnalysis = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <BarChart3 className="w-6 h-6 text-[#f6b100]" />
+                        <BarChart3 className="w-6 h-6 text-[#38bdf8]" />
 
                         {t(
                             "financialAnalysisPage.title"
@@ -2022,7 +2022,7 @@ const FinancialAnalysis = () => {
                     onClick={
                         downloadExcel
                     }
-                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                 >
                     <Download className="w-4 h-4" />
 
@@ -2070,7 +2070,7 @@ const FinancialAnalysis = () => {
                                     false
                                 );
                             }}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
 
@@ -2110,7 +2110,7 @@ const FinancialAnalysis = () => {
                                     false
                                 );
                             }}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
 
@@ -2149,7 +2149,7 @@ const FinancialAnalysis = () => {
                                     false
                                 );
                             }}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         >
                             <option value="">
                                 {t(
@@ -2218,7 +2218,7 @@ const FinancialAnalysis = () => {
                                     false
                                 );
                             }}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         >
                             <option value="">
                                 {t(
@@ -2321,7 +2321,7 @@ const FinancialAnalysis = () => {
                             )}
                         </p>
 
-                        <TrendingUp className="w-4 h-4 text-[#f6b100]" />
+                        <TrendingUp className="w-4 h-4 text-[#38bdf8]" />
                     </div>
 
                     <p className="text-2xl font-bold text-white">
@@ -2420,7 +2420,7 @@ const FinancialAnalysis = () => {
                                 )}
                             </span>
 
-                            <span className="text-sm font-bold text-yellow-400">
+                            <span className="text-sm font-bold text-sky-400">
                                 {currency(
                                     financialAnalysis.totalTax
                                 )}
@@ -2448,7 +2448,7 @@ const FinancialAnalysis = () => {
                                 )}
                             </span>
 
-                            <span className="text-base font-bold text-[#f6b100]">
+                            <span className="text-base font-bold text-[#38bdf8]">
                                 {currency(
                                     financialAnalysis.totalRevenue
                                 )}
@@ -2587,7 +2587,7 @@ const FinancialAnalysis = () => {
                                             </div>
 
                                             <div className="text-right">
-                                                <p className="text-sm font-bold text-[#f6b100]">
+                                                <p className="text-sm font-bold text-[#38bdf8]">
                                                     {currency(
                                                         dayData.revenue
                                                     )}
@@ -2607,7 +2607,7 @@ const FinancialAnalysis = () => {
 
                                         <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
                                             <div
-                                                className="h-2 bg-gradient-to-r from-[#f6b100] to-[#ffd633] rounded-full transition-all"
+                                                className="h-2 bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] rounded-full transition-all"
                                                 style={{
                                                     width:
                                                         `${percentage}%`,
@@ -2752,9 +2752,9 @@ const FinancialAnalysis = () => {
                                             );
                                         }
                                     }}
-                                    className={`bg-[#1a1a1a] border rounded-lg p-3 cursor-pointer transition-all hover:border-[#f6b100]/70 ${
+                                    className={`bg-[#1a1a1a] border rounded-lg p-3 cursor-pointer transition-all hover:border-[#38bdf8]/70 ${
                                         isSelected
-                                            ? "border-[#f6b100]"
+                                            ? "border-[#38bdf8]"
                                             : "border-gray-800/30"
                                     }`}
                                 >
@@ -2783,7 +2783,7 @@ const FinancialAnalysis = () => {
 
                                     <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                                         <div
-                                            className="h-1.5 bg-gradient-to-r from-[#f6b100] to-[#ffd633] rounded-full transition-all"
+                                            className="h-1.5 bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] rounded-full transition-all"
                                             style={{
                                                 width:
                                                     `${percentage}%`,
@@ -2834,7 +2834,7 @@ const FinancialAnalysis = () => {
                                             false
                                         )
                                     }
-                                    className="px-3 py-1.5 text-sm rounded-lg border border-gray-800/60 text-gray-300 hover:border-[#f6b100]/60 hover:text-white transition-colors"
+                                    className="px-3 py-1.5 text-sm rounded-lg border border-gray-800/60 text-gray-300 hover:border-[#38bdf8]/60 hover:text-white transition-colors"
                                 >
                                     {t(
                                         "financialAnalysisPage.actions.close"
@@ -2850,7 +2850,7 @@ const FinancialAnalysis = () => {
                                         )}
                                     </p>
 
-                                    <p className="text-lg font-semibold text-[#f6b100]">
+                                    <p className="text-lg font-semibold text-[#38bdf8]">
                                         {currency(
                                             hourProductBreakdown.totalRevenue
                                         )}

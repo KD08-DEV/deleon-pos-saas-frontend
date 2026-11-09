@@ -116,7 +116,7 @@ const ToggleSwitch = ({ checked, onChange, disabled = false, ariaLabel }) => {
                 disabled
                     ? "opacity-50 cursor-not-allowed bg-white/10"
                     : checked
-                        ? "bg-[#F6B100]"
+                        ? "bg-[#38bdf8]"
                         : "bg-white/10"
             }`}
         >
@@ -130,11 +130,11 @@ const ToggleSwitch = ({ checked, onChange, disabled = false, ariaLabel }) => {
 };
 
 const PermissionItem = ({ icon: Icon, title, desc, checked, onChange }) => (
-    <div className="rounded-2xl border border-white/10 bg-[#0d0d0d] p-4 hover:border-[#F6B100]/35 transition-all">
+    <div className="rounded-2xl border border-white/10 bg-[#0d0d0d] p-4 hover:border-[#38bdf8]/35 transition-all">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex items-start gap-3 min-w-0">
-                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F6B100]/10 border border-[#F6B100]/20">
-                    <Icon className="w-5 h-5 text-[#F6B100]" />
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#38bdf8]/10 border border-[#38bdf8]/20">
+                    <Icon className="w-5 h-5 text-[#38bdf8]" />
                 </div>
 
                 <div className="min-w-0">
@@ -157,8 +157,8 @@ const PermissionItem = ({ icon: Icon, title, desc, checked, onChange }) => (
 const PermissionSection = ({ title, subtitle, icon: Icon, children }) => (
     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#111111] to-[#171717] p-4">
         <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F6B100]/10 border border-[#F6B100]/20">
-                <Icon className="w-5 h-5 text-[#F6B100]" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#38bdf8]/10 border border-[#38bdf8]/20">
+                <Icon className="w-5 h-5 text-[#38bdf8]" />
             </div>
             <div>
                 <h3 className="text-sm font-bold text-white">{title}</h3>
@@ -469,7 +469,7 @@ const Employees = () => {
         <>
             <div className="p-8 bg-gradient-to-br from-[#1a1a1a] to-[#1f1f1f] rounded-lg shadow-lg text-[#f5f5f5]">
                 <h2 className="text-2xl font-bold mb-2 text-center">{t("employeesPage.title")}</h2>
-                <p className="text-sm text-center text-amber-300 mb-6">{activeBranchName} · {employees.length} empleado(s) asignado(s)</p>
+                <p className="text-sm text-center text-sky-300 mb-6">{activeBranchName} · {employees.length} empleado(s) asignado(s)</p>
 
                 {employees.length === 0 ? (
                     <p className="text-center text-[#ababab]">
@@ -504,7 +504,7 @@ const Employees = () => {
                                         <td className="p-4 text-[#ababab]">{e.email}</td>
                                         <td className="p-4 text-[#ababab]">{e.phone}</td>
                                         <td className="p-4">
-                                                <span className="px-3 py-1 rounded-lg bg-[#F6B100]/20 text-[#F6B100] font-semibold text-sm border border-[#F6B100]/30">
+                                                <span className="px-3 py-1 rounded-lg bg-[#38bdf8]/20 text-[#38bdf8] font-semibold text-sm border border-[#38bdf8]/30">
                                                     {getEmployeeRoleLabel(e.membershipRole || e.role, t)}
                                                 </span>
                                         </td>
@@ -590,7 +590,7 @@ const Employees = () => {
                                     style={{
                                         maxHeight: "calc(92dvh - 150px)",
                                         scrollbarWidth: "thin",
-                                        scrollbarColor: "#F6B100 #1f1f1f",
+                                        scrollbarColor: "#38bdf8 #1f1f1f",
                                     }}
                                 >
                                     <div className="pointer-events-none sticky top-0 z-10 h-5 -mt-4 sm:-mt-6 mb-2 bg-gradient-to-b from-[#171717] to-transparent" />
@@ -670,13 +670,13 @@ const Employees = () => {
                                             </div>
 
                                             {formData.role !== "Owner" && formData.role !== "Admin" && (
-                                                <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4">
+                                                <div className="rounded-2xl border border-sky-500/25 bg-sky-500/5 p-4">
                                                     <h4 className="text-sm font-bold text-white mb-2">Sucursales asignadas</h4>
                                                     <p className="text-xs text-gray-400 mb-3">Este empleado solo puede entrar a las sedes seleccionadas. El cupo de usuarios se cuenta por empresa.</p>
                                                     <div className="flex flex-wrap gap-3">
                                                         {branches.map(b => (
                                                             <label key={b.clientId} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white">
-                                                                <input type="checkbox" className="accent-amber-500" checked={formData.clientIds?.includes(b.clientId) || false}
+                                                                <input type="checkbox" className="accent-sky-500" checked={formData.clientIds?.includes(b.clientId) || false}
                                                                     onChange={e => setFormData(prev => ({ ...prev, clientIds: e.target.checked
                                                                         ? [...new Set([...(prev.clientIds || []), b.clientId])]
                                                                         : (prev.clientIds || []).filter(x => x !== b.clientId) }))} />
@@ -802,10 +802,10 @@ const Employees = () => {
                                         </div>
 
                                         <div className="space-y-4">
-                                            <div className="rounded-2xl border border-[#F6B100]/15 bg-[#F6B100]/5 p-4 sm:p-5">
+                                            <div className="rounded-2xl border border-[#38bdf8]/15 bg-[#38bdf8]/5 p-4 sm:p-5">
                                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                                     <div>
-                                                        <p className="text-xs uppercase tracking-[0.18em] text-[#F6B100]/80">
+                                                        <p className="text-xs uppercase tracking-[0.18em] text-[#38bdf8]/80">
                                                             {t("employeesPage.permissions.summaryEyebrow")}
                                                         </p>
                                                         <h4 className="text-white font-semibold mt-1">
@@ -817,8 +817,8 @@ const Employees = () => {
                                                     </div>
 
                                                     <div className="flex items-center justify-start sm:justify-end">
-                                                        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-2xl bg-[#F6B100]/10 border border-[#F6B100]/20 flex items-center justify-center">
-                                                            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#F6B100]" />
+                                                        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-2xl bg-[#38bdf8]/10 border border-[#38bdf8]/20 flex items-center justify-center">
+                                                            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#38bdf8]" />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -862,7 +862,7 @@ const Employees = () => {
                                                                 </span>
                                                             )}
                                                             {formData.permissions?.orders?.edit && (
-                                                                <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+                                                                <span className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200">
                                                                     {t("employeesPage.permissions.orders.edit.title")}
                                                                 </span>
                                                             )}

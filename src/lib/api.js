@@ -45,7 +45,14 @@ api.interceptors.response.use(
             message.toLowerCase().includes("session expired") &&
             message.toLowerCase().includes("another device");
 
-        if (isSessionMismatch) {
+        // Una respuesta pendiente del login anterior no puede cerrar el actual.
+        const authorization = err?.config?.headers?.Authorization;
+        const currentToken = localStorage.getItem("token");
+        const belongsToCurrentSession = currentToken
+            ? authorization === `Bearer ${currentToken}`
+            : !authorization;
+
+        if (isSessionMismatch && belongsToCurrentSession) {
             // Limpieza opcional (si usas token en localStorage)
             localStorage.removeItem("token");
 

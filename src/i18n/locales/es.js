@@ -6710,7 +6710,7 @@ const es = {
                 "Guardar fondo inicial",
 
             editWithManager:
-                "Editar fondo inicial con código manager",
+                "Editar fondo inicial con código de autorización",
 
             saveInitialAdmin:
                 "Guardar fondo inicial (Admin) — {{date}}",

@@ -2,11 +2,9 @@ import { useSelector } from "react-redux";
 
 export default function useTenant() {
     // Soporta varias estructuras de store por si cambiaste reducers
-    const tenant =
-        useSelector((state) => state?.store?.tenant) ??
-        useSelector((state) => state?.tenant) ??
-        useSelector((state) => state?.auth?.tenant) ??
-        null;
+    const tenant = useSelector((state) =>
+        state?.store?.tenant ?? state?.tenant ?? state?.auth?.tenant ?? null
+    );
 
     return {
         // Backwards compatible (muchos componentes esperan tenantInfo)
