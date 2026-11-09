@@ -2180,9 +2180,9 @@ const Admin = () => {
 
                         <div className="flex items-center gap-3">
 
-                            <div className="p-2 bg-[#f6b100]/10 rounded-lg border border-[#f6b100]/20">
+                            <div className="p-2 bg-[#38bdf8]/10 rounded-lg border border-[#38bdf8]/20">
 
-                                <Shield className="w-5 h-5 text-[#f6b100]" />
+                                <Shield className="w-5 h-5 text-[#38bdf8]" />
 
                             </div>
 
@@ -2227,7 +2227,7 @@ const Admin = () => {
                                 )
                             }
 
-                            className="self-start md:self-auto group relative bg-[#f6b100] text-black px-6 py-3 rounded-xl font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:scale-105 flex items-center gap-2"
+                            className="self-start md:self-auto group relative bg-[#38bdf8] text-black px-6 py-3 rounded-xl font-semibold hover:bg-[#7dd3fc] transition-all duration-300 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/40 hover:scale-105 flex items-center gap-2"
                         >
 
                             <UserPlus className="w-4 h-4" />
@@ -2261,7 +2261,7 @@ const Admin = () => {
                             )
                         }
 
-                        className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group text-left cursor-pointer"
+                        className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#38bdf8]/30 transition-all duration-300 hover:shadow-lg hover:shadow-sky-500/10 group text-left cursor-pointer"
                     >
 
                         <div className="flex items-center justify-between mb-3">
@@ -2273,14 +2273,14 @@ const Admin = () => {
                             </p>
 
 
-                            <TrendingUp className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <TrendingUp className="w-4 h-4 text-[#38bdf8] opacity-0 group-hover:opacity-100 transition-opacity" />
 
                         </div>
 
 
                         <p className="text-lg font-semibold flex items-center gap-2 mb-3">
 
-                            <span className="px-3 py-1 rounded-full bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 text-yellow-400 text-xs font-bold border border-yellow-500/40">
+                            <span className="px-3 py-1 rounded-full bg-gradient-to-r from-sky-500/20 to-sky-500/10 text-sky-400 text-xs font-bold border border-sky-500/40">
                                 {plan}
                             </span>
 
@@ -2306,7 +2306,7 @@ const Admin = () => {
                     </button>
 
 
-                    <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group">
+                    <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#38bdf8]/30 transition-all duration-300 hover:shadow-lg hover:shadow-sky-500/10 group">
 
                         <div className="flex items-center justify-between mb-3">
 
@@ -2317,7 +2317,7 @@ const Admin = () => {
                             </p>
 
 
-                            <Users className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <Users className="w-4 h-4 text-[#38bdf8] opacity-0 group-hover:opacity-100 transition-opacity" />
 
                         </div>
 
@@ -2368,7 +2368,7 @@ const Admin = () => {
                     </div>
 
 
-                    <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#f6b100]/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/10 group">
+                    <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-5 hover:border-[#38bdf8]/30 transition-all duration-300 hover:shadow-lg hover:shadow-sky-500/10 group">
 
                         <div className="flex items-center justify-between mb-3">
 
@@ -2379,7 +2379,7 @@ const Admin = () => {
                             </p>
 
 
-                            <Package className="w-4 h-4 text-[#f6b100] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <Package className="w-4 h-4 text-[#38bdf8] opacity-0 group-hover:opacity-100 transition-opacity" />
 
                         </div>
 
@@ -2438,7 +2438,7 @@ const Admin = () => {
                     CONTENIDO PRINCIPAL
                 ====================================== */}
 
-                <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-6 mt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-6 mt-4">
 
                     {/* MENÚ LATERAL */}
 
@@ -2448,7 +2448,7 @@ const Admin = () => {
 
                             <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-800/50">
 
-                                <LayoutDashboard className="w-5 h-5 text-[#f6b100]" />
+                                <LayoutDashboard className="w-5 h-5 text-[#38bdf8]" />
 
 
                                 <h3 className="text-sm font-semibold text-white">
@@ -2584,7 +2584,7 @@ const Admin = () => {
                                                                             w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200
                                                                             ${
                                                                             isActive
-                                                                                ? "bg-[#f6b100]/20 text-[#f6b100] border border-[#f6b100]/30"
+                                                                                ? "bg-[#38bdf8]/20 text-[#38bdf8] border border-[#38bdf8]/30"
                                                                                 : isComingSoon
                                                                                     ? "text-gray-600 cursor-not-allowed opacity-50"
                                                                                     : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
@@ -2639,7 +2639,7 @@ const Admin = () => {
 
                     <div className="min-w-0">
 
-                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-6 shadow-xl">
+                        <div className="bg-gradient-to-br from-[#101010] to-[#0a0a0a] border border-gray-800/50 rounded-2xl p-3 sm:p-4 shadow-xl">
 
                             {/* TABS MÓVILES */}
 
@@ -2691,7 +2691,7 @@ const Admin = () => {
                                                         flex items-center gap-2
                                                         ${
                                                         isActive
-                                                            ? "bg-gradient-to-r from-[#f6b100] to-[#ffd633] text-black"
+                                                            ? "bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] text-black"
                                                             : "bg-[#1a1a1a] text-[#ababab] hover:bg-[#262626]"
                                                     }
                                                     `}
@@ -2979,12 +2979,12 @@ const Admin = () => {
 
                                             <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
 
-                                                <div className="p-4 bg-[#f6b100]/10 rounded-full mb-4">
+                                                <div className="p-4 bg-[#38bdf8]/10 rounded-full mb-4">
 
                                                     {tab ===
                                                         "schedules" && (
 
-                                                            <Calendar className="w-12 h-12 text-[#f6b100]" />
+                                                            <Calendar className="w-12 h-12 text-[#38bdf8]" />
 
                                                         )}
 
@@ -2992,7 +2992,7 @@ const Admin = () => {
                                                     {tab ===
                                                         "attendance" && (
 
-                                                            <Clock className="w-12 h-12 text-[#f6b100]" />
+                                                            <Clock className="w-12 h-12 text-[#38bdf8]" />
 
                                                         )}
 
@@ -3111,7 +3111,7 @@ const Admin = () => {
                                     )}
                                     :{" "}
 
-                                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 text-yellow-400 text-sm font-bold border border-yellow-500/40">
+                                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-sky-500/20 to-sky-500/10 text-sky-400 text-sm font-bold border border-sky-500/40">
                                         {plan}
                                     </span>
 
@@ -3166,7 +3166,7 @@ const Admin = () => {
                                         );
                                     }}
 
-                                    className="w-full mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all duration-300 shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
+                                    className="w-full mb-6 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#38bdf8] text-black font-semibold hover:bg-[#7dd3fc] transition-all duration-300 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/40"
                                 >
 
                                     <TrendingUp className="w-4 h-4" />
@@ -3237,7 +3237,7 @@ const Admin = () => {
                                                 limits.maxUsers
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{
@@ -3309,7 +3309,7 @@ const Admin = () => {
                                                 limits.maxAdmins
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{
@@ -3381,7 +3381,7 @@ const Admin = () => {
                                                 limits.maxCashiers
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{
@@ -3453,7 +3453,7 @@ const Admin = () => {
                                                 limits.maxWaiters
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{
@@ -3525,7 +3525,7 @@ const Admin = () => {
                                                 limits.maxDishes
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{
@@ -3597,7 +3597,7 @@ const Admin = () => {
                                                 limits.maxTables
                                             )
                                                 ? "bg-red-500"
-                                                : "bg-[#f6b100]"
+                                                : "bg-[#38bdf8]"
                                         }`}
 
                                         style={{

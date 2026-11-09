@@ -374,13 +374,14 @@ export default function Expenses() {
     }
 
     return (
-        <section className="p-4 text-white">
+        <section className="finance-workspace min-w-0 space-y-5 text-white">
 
-            <h1 className="text-xl font-semibold">
+            <h1 className="text-2xl font-bold">
                 {t(
                     "expensesPage.title"
                 )}
             </h1>
+            <p className="text-sm text-white/60">Registra y consulta los gastos de la sucursal. La nómina se identifica por separado.</p>
 
             {err ? (
                 <div className="mt-3 text-red-400">
@@ -390,7 +391,7 @@ export default function Expenses() {
 
             {/* FILTROS */}
 
-            <div className="mt-4 flex flex-wrap gap-2 items-end">
+            <div className="expense-filters rounded-2xl border border-gray-800/50 bg-[#101010] p-4 flex flex-wrap gap-3 items-end">
 
                 <div>
 
@@ -401,7 +402,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         type="date"
                         value={
                             from
@@ -428,7 +429,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         type="date"
                         value={
                             to
@@ -455,7 +456,7 @@ export default function Expenses() {
                     </div>
 
                     <select
-                        className="bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         value={
                             sourceType
                         }
@@ -494,7 +495,7 @@ export default function Expenses() {
 
                 <button
                     type="button"
-                    className="bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2"
+                    className="bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-semibold rounded-xl px-4 py-2"
                     onClick={() =>
                         refresh().catch(
                             (
@@ -533,9 +534,9 @@ export default function Expenses() {
 
             {/* RESUMEN */}
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="finance-metrics grid gap-3">
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5">
 
                     <div className="text-xs text-white/60">
                         {t(
@@ -543,7 +544,7 @@ export default function Expenses() {
                         )}
                     </div>
 
-                    <div className="text-xl font-semibold">
+                    <div className="text-2xl font-bold">
                         {money(
                             totals.all
                         )}
@@ -551,7 +552,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5">
 
                     <div className="text-xs text-white/60">
                         {t(
@@ -559,7 +560,7 @@ export default function Expenses() {
                         )}
                     </div>
 
-                    <div className="text-xl font-semibold">
+                    <div className="text-2xl font-bold">
                         {money(
                             totals.manual
                         )}
@@ -567,7 +568,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5">
 
                     <div className="text-xs text-white/60">
                         {t(
@@ -575,7 +576,7 @@ export default function Expenses() {
                         )}
                     </div>
 
-                    <div className="text-xl font-semibold">
+                    <div className="text-2xl font-bold">
                         {money(
                             totals.payroll
                         )}
@@ -583,7 +584,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5">
 
                     <div className="text-xs text-white/60">
                         {t(
@@ -591,7 +592,7 @@ export default function Expenses() {
                         )}
                     </div>
 
-                    <div className="text-xl font-semibold">
+                    <div className="text-2xl font-bold">
                         {
                             totals.count
                         }
@@ -607,10 +608,11 @@ export default function Expenses() {
                 onSubmit={
                     onCreate
                 }
-                className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-2"
+                className="expense-create rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5"
             >
+                <div className="expense-form-heading"><h2 className="text-lg font-semibold">Nuevo gasto</h2><p className="mt-1 text-xs text-white/60">Completa el monto y la categoría. La referencia y la nota son opcionales.</p></div>
 
-                <div className="md:col-span-2">
+                <div className="min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -619,7 +621,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         type="date"
                         value={
                             dateYMD
@@ -637,7 +639,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-2">
+                <div className="min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -646,7 +648,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         placeholder="0.00"
                         value={
                             amount
@@ -664,7 +666,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-2">
+                <div className="min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -673,7 +675,7 @@ export default function Expenses() {
                     </div>
 
                     <select
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         value={
                             categoryId
                         }
@@ -713,7 +715,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-2">
+                <div className="min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -722,7 +724,7 @@ export default function Expenses() {
                     </div>
 
                     <select
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         value={
                             paymentMethod
                         }
@@ -765,7 +767,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-2">
+                <div className="min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -774,7 +776,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         placeholder={
                             t(
                                 "expensesPage.placeholders.reference"
@@ -796,7 +798,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-5">
+                <div className="expense-note min-w-0">
 
                     <div className="text-xs text-white/70">
                         {t(
@@ -805,7 +807,7 @@ export default function Expenses() {
                     </div>
 
                     <input
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                        className="w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-2"
                         placeholder={
                             t(
                                 "expensesPage.placeholders.note"
@@ -827,7 +829,7 @@ export default function Expenses() {
 
                 </div>
 
-                <div className="md:col-span-1 flex items-end">
+                <div className="expense-save flex items-end">
 
                     <button
                         type="submit"
@@ -836,7 +838,7 @@ export default function Expenses() {
                             !amount ||
                             !categoryId
                         }
-                        className="w-full bg-yellow-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60"
+                        className="w-full bg-[#38bdf8] text-black rounded-xl px-4 py-3 font-semibold disabled:opacity-60"
                     >
 
                         {busy
@@ -855,10 +857,11 @@ export default function Expenses() {
             </form>
 
             {/* TABLA */}
+            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Historial de gastos</h2><span className="text-xs text-white/60">{rows.length} registros en el período consultado</span></div>
 
-            <div className="mt-6 border border-white/10 rounded-xl overflow-hidden">
+            <div className="expense-list border border-gray-800/50 rounded-2xl overflow-x-auto">
 
-                <div className="hidden md:grid md:grid-cols-12 bg-white/5 px-3 py-2 text-sm text-white/80">
+                <div className="expense-list-header grid grid-cols-12 bg-white/5 px-4 py-3 text-xs font-semibold text-white/80">
 
                     <div className="col-span-2">
                         {t(
@@ -925,16 +928,16 @@ export default function Expenses() {
                                 key={
                                     row._id
                                 }
-                                className="grid grid-cols-1 md:grid-cols-12 gap-2 px-3 py-3 border-t border-white/10 md:items-center"
+                                className="expense-list-row grid grid-cols-12 gap-2 px-4 py-4 border-t border-white/10 items-center text-sm"
                             >
 
-                                <div className="md:col-span-2">
+                                <div className="col-span-2">
                                     {
                                         row.dateYMD
                                     }
                                 </div>
 
-                                <div className="md:col-span-2">
+                                <div className="col-span-2">
 
                                     <span
                                         className={`px-2 py-1 rounded text-xs ${
@@ -957,7 +960,7 @@ export default function Expenses() {
 
                                 </div>
 
-                                <div className="md:col-span-2">
+                                <div className="col-span-2">
                                     {
                                         row
                                             .categoryId
@@ -966,33 +969,33 @@ export default function Expenses() {
                                     }
                                 </div>
 
-                                <div className="md:col-span-2 text-white/70 break-words">
+                                <div className="col-span-2 text-white/70 break-words">
                                     {
                                         row.note ||
                                         "-"
                                     }
                                 </div>
 
-                                <div className="md:col-span-1 text-white/60 break-words">
+                                <div className="col-span-1 text-white/60 break-words">
                                     {
                                         row.reference ||
                                         "-"
                                     }
                                 </div>
 
-                                <div className="md:col-span-1 text-white/60">
+                                <div className="col-span-1 text-white/60">
                                     {getPaymentMethodLabel(
                                         row.paymentMethod
                                     )}
                                 </div>
 
-                                <div className="md:col-span-1 text-right font-medium">
+                                <div className="col-span-1 text-right font-medium">
                                     {money(
                                         row.amount
                                     )}
                                 </div>
 
-                                <div className="md:col-span-1 flex md:justify-end">
+                                <div className="col-span-1 flex justify-end">
 
                                     {!isPayroll ? (
 
@@ -1162,7 +1165,7 @@ export default function Expenses() {
 
                             <div className="p-5">
 
-                                <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-2">
+                                <div className="rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5 space-y-2">
 
                                     <div className="flex items-center justify-between gap-4">
 

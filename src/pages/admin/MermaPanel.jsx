@@ -354,7 +354,7 @@ export default function MermaPanel() {
                     <button
                         type="button"
                         onClick={openCreateModal}
-                        className="px-3 py-2 bg-[#f6b100] text-black rounded-lg font-semibold"
+                        className="px-3 py-2 bg-[#38bdf8] text-black rounded-lg font-semibold"
                     >
                         Crear lote
                     </button>
@@ -500,7 +500,7 @@ export default function MermaPanel() {
                                                 className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-lg border ${
                                                     isClosed
                                                         ? "text-green-300 border-green-500/30 bg-green-500/10"
-                                                        : "text-yellow-200 border-yellow-500/30 bg-yellow-500/10"
+                                                        : "text-sky-200 border-sky-500/30 bg-sky-500/10"
                                                 }`}
                                             >
                                             {isClosed ? "Cerrado" : "Abierto"}
@@ -549,7 +549,7 @@ export default function MermaPanel() {
                                     type="button"
                                     onClick={() => setBatchesTab("open")}
                                     className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "open" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
+                                        batchesTab === "open" ? "bg-[#38bdf8] text-black" : "bg-[#121212] text-white"
                                     }`}
                                 >
                                     Abiertos ({openBatches.length})
@@ -558,7 +558,7 @@ export default function MermaPanel() {
                                     type="button"
                                     onClick={() => setBatchesTab("closed")}
                                     className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "closed" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
+                                        batchesTab === "closed" ? "bg-[#38bdf8] text-black" : "bg-[#121212] text-white"
                                     }`}
                                 >
                                     Cerrados ({closedBatches.length})
@@ -567,7 +567,7 @@ export default function MermaPanel() {
                                     type="button"
                                     onClick={() => setBatchesTab("all")}
                                     className={`px-3 py-2 text-sm font-semibold ${
-                                        batchesTab === "all" ? "bg-[#f6b100] text-black" : "bg-[#121212] text-white"
+                                        batchesTab === "all" ? "bg-[#38bdf8] text-black" : "bg-[#121212] text-white"
                                     }`}
                                 >
                                     Todos ({mermaBatches.length})
@@ -616,7 +616,7 @@ export default function MermaPanel() {
 
                                                         <div className="text-xs text-gray-500 mt-1">
                                                             Estado:{" "}
-                                                            <span className={isClosed ? "text-green-400" : "text-yellow-300"}>
+                                                            <span className={isClosed ? "text-green-400" : "text-sky-300"}>
                                                                 {isClosed ? "Cerrado" : "Abierto"}
                                                             </span>
                                                             {isClosed ? (
@@ -879,7 +879,7 @@ export default function MermaPanel() {
                             </button>
                             <button
                                 onClick={handleSave}
-                                className="px-4 py-2 rounded-lg bg-[#f6b100] text-black font-semibold"
+                                className="px-4 py-2 rounded-lg bg-[#38bdf8] text-black font-semibold"
                                 disabled={createBatchMutation.isPending || closeBatchMutation.isPending}
                             >
                                 Guardar

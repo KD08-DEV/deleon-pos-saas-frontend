@@ -1529,21 +1529,22 @@ export default function Tables() {
                                         </div>
 
 
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                                             <TableAccountsActions
                                                 table={tableActionModal.table}
                                                 variant="split"
                                                 onOpenOrder={(id) => { closeTableActionModal(); navigate(`/menu?orderId=${encodeURIComponent(id)}`); }}
                                                 onChanged={() => queryClient.invalidateQueries({queryKey:QK.TABLES})}
                                             />
+                                            <MoveTableAction table={tableActionModal.table} tables={tables} onDone={closeTableActionModal} onBusyChange={onMoveBusyChange} />
                                         <span
-                                            className={`px-2 py-1 rounded text-xs ${
+                                            className={`px-3 py-2 rounded-lg text-base font-bold border whitespace-nowrap ${
                                                 tableActionModal
                                                     .table
                                                     ?.status ===
                                                 "Disponible"
-                                                    ? "bg-yellow-700/40 text-yellow-300"
-                                                    : "bg-green-700/40 text-green-300"
+                                                    ? "bg-sky-700/40 text-sky-200 border-sky-400/50"
+                                                    : "bg-green-700/40 text-green-200 border-green-400/50"
                                             }`}
                                         >
 
@@ -1652,10 +1653,10 @@ export default function Tables() {
                                         px-4
                                         py-3
                                         rounded-xl
-                                        bg-[#f6b100]
+                                        bg-[#38bdf8]
                                         text-black
                                         font-semibold
-                                        hover:bg-[#ffd633]
+                                        hover:bg-[#7dd3fc]
                                         transition-all
                                     "
                                     >
@@ -1674,7 +1675,6 @@ export default function Tables() {
                                     </button>
 
 
-                                    <MoveTableAction table={tableActionModal.table} tables={tables} onDone={closeTableActionModal} onBusyChange={onMoveBusyChange} />
 
                                     {tableActionModal
                                             .table

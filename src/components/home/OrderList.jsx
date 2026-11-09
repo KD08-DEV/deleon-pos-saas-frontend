@@ -111,13 +111,13 @@ const DEFAULT_STATUS_CONFIG = {
     Circle,
 
     bg:
-        "from-yellow-500/20 to-amber-500/20",
+        "from-sky-500/20 to-sky-500/20",
 
     text:
-        "text-yellow-400",
+        "text-sky-400",
 
     border:
-        "border-yellow-500/30",
+        "border-sky-500/30",
 };
 
 
@@ -292,7 +292,7 @@ const OrderList = ({
 
             {/* AVATAR */}
 
-            <div className="relative bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-sm md:text-base w-12 h-12 flex items-center justify-center rounded-xl shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-200">
+            <div className="relative bg-gradient-to-br from-sky-400 to-sky-500 text-black font-bold text-sm md:text-base w-12 h-12 flex items-center justify-center rounded-xl shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-200">
 
                 {getAvatarName(
                     customerName
@@ -343,7 +343,7 @@ const OrderList = ({
                     .table
                     ?.tableNo && (
 
-                    <div className="hidden sm:flex items-center gap-1.5 text-xs md:text-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-yellow-500/10 to-amber-500/10 border border-yellow-500/30 text-yellow-400 whitespace-nowrap group-hover:scale-105 transition-transform duration-200">
+                    <div className="hidden sm:flex items-center gap-1.5 text-xs md:text-sm px-3 py-1.5 rounded-lg bg-gradient-to-r from-sky-500/10 to-sky-500/10 border border-sky-500/30 text-sky-400 whitespace-nowrap group-hover:scale-105 transition-transform duration-200">
 
                         <span>
 

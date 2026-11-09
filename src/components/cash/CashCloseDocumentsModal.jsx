@@ -125,26 +125,26 @@ export default function CashCloseDocumentsModal({
     return (
         <div className="fixed inset-0 z-[1100] flex items-start justify-center bg-black/85 backdrop-blur-sm px-2 sm:px-4 pt-3"
             role="dialog" aria-modal="true" aria-label={L.title}>
-            <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-amber-500/30 bg-[#101012] shadow-2xl"
+            <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-sky-500/30 bg-[#101012] shadow-2xl"
                 style={{ maxHeight: "calc(100dvh - 112px)" }}>
                 <header className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-800 px-4 py-4 sm:px-6">
                     <div>
-                        <h2 className="flex items-center gap-2 text-lg font-bold text-white"><Receipt size={19} className="text-amber-400"/> {L.title}</h2>
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-white"><Receipt size={19} className="text-sky-400"/> {L.title}</h2>
                         <p className="mt-1 text-xs text-gray-400">{L.date}: {dateYMD} · {L.register}: {registerId === "__ALL_REGISTERS__" ? L.all : (registerId || L.main)} · {L.readonly}</p>
                     </div>
                     <button aria-label={L.close} type="button" onClick={onClose} className="rounded-lg border border-gray-700 p-2 text-gray-200 hover:bg-gray-800"><X size={18}/></button>
                 </header>
                 <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-800 px-4 py-3 sm:px-6">
                     <button type="button" onClick={() => { setTab("invoices"); setSearch(""); }}
-                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "invoices" ? "bg-amber-500 text-black" : "bg-[#242429] text-gray-200"}`}>
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "invoices" ? "bg-sky-500 text-black" : "bg-[#242429] text-gray-200"}`}>
                         {L.invoices} ({orders.length})
                     </button>
                     {supportsDominicanFiscal && <button type="button" onClick={() => { setTab("fiscal"); setSearch(""); }}
-                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "fiscal" ? "bg-amber-500 text-black" : "bg-[#242429] text-gray-200"}`}>
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "fiscal" ? "bg-sky-500 text-black" : "bg-[#242429] text-gray-200"}`}>
                         {L.fiscal}
                     </button>}
                     <input type="search" aria-label="Buscar factura" placeholder={L.search} value={search} onChange={(e) => setSearch(e.target.value)}
-                        className="ml-auto w-full rounded-lg border border-gray-700 bg-[#1e1e21] px-3 py-2 text-sm text-white outline-none focus:border-amber-500 sm:w-64" />
+                        className="ml-auto w-full rounded-lg border border-gray-700 bg-[#1e1e21] px-3 py-2 text-sm text-white outline-none focus:border-sky-500 sm:w-64" />
                     {tab === "fiscal" && <button type="button" onClick={() => refetch()} className="rounded-lg border border-gray-700 p-2 text-gray-200" title={L.refresh}><RefreshCw size={17}/></button>}
                 </div>
                 {pdfError && <div role="alert" className="mx-3 mt-3 rounded-lg border border-red-800 bg-red-950/30 p-3 text-sm text-red-200 sm:mx-5">{pdfError}</div>}
@@ -156,13 +156,13 @@ export default function CashCloseDocumentsModal({
                                     <div className="min-w-0 flex-1">
                                         <div className="text-sm font-semibold text-white">{order?.ecf?.eNCF || order?.facturaNo || order?.invoiceNumber || `${L.order} ${String(order._id).slice(-7)}`}</div>
                                         <div className="text-xs text-gray-400">{order?.customerDetails?.name || order?.customerName || L.consumer} · {formatDate(order.paidAt || order.invoicedAt || order.createdAt)}</div>
-                                        <div className="mt-1 text-xs font-semibold text-amber-300">{money(Number(order?.bills?.totalWithTax || 0))}</div>
+                                        <div className="mt-1 text-xs font-semibold text-sky-300">{money(Number(order?.bills?.totalWithTax || 0))}</div>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <button type="button" onClick={() => onOpenOrder(order._id)} className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20">{L.viewInvoice}</button>
                                         <button type="button" onClick={() => openPdf(order._id)} disabled={!!pdfBusy}
                                             aria-label={`${L.viewPdf}: ${order.facturaNo || order.invoiceNumber || order._id}`}
-                                            className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-50">
+                                            className="inline-flex items-center gap-1 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20 disabled:opacity-50">
                                             <Eye size={14}/> {pdfBusy === `${order._id}:view` ? L.pdfWorking : L.viewPdf}
                                         </button>
                                         <button type="button" onClick={() => openPdf(order._id, true)} disabled={!!pdfBusy}
@@ -175,19 +175,19 @@ export default function CashCloseDocumentsModal({
                             ))}</div>
                     ) : (
                         <>
-                            <p className="mb-3 text-xs text-amber-200/80">{L.fiscalNotice}</p>
+                            <p className="mb-3 text-xs text-sky-200/80">{L.fiscalNotice}</p>
                             {isFetching && <p className="py-6 text-center text-sm text-gray-400">{L.loadingFiscal}</p>}
                             {error && <p className="rounded-lg border border-red-800 bg-red-950/30 p-3 text-sm text-red-300">{L.fiscalError} (HTTP {error?.response?.status || "—"}{error?.response?.data?.code ? ` · ${String(error.response.data.code).slice(0, 96)}` : ""}).</p>}
                             {!isFetching && !error && !filteredFiscal.length && <p className="py-10 text-center text-sm text-gray-400">{L.emptyFiscal}</p>}
                             {!isFetching && !error && <div className="space-y-2">{filteredFiscal.map((doc) => (
                                 <div key={doc.documentId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-800 bg-[#19191c] p-3">
                                     <div className="min-w-0 flex-1">
-                                        <div className="text-sm font-semibold text-white">{fiscalTypeName(doc.documentType)} · <span className="text-amber-300">{doc.eNCF || "Sin e-NCF"}</span></div>
+                                        <div className="text-sm font-semibold text-white">{fiscalTypeName(doc.documentType)} · <span className="text-sky-300">{doc.eNCF || "Sin e-NCF"}</span></div>
                                         <div className="mt-0.5 text-xs text-gray-400">{doc.customer?.name || L.consumer} · {formatDate(doc.createdAt)}</div>
                                         {(doc.documentType === "33" || doc.documentType === "34") && <div className="mt-1 text-xs text-gray-500">{L.modified}: {doc.reference?.modifiedENCF || "—"} · {doc.reference?.reason || L.noReason}</div>}
-                                        <div className="mt-1 text-xs font-semibold text-amber-300">{money(Number(doc.totals?.total || 0))} · <span className="text-gray-300">{STATUS[doc.status] || doc.status}</span></div>
+                                        <div className="mt-1 text-xs font-semibold text-sky-300">{money(Number(doc.totals?.total || 0))} · <span className="text-gray-300">{STATUS[doc.status] || doc.status}</span></div>
                                     </div>
-                                    {printableStatus(doc.status) ? <button type="button" onClick={() => onOpenFiscal(doc)} className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20"><FileText size={14} className="mr-1 inline"/> {L.view}</button>
+                                    {printableStatus(doc.status) ? <button type="button" onClick={() => onOpenFiscal(doc)} className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20"><FileText size={14} className="mr-1 inline"/> {L.view}</button>
                                         : <span className="text-xs text-gray-500">{L.pending}</span>}
                                 </div>
                             ))}</div>}

@@ -374,7 +374,7 @@ const SuperAdminCreateTenant = () => {
 
                 <button
                     type="submit"
-                    className="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-2 rounded font-bold"
+                    className="bg-sky-500 hover:bg-sky-600 text-black px-6 py-2 rounded font-bold"
                 >
                     Create Tenant
                 </button>

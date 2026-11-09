@@ -825,7 +825,7 @@ const SalesReports = () => {
     if (isLoading) {
         return (
             <div className="text-center py-8 text-gray-400">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto"></div>
                 <p className="mt-2">{t("salesReportsPage.loading")}</p>
             </div>
         );
@@ -845,14 +845,14 @@ const SalesReports = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <TrendingUp className="w-6 h-6 text-[#f6b100]" />
+                        <TrendingUp className="w-6 h-6 text-[#38bdf8]" />
                         {t("salesReportsPage.title")}
                     </h2>
                     <p className="text-sm text-gray-400 mt-1">{t("salesReportsPage.subtitle")}</p>
                 </div>
                 <button
                     onClick={() => downloadExcelReport(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#f6b100]/50 transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white hover:bg-[#262626] hover:border-[#38bdf8]/50 transition-all"
                 >
                     <Download className="w-4 h-4" />
                     {t("salesReportsPage.actions.exportExcel")}
@@ -873,8 +873,8 @@ const SalesReports = () => {
                             className={[
                                 "px-3 py-2 rounded-lg border transition-all text-sm",
                                 active
-                                    ? "bg-[#262626] border-[#f6b100]/50 text-white"
-                                    : "bg-[#1a1a1a] border-gray-800/50 text-gray-300 hover:bg-[#262626] hover:border-[#f6b100]/30",
+                                    ? "bg-[#262626] border-[#38bdf8]/50 text-white"
+                                    : "bg-[#1a1a1a] border-gray-800/50 text-gray-300 hover:bg-[#262626] hover:border-[#38bdf8]/30",
                             ].join(" ")}
                         >
                             {t.label}
@@ -892,7 +892,7 @@ const SalesReports = () => {
                             type="date"
                             value={filters.from}
                             onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
                     <div>
@@ -901,7 +901,7 @@ const SalesReports = () => {
                             type="date"
                             value={filters.to}
                             onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         />
                     </div>
                     <div>
@@ -909,7 +909,7 @@ const SalesReports = () => {
                         <select
                             value={filters.method}
                             onChange={(e) => setFilters((f) => ({ ...f, method: e.target.value }))}
-                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                            className="w-full p-2 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                         >
                             <option value="">{t("salesReportsPage.filters.allMethods")}</option>
                             <option value="Efectivo">{t("salesReportsPage.paymentMethods.cash")}</option>
@@ -926,7 +926,7 @@ const SalesReports = () => {
                 <div className="bg-gradient-to-br from-[#111111] to-[#0a0a0a] border border-gray-800/50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                         <p className="text-xs text-gray-400 uppercase tracking-wide">{t("salesReportsPage.metrics.totalSales")}</p>
-                        <DollarSign className="w-4 h-4 text-[#f6b100]" />
+                        <DollarSign className="w-4 h-4 text-[#38bdf8]" />
                     </div>
                     <p className="text-2xl font-bold text-white">{currency(salesAnalysis.totalSales)}</p>
                     <p className="text-xs text-gray-500 mt-1">{t("salesReportsPage.orderCount", { count: salesAnalysis.totalOrders })}</p>
@@ -985,7 +985,7 @@ const SalesReports = () => {
                     <select
                         value={pageSize}
                         onChange={(e) => setPageSize(Number(e.target.value))}
-                        className="bg-[#1a1a1a] border border-gray-800/50 rounded-lg px-2 py-1"
+                        className="bg-[#1a1a1a] text-gray-100 border border-gray-800/50 rounded-lg px-2 py-1 [color-scheme:dark]"
                     >
                         <option value={10}>10</option>
                         <option value={20}>20</option>
@@ -1033,7 +1033,7 @@ const SalesReports = () => {
 
                 {productReportQuery.isLoading ? (
                     <div className="text-center py-8 text-gray-400">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto"></div>
                         <p className="mt-2">{t("salesReportsPage.report.loading")}</p>
                     </div>
                 ) : productReportQuery.isError ? (
@@ -1201,11 +1201,11 @@ const SalesReports = () => {
                                 <div key={day} className="bg-[#1a1a1a] border border-gray-800/30 rounded-lg p-3">
                                     <div className="flex items-center justify-between mb-2">
                                         <p className="text-sm font-medium text-white capitalize">{day}</p>
-                                        <p className="text-sm font-bold text-[#f6b100]">{currency(data.total)}</p>
+                                        <p className="text-sm font-bold text-[#38bdf8]">{currency(data.total)}</p>
                                     </div>
                                     <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
                                         <div
-                                            className="h-2 bg-gradient-to-r from-[#f6b100] to-[#ffd633] rounded-full transition-all"
+                                            className="h-2 bg-gradient-to-r from-[#38bdf8] to-[#7dd3fc] rounded-full transition-all"
                                             style={{ width: `${percentage}%` }}
                                         />
                                     </div>
@@ -1250,7 +1250,7 @@ const SalesReports = () => {
                                     <td className="p-3 text-sm text-gray-300 max-w-[260px] truncate">
                                         {getOrderDishesLabel(order, 2)}
                                     </td>
-                                    <td className="p-3 text-sm font-bold text-[#f6b100]">
+                                    <td className="p-3 text-sm font-bold text-[#38bdf8]">
                                         {currency(order.bills?.totalWithTax || 0)}
                                     </td>
                                 </tr>

@@ -37,12 +37,12 @@ const cardCls =
 const inputCls =
     "w-full px-4 py-3.5 border border-white/15 rounded-xl " +
     "bg-[#151515] text-white text-base placeholder:text-white/40 " +
-    "focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/40 " +
+    "focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/40 " +
     "transition";
 const selectCls =
     "w-full px-4 py-3.5 border border-white/15 rounded-xl " +
     "bg-[#151515] text-white text-base " +
-    "focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/40 " +
+    "focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500/40 " +
     "transition";
 
 const UNIT_OPTIONS = ["unidad", "lb", "kg", "g", "oz", "ml", "l"];
@@ -218,7 +218,7 @@ function Badge({ children, tone = "neutral" }) {
         tone === "danger"
             ? "bg-red-500/15 text-red-200 border-red-500/30"
             : tone === "warning"
-                ? "bg-yellow-500/15 text-yellow-200 border-yellow-500/30"
+                ? "bg-sky-500/15 text-sky-200 border-sky-500/30"
                 : "bg-white/10 text-white/80 border-white/10";
     return (
         <span className={`inline-flex items-center px-2 py-1 rounded-lg border text-xs ${cls}`}>
@@ -1754,7 +1754,7 @@ export default function Inventory({
                             <div className="flex gap-2">
 
                                 <button
-                                    className="px-3 py-2 rounded-lg bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 text-sm"
+                                    className="px-3 py-2 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-200 text-sm"
                                     onClick={() => {
                                         closeSnackbar(
                                             key
@@ -2122,7 +2122,7 @@ export default function Inventory({
             onClick={() => setTab(id)}
             className={`px-4 py-2 rounded-xl border text-sm inline-flex items-center gap-2 ${
                 tab === id
-                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                    ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
                     : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
             }`}
         >
@@ -2644,7 +2644,7 @@ export default function Inventory({
 
     // ---------- Render ----------
     return (
-        <div className="p-4 md:p-6">
+        <div className="inventory-panel min-w-0 p-1 sm:p-2">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                     <div className="text-white text-2xl font-semibold">
@@ -2786,7 +2786,7 @@ export default function Inventory({
                                 />
 
                                 {itemsFetching && stockFilters.q && (
-                                    <div className="text-[11px] text-yellow-200/60 mt-1">
+                                    <div className="text-[11px] text-sky-200/60 mt-1">
                                         {t(
                                             "inventoryPage.filters.searching"
                                         )}
@@ -2865,9 +2865,9 @@ export default function Inventory({
                         {/* ===================================================== */}
                         {/* ACCIONES */}
                         {/* ===================================================== */}
-                        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3 pt-3 border-t border-white/5">
+                        <div className="flex flex-wrap items-end justify-between gap-3 pt-3 border-t border-white/5">
 
-                            <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                            <div className="flex flex-wrap items-end gap-2">
 
                                 <div className="w-full sm:w-[230px]">
                                     <div className="text-white/60 text-xs mb-1.5">
@@ -2940,7 +2940,7 @@ export default function Inventory({
                                     }
                                     className={`h-[46px] px-4 rounded-xl border inline-flex items-center justify-center gap-2 whitespace-nowrap ${
                                         stockFilters.includeArchived
-                                            ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                            ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
                                             : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
                                     }`}
                                 >
@@ -2959,7 +2959,7 @@ export default function Inventory({
                                     <button
                                         type="button"
                                         onClick={openNewItem}
-                                        className="h-[46px] px-4 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 inline-flex items-center justify-center gap-2 whitespace-nowrap hover:bg-yellow-500/20"
+                                        className="h-[46px] px-4 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200 inline-flex items-center justify-center gap-2 whitespace-nowrap hover:bg-sky-500/20"
                                     >
                                         <Plus className="w-4 h-4 shrink-0" />
 
@@ -2975,8 +2975,8 @@ export default function Inventory({
                     </div>
 
                     {/* Desktop table */}
-                    <div className="hidden md:block mt-4 overflow-x-auto">
-                        <table className="w-full text-base">
+                    <div className="inventory-stock mt-4">
+                        <table className="inventory-stock-table w-full text-base">
                             <thead>
                             <tr className="text-left text-white/80 border-b border-white/10">
 
@@ -3072,7 +3072,7 @@ export default function Inventory({
                                         );
                                     return (
                                         <tr key={it._id} className="border-b border-white/5">
-                                            <td className="py-4 pr-4">
+                                            <td data-label={t("inventoryPage.table.item")} className="py-4 pr-4">
                                                 <div className="text-white font-semibold text-base leading-tight">
                                                     {it.name}
                                                 </div>
@@ -3081,13 +3081,13 @@ export default function Inventory({
                                                     {it._id}
                                                 </div>
                                             </td>
-                                            <td className="py-4 pr-4 text-white text-base font-medium">
+                                            <td data-label={t("inventoryPage.table.unit")} className="py-4 pr-4 text-white text-base font-medium">
                                                 {getUnitLabel(
                                                     it.unit || "unidad",
                                                     t
                                                 )}
                                             </td>
-                                            <td
+                                            <td data-label={t("inventoryPage.table.stock")}
                                                 className={`py-4 pr-4 text-base font-semibold ${
                                                     num(it.stockCurrent) < 0
                                                         ? "text-red-400"
@@ -3098,15 +3098,15 @@ export default function Inventory({
                                                     ? "—"
                                                     : num(it.stockCurrent)}
                                             </td>
-                                            <td className="py-4 pr-4 text-white text-base">
+                                            <td data-label={t("inventoryPage.table.minimum")} className="py-4 pr-4 text-white text-base">
                                                 {it.stockMin === null || it.stockMin === undefined ? "—" : num(it.stockMin)}
                                             </td>
-                                            <td className="py-4 pr-4 text-white text-base font-medium">
+                                            <td data-label={t("inventoryPage.table.averageCost")} className="py-4 pr-4 text-white text-base font-medium">
 
                                             {money(num(it.avgCost) || num(it.lastCost) || 0)}
                                             </td>
-                                            <td className="py-4 pr-4 text-white text-base">{providerName}</td>
-                                            <td className="py-4 pr-4 align-middle">
+                                            <td data-label={t("inventoryPage.table.supplier")} className="py-4 pr-4 text-white text-base">{providerName}</td>
+                                            <td data-label={t("inventoryPage.table.status")} className="py-4 pr-4 align-middle">
                                                 {isInactiveInventory ? (
                                                     <Badge tone="warning">
                                                         {t(
@@ -3128,7 +3128,7 @@ export default function Inventory({
                                                 )}
                                             </td>
 
-                                            <td className="py-4 pr-0 align-top">
+                                            <td data-label={t("inventoryPage.table.actions")} className="py-4 pr-0 align-top">
                                                 <div className="flex flex-col items-end gap-2">
                                                     {canInventoryEntry && (
                                                         <button
@@ -3204,7 +3204,7 @@ export default function Inventory({
                                                         (it.isArchived ? (
                                                             <button
                                                                 onClick={() => unarchiveItemMutation.mutate(it._id)}
-                                                                className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 inline-flex items-center justify-center text-center leading-tight whitespace-normal"
+                                                                className="w-[148px] min-h-[42px] px-3 py-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-200 inline-flex items-center justify-center text-center leading-tight whitespace-normal"
                                                             >
                                                                 {t(
                                                                     "inventoryPage.actions.unarchive"
@@ -3229,201 +3229,6 @@ export default function Inventory({
                             )}
                             </tbody>
                         </table>
-                    </div>
-
-                    {/* Mobile cards */}
-                    <div className="md:hidden mt-4 space-y-3">
-                        {itemsLoading ? (
-                            <div className="text-white/60">{t(
-                                "inventoryPage.common.loading"
-                            )}</div>
-                        ) : items.length === 0 ? (
-                            <div className="text-white/60">{t(
-                                "inventoryPage.stock.empty"
-                            )}</div>
-                        ) : (
-                            items.map((it) => {
-                                const type = String(it?.inventoryType || "none").trim().toLowerCase();
-
-                                const isInactiveInventory =
-                                    type === "none" &&
-                                    it?.isInventoryItem !== true &&
-                                    String(it?.category || "").trim().toLowerCase() !== "inventario";
-
-                                const isLow =
-                                    !isInactiveInventory &&
-                                    num(it.stockCurrent) <= num(it.stockMin);
-                                const isNegativeStock =
-                                    num(it.stockCurrent) < 0;
-
-                                const providerName =
-                                    it?.supplierId?.name ||
-                                    it?.supplierId?.companyName ||
-                                    (
-                                        typeof it?.supplierId === "string"
-                                            ? t(
-                                                "inventoryPage.common.supplier"
-                                            )
-                                            : "—"
-                                    );
-                                return (
-                                    <div key={it._id} className={`${cardCls} p-4`}>
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="text-white font-semibold">{it.name}</div>
-                                                <div className="text-white/50 text-xs mt-1">
-                                                    {getUnitLabel(
-                                                        it.unit || "unidad",
-                                                        t
-                                                    )}{" · "}
-
-                                                    {t(
-                                                        "inventoryPage.table.stock"
-                                                    )}{" "}
-
-                                                    {num(
-                                                        it.stockCurrent
-                                                    )}{" · "}
-
-                                                    {t(
-                                                        "inventoryPage.table.minimumShort"
-                                                    )}{" "}
-
-                                                    {num(
-                                                        it.stockMin
-                                                    )}
-                                                </div>
-                                                <div className="text-white/40 text-xs mt-1">{t(
-                                                    "inventoryPage.table.supplier"
-                                                )}
-                                                    : {providerName}</div>
-                                            </div>
-                                            <div>
-                                                {isNegativeStock ? (
-                                                    <Badge tone="danger">
-                                                        {t(
-                                                            "inventoryPage.status.negativeStock"
-                                                        )}
-                                                    </Badge>
-                                                ) : isInactiveInventory ? (
-                                                    <Badge tone="warning">
-                                                        {t(
-                                                            "inventoryPage.status.noInventory"
-                                                        )}
-                                                    </Badge>
-                                                ) : isLow ? (
-                                                    <Badge tone="warning">
-                                                        {t(
-                                                            "inventoryPage.status.lowStock"
-                                                        )}
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge>
-                                                        {t(
-                                                            "inventoryPage.status.ok"
-                                                        )}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            {canInventoryEntry && (
-                                                <button
-                                                    onClick={() => openMovement("purchase", it, false)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                >
-                                                    <ArrowDownCircle className="w-4 h-4" />
-                                                    {t(
-                                                        "inventoryPage.actions.entry"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canInventoryExit && !isInactiveInventory && (
-                                                <button
-                                                    onClick={() => openMovement("sale", it, false)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                >
-                                                    <ArrowUpCircle className="w-4 h-4" />
-                                                    {t(
-                                                        "inventoryPage.actions.exit"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canUseYieldProcess && !isInactiveInventory && (
-                                                <button
-                                                    onClick={() => openMovement("purchase", it, true)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                >
-                                                    {t(
-                                                        "inventoryPage.actions.yieldProcess"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canInventoryAdjust && !isInactiveInventory && (
-                                                <button
-                                                    onClick={() => openMovement("adjust", it, false)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                >
-                                                    <SlidersHorizontal className="w-4 h-4" />
-                                                    {t(
-                                                        "inventoryPage.actions.adjust"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canInventoryWaste && !isInactiveInventory && (
-                                                <button
-                                                    onClick={() => openMovement("waste", it, false)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80 inline-flex items-center gap-2"
-                                                >
-                                                    <ArrowUpCircle className="w-4 h-4" />
-                                                    {t(
-                                                        "inventoryPage.actions.waste"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canManageInventoryItems && (
-                                                <button
-                                                    onClick={() => openEditItem(it)}
-                                                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/80"
-                                                >
-                                                    {t(
-                                                        "inventoryPage.actions.edit"
-                                                    )}
-                                                </button>
-                                            )}
-
-                                            {canManageInventoryItems && (
-                                                it.isArchived ? (
-                                                    <button
-                                                        onClick={() => unarchiveItemMutation.mutate(it._id)}
-                                                        className="px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-200"
-                                                    >
-                                                        {t(
-                                                            "inventoryPage.actions.unarchive"
-                                                        )}
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => archiveItemMutation.mutate(it._id)}
-                                                        className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200"
-                                                    >
-                                                        {t(
-                                                            "inventoryPage.actions.archive"
-                                                        )}
-                                                    </button>
-                                                )
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
                     </div>
 
                     {/* Pagination */}
@@ -4219,7 +4024,7 @@ export default function Inventory({
                                                 p + 1
                                         )
                                     }
-                                    className="px-4 py-2 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200 hover:bg-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     {t(
                                         "inventoryPage.pagination.next"
@@ -4682,7 +4487,7 @@ function YieldMermaDashboard({
                     {kpis.hasYieldMeta ===
                     0 ? (
 
-                        <div className="text-[11px] text-yellow-200/80 mt-2">
+                        <div className="text-[11px] text-sky-200/80 mt-2">
 
                             {t(
                                 "inventoryPage.yieldDashboard.metadataHelp"
@@ -6147,7 +5952,7 @@ function ItemModal({
                             className={`text-left rounded-2xl border p-4 transition-all ${
                                 createMode ===
                                 "new"
-                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
                                     : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
                             }`}
                         >
@@ -6177,7 +5982,7 @@ function ItemModal({
                             className={`text-left rounded-2xl border p-4 transition-all ${
                                 createMode ===
                                 "fromDish"
-                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
                                     : "bg-white/5 border-white/10 text-white/80 hover:border-white/20"
                             }`}
                         >
@@ -6255,9 +6060,9 @@ function ItemModal({
 
                         {selectedDish && (
 
-                            <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+                            <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-500/10 p-3">
 
-                                <div className="text-sm font-semibold text-yellow-200">
+                                <div className="text-sm font-semibold text-sky-200">
 
                                     {t(
                                         "inventoryPage.itemModal.selectedDish"
@@ -6519,7 +6324,7 @@ function ItemModal({
 
                                             <button
                                                 type="button"
-                                                className="w-full px-3 py-2 rounded-xl border border-yellow-500/30 bg-yellow-500/15 text-yellow-200 text-sm"
+                                                className="w-full px-3 py-2 rounded-xl border border-sky-500/30 bg-sky-500/15 text-sky-200 text-sm"
                                                 onClick={() => {
                                                     if (
                                                         !pickedIngredientId
@@ -7388,7 +7193,7 @@ function ItemModal({
                     disabled={
                         savingRecipe
                     }
-                    className="px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 disabled:opacity-60"
+                    className="px-4 py-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200 disabled:opacity-60"
                 >
 
                     {savingRecipe
@@ -8117,7 +7922,7 @@ function MovementModal({
                             isSaving
                                 ? "opacity-50 cursor-not-allowed bg-white/5 border-white/10 text-white/50"
                                 : useYield
-                                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-200"
+                                    ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
                                     : "bg-white/5 border-white/10 text-white/80"
                         }`}
                     >
@@ -8619,10 +8424,10 @@ function MovementModal({
                     disabled={
                         isSaving
                     }
-                    className={`px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 ${
+                    className={`px-4 py-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200 ${
                         isSaving
                             ? "opacity-60 cursor-not-allowed pointer-events-none"
-                            : "hover:bg-yellow-500/20"
+                            : "hover:bg-sky-500/20"
                     }`}
                 >
 
@@ -8645,14 +8450,14 @@ function MovementModal({
 
                     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
 
-                        <div className="w-full max-w-md rounded-2xl border border-yellow-500/20 bg-[#111111] shadow-2xl overflow-hidden">
+                        <div className="w-full max-w-md rounded-2xl border border-sky-500/20 bg-[#111111] shadow-2xl overflow-hidden">
 
                             <div className="px-5 py-4 border-b border-white/10">
 
                                 <div className="flex items-start gap-3">
 
-                                    <div className="h-11 w-11 rounded-xl bg-yellow-500/15 border border-yellow-500/20 flex items-center justify-center shrink-0">
-                                    <span className="text-yellow-400 text-xl">
+                                    <div className="h-11 w-11 rounded-xl bg-sky-500/15 border border-sky-500/20 flex items-center justify-center shrink-0">
+                                    <span className="text-sky-400 text-xl">
                                         !
                                     </span>
                                     </div>
@@ -8803,7 +8608,7 @@ function MovementModal({
                                             pendingMovementPayload
                                         );
                                     }}
-                                    className="px-4 py-2 rounded-xl bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition"
+                                    className="px-4 py-2 rounded-xl bg-sky-500 text-black font-semibold hover:bg-sky-400 transition"
                                 >
                                     {t(
                                         "inventoryPage.movementModal.negative.continueAnyway"

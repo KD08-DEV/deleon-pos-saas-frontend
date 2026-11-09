@@ -1164,7 +1164,7 @@ export default function EcfConfig({
 
                 <div className="space-y-4">
                     {ecfProfile?.issuerRncMismatch && (
-                        <div role="alert" className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
+                        <div role="alert" className="rounded-xl border border-sky-400/40 bg-sky-400/10 p-4 text-sm text-sky-100">
                             <strong>Atención: RNC del emisor diferente.</strong>
                             <p className="mt-1">Identificación Fiscal tiene {ecfProfile.configuredBusinessRnc}, pero el perfil e-CF conserva {ecfProfile?.issuer?.rnc}. Por seguridad no se modifica automáticamente un emisor ya configurado. Verifica el RNC y el certificado digital antes de sincronizar los datos de la empresa.</p>
                         </div>
@@ -1252,7 +1252,7 @@ export default function EcfConfig({
 
                                     ecfOperationalReady
                                         ? "bg-green-500/10 border-green-500/30 text-green-300"
-                                        : "bg-yellow-500/10 border-yellow-500/30 text-yellow-200",
+                                        : "bg-sky-500/10 border-sky-500/30 text-sky-200",
                                 ].join(
                                     " "
                                 )}
@@ -1283,7 +1283,7 @@ export default function EcfConfig({
 
                                     ecfOperationalReady
                                         ? "bg-green-500/10 border-green-500/30 text-green-300"
-                                        : "bg-yellow-500/10 border-yellow-500/30 text-yellow-200",
+                                        : "bg-sky-500/10 border-sky-500/30 text-sky-200",
                                 ].join(
                                     " "
                                 )}
@@ -1303,7 +1303,7 @@ export default function EcfConfig({
                                     ecfRuntimeStatus
                                         ?.issuerReady
                                         ? "text-green-300"
-                                        : "text-yellow-300"
+                                        : "text-sky-300"
                                 }
                             >
                                 {t(
@@ -1329,7 +1329,7 @@ export default function EcfConfig({
                                         .ecf
                                         ?.issuerRnc
                                         ? "text-green-300"
-                                        : "text-yellow-300"
+                                        : "text-sky-300"
                                 }
                             >
                                 RNC emisor:{" "}
@@ -1348,7 +1348,7 @@ export default function EcfConfig({
                                         .ecf
                                         ?.issuerLegalName
                                         ? "text-green-300"
-                                        : "text-yellow-300"
+                                        : "text-sky-300"
                                 }
                             >
                                 Razón social:{" "}
@@ -1369,7 +1369,7 @@ export default function EcfConfig({
                                         ecfRuntimeStatus
                                             ?.certificateReady
                                             ? "text-green-300"
-                                            : "text-yellow-300"
+                                            : "text-sky-300"
                                     }
                                 >
                                     {t(
@@ -1431,7 +1431,7 @@ export default function EcfConfig({
                                 className={
                                     ecfOperationalReady
                                         ? "text-green-300 font-semibold"
-                                        : "text-yellow-300 font-semibold"
+                                        : "text-sky-300 font-semibold"
                                 }
                             >
                                 {t(
@@ -1504,7 +1504,7 @@ export default function EcfConfig({
                         {runtimeWarnings.length >
                             0 && (
 
-                                <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3">
+                                <div className="mt-3 rounded-lg border border-sky-500/20 bg-sky-500/10 p-3">
 
                                     <div className="space-y-1">
 
@@ -1516,7 +1516,7 @@ export default function EcfConfig({
 
                                                 <p
                                                     key={`${warning}-${index}`}
-                                                    className="text-xs text-yellow-200"
+                                                    className="text-xs text-sky-200"
                                                 >
                                                     •{" "}
                                                     {
@@ -1536,9 +1536,9 @@ export default function EcfConfig({
                     </div>
 
 
-                    <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                    <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
 
-                        <p className="text-xs text-yellow-200">
+                        <p className="text-xs text-sky-200">
                             La activación e-CF habilita la función en el POS.
                             La emisión real requiere la configuración fiscal
                             DGII correspondiente.
@@ -1664,7 +1664,7 @@ export default function EcfConfig({
                         className={`px-4 py-3 rounded-xl font-semibold text-sm ${
                             uploadingCert
                                 ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                                : "bg-[#f6b100] text-[#1f1f1f] hover:opacity-90"
+                                : "bg-[#38bdf8] text-[#1f1f1f] hover:opacity-90"
                         }`}
                     >
                         {uploadingCert
@@ -1842,21 +1842,21 @@ export default function EcfConfig({
 
                     {certificateMissing && (
 
-                        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                        <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-4">
 
                             <div className="flex items-start gap-2">
 
-                                <Info className="w-4 h-4 text-yellow-400 mt-0.5" />
+                                <Info className="w-4 h-4 text-sky-400 mt-0.5" />
 
                                 <div>
 
-                                    <p className="text-sm font-semibold text-yellow-200">
+                                    <p className="text-sm font-semibold text-sky-200">
                                         {t(
                                             "ecfConfig.certificate.pendingTitle"
                                         )}
                                     </p>
 
-                                    <p className="text-xs text-yellow-100/80 mt-1">
+                                    <p className="text-xs text-sky-100/80 mt-1">
                                         {t(
                                             "ecfConfig.certificate.pendingDescription"
                                         )}
@@ -1934,9 +1934,9 @@ export default function EcfConfig({
 
                 ) : (
 
-                    <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+                    <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-3">
 
-                        <p className="text-xs text-yellow-200">
+                        <p className="text-xs text-sky-200">
                             La próxima secuencia es de solo lectura.
                             DeLeonSoft la controla automáticamente.
                         </p>
@@ -1962,7 +1962,7 @@ export default function EcfConfig({
 
                                 <div className="mb-4">
 
-                                    <p className="text-sm font-semibold text-[#f6b100]">
+                                    <p className="text-sm font-semibold text-[#38bdf8]">
                                         {
                                             group.title
                                         }
@@ -2330,7 +2330,7 @@ export default function EcfConfig({
                                                                                 )}
                                                                             </p>
 
-                                                                            <p className="text-sm font-semibold text-[#f6b100] mt-1">
+                                                                            <p className="text-sm font-semibold text-[#38bdf8] mt-1">
 
                                                                                 {formatENcfPreview(
                                                                                     item.code,
@@ -2432,7 +2432,7 @@ export default function EcfConfig({
                                                                                             ? "bg-red-500"
                                                                                             : rangeInfo.percentage >=
                                                                                             70
-                                                                                                ? "bg-yellow-500"
+                                                                                                ? "bg-sky-500"
                                                                                                 : "bg-green-500",
                                                                                     ].join(
                                                                                         " "
@@ -2527,7 +2527,7 @@ export default function EcfConfig({
                                                                             )}
                                                                         </p>
 
-                                                                        <p className="text-sm font-semibold text-[#f6b100] mt-1">
+                                                                        <p className="text-sm font-semibold text-[#38bdf8] mt-1">
 
                                                                             {formatENcfPreview(
                                                                                 item.code,

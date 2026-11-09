@@ -59,7 +59,7 @@ function Switch({ checked, onChange, disabled, label }) {
             className={[
                 "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200",
                 disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
-                checked ? "bg-[#f6b100]" : "bg-gray-700",
+                checked ? "bg-[#38bdf8]" : "bg-gray-700",
             ].join(" ")}
             aria-pressed={checked}
         >
@@ -3001,7 +3001,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 value={draftOrderNote}
                                 onChange={(e) => setDraftOrderNote(e.target.value)}
                                 rows={4}
-                                className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#f6b100]/50"
+                                className="mt-4 w-full p-3 bg-[#1a1a1a] border border-gray-800/50 rounded-lg text-white text-sm focus:outline-none focus:border-[#38bdf8]/50"
                                 placeholder={
                                     t(
                                         "bill.notePlaceholder"
@@ -3074,7 +3074,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 const val = e.target.value.trim();
                                 setDiscountValue(val === "" ? 0 : Number(val));
                             }}
-                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#facc15]"
+                            className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#15b1fa]"
                             placeholder="0.00"
                         />
                     </div>
@@ -3131,7 +3131,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                     );
                                 }}
                                 placeholder="0.00"
-                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 pl-7 text-[#f5f5f5] text-right outline-none focus:ring-1 focus:ring-[#facc15]"
+                                className="w-full bg-[#1f1f1f] rounded px-3 py-2 pl-7 text-[#f5f5f5] text-right outline-none focus:ring-1 focus:ring-[#15b1fa]"
                             />
                         </div>
 
@@ -3179,7 +3179,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 const val = e.target.value.trim();
                                 setDeliveryFee(val === "" ? 0 : Number(val));
                             }}
-                            className="w-28 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#facc15]"
+                            className="w-28 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none placeholder-[#555] focus:ring-1 focus:ring-[#15b1fa]"
                             placeholder="0.00"
                         />
                     </div>
@@ -3539,7 +3539,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                     {/* ✅ Mensaje claro cuando no autocompleta */}
                                     {!dgiiLoading && (dgiiStatus === "NOT_FOUND" || dgiiStatus === "ERROR") && (
-                                        <p className="text-xs text-yellow-300 mt-1">
+                                        <p className="text-xs text-sky-300 mt-1">
                                             No se pudo autocompletar, introduzca el nombre manualmente.
                                         </p>
                                     )}
@@ -3598,7 +3598,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         handlePlaceOrder("invoice");
                     }}
                     disabled={orderMutation.isPending || ordinaryInvoiceBusy}
-                    className="px-4 py-3 w-full rounded-lg bg-[#f6b100] text-[#1f1f1f] font-semibold text-lg"
+                    className="px-4 py-3 w-full rounded-lg bg-[#38bdf8] text-[#1f1f1f] font-semibold text-lg"
                 >
                     {ordinaryInvoiceBusy ? "Procesando..." : t("bill.invoice")}
                 </button>
@@ -3655,7 +3655,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
                                     <div className="flex items-center justify-between text-sm mt-3">
                                         <span className="text-white/50">{t("bill.leaveTable.currentTotal")}</span>
-                                        <span className="font-semibold text-[#f6b100]">
+                                        <span className="font-semibold text-[#38bdf8]">
                              {money(subtotal)}
                             </span>
                                     </div>
@@ -3666,7 +3666,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         type="button"
                                         onClick={handleSaveItemsAndLeave}
                                         disabled={leaveTableModal.loading || orderMutation.isPending}
-                                        className="w-full px-4 py-3 rounded-2xl bg-[#f6b100] text-black font-bold hover:bg-[#ffd633] transition-all disabled:opacity-50"
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#38bdf8] text-black font-bold hover:bg-[#7dd3fc] transition-all disabled:opacity-50"
                                     >
                                         {leaveTableModal.loading
                                             ? t("bill.leaveTable.saving")
@@ -3711,7 +3711,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             <button
                                 type="button"
                                 onClick={() => setCashReceived(num(totalToPay).toFixed(2))}
-                                className="px-3 py-2 rounded-lg bg-[#f6b100] text-[#111] text-xs font-bold hover:opacity-90"
+                                className="px-3 py-2 rounded-lg bg-[#38bdf8] text-[#111] text-xs font-bold hover:opacity-90"
                             >
                                 {t("bill.cash.exact")}
                             </button>
@@ -3728,7 +3728,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         const val = e.target.value.replace(/[^\d.]/g, "");
                                         setCashReceived(val);
                                     }}
-                                    className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#f6b100]"
+                                    className="w-full bg-[#1f1f1f] border border-[#2b2b2b] rounded-xl px-4 py-3 text-[#f5f5f5] outline-none focus:ring-1 focus:ring-[#38bdf8]"
                                     placeholder={t("bill.cash.placeholder")}                                />
                             </div>
 
@@ -3738,7 +3738,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                         "bill.cash.change"
                                     )}
                                 </p>
-                                <p className="text-2xl font-bold text-[#f6b100]">
+                                <p className="text-2xl font-bold text-[#38bdf8]">
                                     {money(cashChange)}
                                 </p>
 
@@ -3805,10 +3805,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !releaseFromInvoiceLoading) setConfirmReleaseInvoice(false); }}>
                     <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-release-title"
                         aria-describedby="confirm-release-description"
-                        className="w-full max-w-md rounded-2xl border border-amber-500/25 bg-[#171719] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.65)] sm:p-6"
+                        className="w-full max-w-md rounded-2xl border border-sky-500/25 bg-[#171719] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.65)] sm:p-6"
                         style={{ maxHeight: "calc(100dvh - 7rem)", overflowY: "auto" }}>
                         <div className="flex items-start gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-400">
                                 <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
                             </div>
                             <div className="min-w-0 flex-1">
@@ -3825,7 +3825,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                                 className="rounded-xl border border-gray-600 bg-[#2a2a2d] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#38383d] disabled:opacity-50">Cancelar</button>
                             <button type="button" disabled={releaseFromInvoiceLoading}
                                 onClick={confirmFinishAndReleaseTable}
-                                className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-black transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60">
+                                className="rounded-xl bg-sky-500 px-4 py-3 text-sm font-bold text-black transition hover:bg-sky-400 disabled:cursor-wait disabled:opacity-60">
                                 {releaseFromInvoiceLoading ? "Cerrando mesa…" : "Sí, cerrar y desocupar"}
                             </button>
                         </div>

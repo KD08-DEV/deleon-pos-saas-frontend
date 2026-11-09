@@ -26,7 +26,7 @@ const Auth = () => {
         <blockquote className="absolute bottom-10 px-8 mb-10 text-2xl italic text-white">
             "Un excelente servicio transforma una simple atención en una experiencia memorable"
           <br />
-          <span className="block mt-4 text-yellow-400">- Founder of DeLeon Soft</span>
+          <span className="block mt-4 text-sky-400">- Founder of DeLeon Soft</span>
         </blockquote>
       </div>
 
@@ -47,7 +47,7 @@ const Auth = () => {
             </p>
         </div>
 
-        <h2 className="text-4xl text-center mt-10 font-semibold text-yellow-400 mb-10">
+        <h2 className="text-4xl text-center mt-10 font-semibold text-sky-400 mb-10">
           {isRegister ? "Employee Registration" : " Login"}
         </h2>
 

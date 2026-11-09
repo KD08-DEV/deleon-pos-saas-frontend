@@ -1736,7 +1736,7 @@ const Menu = () => {
                         shadow-lg
                         backdrop-blur-md
                         hover:text-white
-                        hover:border-[#f6b100]/40
+                        hover:border-[#38bdf8]/40
                         hover:bg-[#1b1b1b]
                         transition-all
                     "
@@ -1748,7 +1748,7 @@ const Menu = () => {
                     }
                 >
 
-                    <span className="w-2 h-2 rounded-full bg-[#f6b100]" />
+                    <span className="w-2 h-2 rounded-full bg-[#38bdf8]" />
 
                     {t(
                         "menuPage.customerDisplay.title"
@@ -1787,7 +1787,7 @@ const Menu = () => {
                             )
                         }
 
-                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-[#f6b100] hover:bg-[#f6b100]/10 transition-all"
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-[#38bdf8] hover:bg-[#38bdf8]/10 transition-all"
                     >
 
                         {t(
@@ -2036,7 +2036,7 @@ const Menu = () => {
 
                                 <div className="flex items-start gap-4">
 
-                                    <div className="h-12 w-12 rounded-2xl bg-[#f6b100]/10 border border-[#f6b100]/30 flex items-center justify-center">
+                                    <div className="h-12 w-12 rounded-2xl bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center">
 
                                         <span className="text-2xl">
                                             !
@@ -2135,7 +2135,7 @@ const Menu = () => {
                                         </span>
 
 
-                                        <span className="font-semibold text-[#f6b100]">
+                                        <span className="font-semibold text-[#38bdf8]">
 
                                             {money(
                                                 totalAmount
@@ -2167,10 +2167,10 @@ const Menu = () => {
                                             px-4
                                             py-3
                                             rounded-2xl
-                                            bg-[#f6b100]
+                                            bg-[#38bdf8]
                                             text-black
                                             font-bold
-                                            hover:bg-[#ffd633]
+                                            hover:bg-[#7dd3fc]
                                             transition-all
                                             disabled:opacity-50
                                             disabled:cursor-not-allowed

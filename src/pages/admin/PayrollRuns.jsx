@@ -1025,7 +1025,7 @@ export default function PayrollRuns() {
                             busy
                         }
 
-                        className="ml-auto bg-yellow-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60"
+                        className="ml-auto bg-sky-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60"
                     >
 
                         {busy
@@ -1176,7 +1176,7 @@ export default function PayrollRuns() {
                                         run.status ===
                                         "posted"
                                             ? "bg-green-500/20 text-green-300"
-                                            : "bg-yellow-500/20 text-yellow-300"
+                                            : "bg-sky-500/20 text-sky-300"
                                     }`}
                                 >
 

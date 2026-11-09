@@ -85,7 +85,7 @@ export default function EcfIncidentsModal({ onClose, tenantId, clientId }) {
         className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/15 bg-[#131416] text-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-white/10 bg-[#151618] p-5">
           <div>
-            <h2 id="ecf-incident-title" className="flex items-center gap-2 text-lg font-bold"><ShieldAlert size={20} className="text-amber-400"/> Conciliación e incidentes e-CF</h2>
+            <h2 id="ecf-incident-title" className="flex items-center gap-2 text-lg font-bold"><ShieldAlert size={20} className="text-sky-400"/> Conciliación e incidentes e-CF</h2>
             <p className="mt-1 text-xs text-gray-400">Consulta de la sucursal seleccionada, incluso con e-CF desactivado. No se envían documentos ni se reservan nuevos e-NCF.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar incidentes" className="rounded-lg p-2 text-gray-300 hover:bg-white/10"><X size={19}/></button>
@@ -94,7 +94,7 @@ export default function EcfIncidentsModal({ onClose, tenantId, clientId }) {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {[["attempts", "Intentos de emisión"], ["documents", "Documentos fiscales"]].map(([value, label]) => (
               <button key={value} type="button" onClick={() => { setMode(value); setNotice(""); }}
-                className={`rounded-lg px-3 py-2 text-xs font-semibold ${mode === value ? "bg-amber-400 text-black" : "border border-white/15 bg-white/5 text-gray-200 hover:bg-white/10"}`}>{label}</button>
+                className={`rounded-lg px-3 py-2 text-xs font-semibold ${mode === value ? "bg-sky-400 text-black" : "border border-white/15 bg-white/5 text-gray-200 hover:bg-white/10"}`}>{label}</button>
             ))}
             {/* Botones de alto contraste en lugar de un <select> nativo con opciones ilegibles en Windows. */}
             <div role="group" aria-label="Filtrar estado"
@@ -106,16 +106,16 @@ export default function EcfIncidentsModal({ onClose, tenantId, clientId }) {
               ].map(([value, label]) => (
                 <button key={value} type="button" aria-pressed={filter === value}
                   onClick={() => { setFilter(value); setNotice(""); }}
-                  className={`min-h-[36px] rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
+                  className={`min-h-[36px] rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${
                     filter === value
-                      ? "bg-amber-400 text-black shadow-sm"
+                      ? "bg-sky-400 text-black shadow-sm"
                       : "bg-[#232937] text-white hover:bg-[#384153]"
                   }`}>{label}</button>
               ))}
             </div>
             <button type="button" onClick={() => { setNotice(""); refetch(); }} className="ml-auto flex items-center gap-1 rounded-lg border border-white/20 px-3 py-2 text-xs hover:bg-white/10" disabled={isFetching}><RefreshCcw size={14} className={isFetching ? "animate-spin" : ""}/> Actualizar</button>
           </div>
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
             <AlertTriangle size={17} className="mt-0.5 shrink-0"/>
             <span>Si aparece <strong>reserva incierta</strong> o falta el TrackId, conserva el bloqueo y realiza una comprobación manual. Nunca crees otra factura para resolver un error de conexión.</span>
           </div>
@@ -137,23 +137,23 @@ export default function EcfIncidentsModal({ onClose, tenantId, clientId }) {
               <div className="mt-3 border-t border-slate-600 pt-3 text-sm leading-relaxed text-slate-200">
                 <p>Una emisión puede quedar en espera del estado de DGII (por ejemplo, con TrackId) o en revisión manual si la comunicación falla sin evidencia suficiente.</p>
                 <p className="mt-2">Para probar la conciliación real utiliza una <strong>pasarela DGII simulada</strong> y una base de desarrollo aislada. No modifiques facturas aceptadas ni insertes e-NCF ficticios en producción.</p>
-                <p className="mt-2 text-amber-200">Los filtros funcionan con registros reales de la sucursal. El ejemplo visual, cuando está disponible, es completamente independiente de esos registros.</p>
+                <p className="mt-2 text-sky-200">Los filtros funcionan con registros reales de la sucursal. El ejemplo visual, cuando está disponible, es completamente independiente de esos registros.</p>
               </div>
             )}
             {canShowVisualExample && (
               <button type="button" onClick={() => setShowExample((v) => !v)}
-                className="mt-3 min-h-[36px] rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/20">
+                className="mt-3 min-h-[36px] rounded-lg border border-sky-500/50 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-500/20">
                 {showExample ? "Ocultar ejemplo visual" : "Ver ejemplo de un pendiente (sin guardar)"}
               </button>
             )}
           </div>
           {canShowVisualExample && showExample && (
-            <div role="note" className="mb-4 space-y-3 rounded-xl border-2 border-dashed border-amber-400 bg-[#29200c] p-4" data-ecf-example="visual-only">
-              <p className="text-sm font-bold text-amber-200">DEMOSTRACIÓN LOCAL — NO ES UNA FACTURA NI UN INCIDENTE REAL</p>
-              <p className="text-xs text-amber-100">Solo ilustra la apariencia. No consulta DGII, no hace solicitudes y no guarda nada en MongoDB.</p>
-              <div className="rounded-lg border border-amber-600/50 bg-[#141414] p-3">
+            <div role="note" className="mb-4 space-y-3 rounded-xl border-2 border-dashed border-sky-400 bg-[#0c2029] p-4" data-ecf-example="visual-only">
+              <p className="text-sm font-bold text-sky-200">DEMOSTRACIÓN LOCAL — NO ES UNA FACTURA NI UN INCIDENTE REAL</p>
+              <p className="text-xs text-sky-100">Solo ilustra la apariencia. No consulta DGII, no hace solicitudes y no guarda nada en MongoDB.</p>
+              <div className="rounded-lg border border-sky-600/50 bg-[#141414] p-3">
                 <p className="text-sm font-semibold text-white">E32 · Ejemplo sin e-NCF real</p>
-                <p className="mt-1 text-xs text-amber-200">Estado: TrackId recibido — pendiente de consulta</p>
+                <p className="mt-1 text-xs text-sky-200">Estado: TrackId recibido — pendiente de consulta</p>
                 <p className="mt-1 text-xs text-gray-200">TrackId: EJEMPLO-NO-REAL</p>
                 <button type="button" disabled className="mt-3 rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-300 opacity-75">Consultar estado (no disponible en demostración)</button>
               </div>
@@ -177,12 +177,12 @@ export default function EcfIncidentsModal({ onClose, tenantId, clientId }) {
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-bold text-white">E{item.documentType || "?"} · {item.eNCF || "Sin e-NCF conocido"}</span>
-                        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${done ? "bg-emerald-500/15 text-emerald-200" : item.status === "needs_review" ? "bg-red-500/15 text-red-200" : "bg-amber-500/15 text-amber-200"}`}>{STATUS_NAMES[item.status] || item.status || "Sin estado"}</span>
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${done ? "bg-emerald-500/15 text-emerald-200" : item.status === "needs_review" ? "bg-red-500/15 text-red-200" : "bg-sky-500/15 text-sky-200"}`}>{STATUS_NAMES[item.status] || item.status || "Sin estado"}</span>
                       </div>
                       <p className="break-all text-xs text-gray-400">Orden: {item.orderId || "No asociada"} · TrackId: {item.trackId || "No disponible"}</p>
                       <p className="text-xs text-gray-400">Creado: {readableDate(item.createdAt)} · Última consulta: {readableDate(item.lastCheckedAt)}</p>
                       {item.errorCode && <p className="text-xs text-red-300">Incidente: {item.errorCode}</p>}
-                      {!done && item.needsManualReview && <p className="flex items-center gap-1 text-xs text-amber-300"><Clock3 size={13}/> Revisión manual: no hay evidencia suficiente para consultar automáticamente.</p>}
+                      {!done && item.needsManualReview && <p className="flex items-center gap-1 text-xs text-sky-300"><Clock3 size={13}/> Revisión manual: no hay evidencia suficiente para consultar automáticamente.</p>}
                     </div>
                     <button type="button" disabled={!canQuery || reconcile.isPending}
                       onClick={() => { setNotice(""); reconcile.mutate(item); }}

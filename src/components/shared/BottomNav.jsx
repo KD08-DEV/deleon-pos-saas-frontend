@@ -423,7 +423,7 @@ const BottomNav = memo(() => {
                                             );
                                         }}
 
-                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#f6b100] text-[#1f1f1f]"
+                                        className="px-4 py-3 w-full rounded-lg font-semibold bg-[#38bdf8] text-[#1f1f1f]"
                                     >
 
                                         {t(
@@ -1306,7 +1306,7 @@ const BottomNav = memo(() => {
 
                             <details><summary className="cursor-pointer text-sm text-white/70">Identificación fiscal (opcional)</summary><div className="grid gap-2 mt-2"><input aria-label="País fiscal" value={taxIdentity.countryCode||''} onChange={e=>setTaxIdentity(v=>({...v,countryCode:e.target.value.toUpperCase()}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><input aria-label="Tipo fiscal" value={taxIdentity.type||''} onChange={e=>setTaxIdentity(v=>({...v,type:e.target.value.toUpperCase()}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><input aria-label="RNC o cédula" placeholder="RNC o cédula" value={taxIdentity.value||''} onChange={e=>setTaxIdentity(v=>({...v,value:e.target.value}))} className="rounded-lg bg-[#111] border border-[#2a2a2a] px-3 py-2"/><p role="status" className="text-xs text-white/60">{{LOADING:'Consultando RNC…',FOUND:'Encontrado; se conserva el nombre manual.',NOT_FOUND:'No encontrado. Completa el nombre manualmente.',ERROR:'Error consultando RNC.'}[rncLookup.status]}</p></div></details>
                             {customerError&&<p role="alert" className="text-sm text-red-300">{customerError}</p>}
-                            {needsConfirmation&&<label className="flex items-start gap-2 text-sm text-amber-200"><input type="checkbox" checked={distinctConfirmed} onChange={e=>setDistinctConfirmed(e.target.checked)}/>Confirmo que es otra persona con una identificación fiscal distinta.</label>}
+                            {needsConfirmation&&<label className="flex items-start gap-2 text-sm text-sky-200"><input type="checkbox" checked={distinctConfirmed} onChange={e=>setDistinctConfirmed(e.target.checked)}/>Confirmo que es otra persona con una identificación fiscal distinta.</label>}
                             {/* PERSONAS */}
 
                             <div>

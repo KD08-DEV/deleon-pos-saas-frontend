@@ -2129,7 +2129,7 @@ const Reports = () => {
                                     </td>
 
 
-                                    <td className="p-3 font-bold text-[#F6B100]">
+                                    <td className="p-3 font-bold text-[#38bdf8]">
 
                                         {currency(
                                             report

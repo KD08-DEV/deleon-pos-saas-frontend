@@ -577,7 +577,7 @@ const Header = memo(
 
                             className={`relative bg-gradient-to-br from-[#1f1f1f] to-[#252525] rounded-xl p-3 cursor-pointer border transition-all duration-200 group ${
                                 canInventory
-                                    ? "border-[#2a2a2a]/50 hover:border-yellow-500/50 hover:scale-105 active:scale-95"
+                                    ? "border-[#2a2a2a]/50 hover:border-sky-500/50 hover:scale-105 active:scale-95"
                                     : "border-[#2a2a2a]/30 opacity-60 cursor-not-allowed"
                             }`}
 
@@ -596,14 +596,14 @@ const Header = memo(
                             }
                         >
 
-                            <Bell className="text-[#f5f5f5] text-xl group-hover:text-yellow-400 transition-colors" />
+                            <Bell className="text-[#f5f5f5] text-xl group-hover:text-sky-400 transition-colors" />
 
 
                             {canInventory &&
                                 lowStockCount >
                                 0 && (
 
-                                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-yellow-500 text-black text-[11px] font-bold flex items-center justify-center border border-black/40">
+                                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-black text-[11px] font-bold flex items-center justify-center border border-black/40">
 
                                     {lowStockCount >
                                     99
@@ -671,7 +671,7 @@ const Header = memo(
 
                                             <div className="flex items-center gap-2">
 
-                                                <Package className="w-4 h-4 text-yellow-400" />
+                                                <Package className="w-4 h-4 text-sky-400" />
 
 
                                                 <p className="text-sm font-semibold text-[#f5f5f5]">
@@ -754,7 +754,7 @@ const Header = memo(
                                                                             )
                                                                         }
 
-                                                                        className="w-full text-left px-4 py-3 hover:bg-yellow-500/10 transition-colors border-b border-[#2a2a2a]/30"
+                                                                        className="w-full text-left px-4 py-3 hover:bg-sky-500/10 transition-colors border-b border-[#2a2a2a]/30"
                                                                     >
 
                                                                         <div className="flex items-center justify-between gap-3">
@@ -796,7 +796,7 @@ const Header = memo(
                                                                             </div>
 
 
-                                                                            <span className="text-xs font-semibold text-yellow-400 whitespace-nowrap">
+                                                                            <span className="text-xs font-semibold text-sky-400 whitespace-nowrap">
 
                                                                             {t(
                                                                                 "header.lowStock"
@@ -828,7 +828,7 @@ const Header = memo(
                                                     )
                                                 }
 
-                                                className="text-sm font-semibold text-yellow-400 hover:text-yellow-300 transition-colors"
+                                                className="text-sm font-semibold text-sky-400 hover:text-sky-300 transition-colors"
                                             >
 
                                                 {t(
@@ -1073,7 +1073,7 @@ const Header = memo(
                                                     className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all duration-200 ${
                                                         theme ===
                                                         "light"
-                                                            ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400"
+                                                            ? "bg-sky-500/20 border-sky-500/50 text-sky-400"
                                                             : "bg-[#2a2a2a]/50 border-[#2a2a2a]/50 text-[#ababab] hover:bg-[#2a2a2a] hover:text-white"
                                                     }`}
                                                 >

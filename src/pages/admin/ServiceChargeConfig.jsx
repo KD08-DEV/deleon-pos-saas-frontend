@@ -461,7 +461,7 @@ export default function ServiceChargeConfig({
 
                             hasLegalTip
                                 ? "bg-gray-800 text-gray-500 cursor-not-allowed"
-                                : "bg-[#f6b100] text-black hover:bg-[#ffd633]",
+                                : "bg-[#38bdf8] text-black hover:bg-[#7dd3fc]",
                         ].join(" ")}
                     >
 
@@ -487,7 +487,7 @@ export default function ServiceChargeConfig({
                             addGenericCharge
                         }
 
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-gray-700 text-gray-200 text-sm font-semibold hover:border-[#f6b100]/50 hover:text-[#f6b100]"
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-gray-700 text-gray-200 text-sm font-semibold hover:border-[#38bdf8]/50 hover:text-[#38bdf8]"
                     >
 
                         <Plus className="w-4 h-4" />

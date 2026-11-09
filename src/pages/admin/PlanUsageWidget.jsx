@@ -118,13 +118,13 @@ const PlanUsageWidget = () => {
                         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                             {t("planUsageWidget.currentPlan")}:{" "}
 
-                            <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 text-xs border border-yellow-500/40">
+                            <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 text-xs border border-sky-500/40">
                                 {planLabel}
                             </span>
                         </h2>
 
                         <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                            <FiTrendingUp className="text-yellow-400" />
+                            <FiTrendingUp className="text-sky-400" />
 
                             {t("planUsageWidget.usageDescription")}
                         </p>
@@ -135,7 +135,7 @@ const PlanUsageWidget = () => {
                         onClick={() =>
                             setShowUpgradeModal(true)
                         }
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500 text-black text-xs font-semibold hover:bg-yellow-400 transition"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-500 text-black text-xs font-semibold hover:bg-sky-400 transition"
                     >
                         <MdUpgrade size={16} />
 
@@ -192,7 +192,7 @@ const PlanUsageWidget = () => {
                                         className={`h-2 rounded-full transition-all ${
                                             danger
                                                 ? "bg-red-500"
-                                                : "bg-yellow-500"
+                                                : "bg-sky-500"
                                         }`}
                                         style={{
                                             width: `${pct}%`,
@@ -240,7 +240,7 @@ const UpgradePlanModal = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
             <div className="w-full max-w-md bg-[#0b0b0b] rounded-2xl border border-gray-800 p-6">
                 <h3 className="text-xl font-semibold text-white mb-2 flex items-center gap-2">
-                    <MdUpgrade className="text-yellow-400" />
+                    <MdUpgrade className="text-sky-400" />
 
                     {t("planUsageWidget.modal.title")}
                 </h3>
@@ -250,7 +250,7 @@ const UpgradePlanModal = ({
                         "planUsageWidget.modal.currentPlanPrefix"
                     )}{" "}
 
-                    <span className="font-semibold text-yellow-400">
+                    <span className="font-semibold text-sky-400">
                         {currentPlan}
                     </span>
                     .{" "}
@@ -293,7 +293,7 @@ const UpgradePlanModal = ({
                         href="https://wa.link/vzbps9"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-yellow-500 text-black hover:bg-yellow-400"
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-black hover:bg-sky-400"
                     >
                         WhatsApp
                     </a>

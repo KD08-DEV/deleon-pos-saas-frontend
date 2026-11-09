@@ -27,6 +27,8 @@ export default function ExpenseCategories() {
     const { t } = useTranslation();
 
     const [rows, setRows] = useState([]);
+    const [search, setSearch] = useState("");
+    const visibleRows = rows.filter(row => `${row.name || ""} ${row.description || ""}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [err, setErr] = useState("");
@@ -213,12 +215,14 @@ export default function ExpenseCategories() {
     }
 
     return (
-        <section className="p-4 text-white">
-            <h1 className="text-xl font-semibold">
+        <section className="finance-workspace min-w-0 space-y-5 text-white">
+            <h1 className="text-2xl font-bold">
                 {t(
                     "expenseCategoriesPage.title"
                 )}
             </h1>
+            <p className="text-sm text-white/60">Organiza los gastos para identificar en qué se utiliza el dinero.</p>
+            <div className="flex flex-wrap gap-3"><span className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-300"><b>{rows.length}</b> categorías registradas</span><span className="rounded-xl border border-gray-800/50 px-4 py-3 text-sm text-white/60">Las categorías con gastos asociados conservan su historial.</span></div>
 
             {err ? (
                 <div className="mt-3 text-red-400">
@@ -230,10 +234,11 @@ export default function ExpenseCategories() {
                 onSubmit={
                     onCreate
                 }
-                className="mt-4 flex flex-col gap-2 max-w-xl"
+                className="category-create grid gap-3 rounded-2xl border border-gray-800/50 bg-[#101010] p-4 sm:p-5"
             >
-                <input
-                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                <h2 className="category-form-heading text-lg font-semibold">Nueva categoría</h2>
+                <input aria-label="Nombre de la categoría"
+                    className="min-w-0 w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-3"
                     placeholder={
                         t(
                             "expenseCategoriesPage.placeholders.name"
@@ -253,8 +258,8 @@ export default function ExpenseCategories() {
                     }
                 />
 
-                <input
-                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2"
+                <input aria-label="Descripción de la categoría"
+                    className="min-w-0 w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-3"
                     placeholder={
                         t(
                             "expenseCategoriesPage.placeholders.description"
@@ -280,7 +285,7 @@ export default function ExpenseCategories() {
                         busy ||
                         !name.trim()
                     }
-                    className="bg-yellow-500 text-black rounded-lg px-3 py-2 font-medium disabled:opacity-60"
+                    className="bg-[#38bdf8] text-black rounded-xl px-4 py-3 font-semibold disabled:opacity-60"
                 >
                     {busy
                         ? t(
@@ -293,15 +298,16 @@ export default function ExpenseCategories() {
                 </button>
             </form>
 
-            <div className="mt-6 border border-white/10 rounded-xl overflow-hidden">
-                <div className="grid grid-cols-12 bg-white/5 px-3 py-2 text-sm text-white/80">
-                    <div className="col-span-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Categorías disponibles</h2><input aria-label="Buscar categorías" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por nombre o descripción…" className="w-full sm:w-72 min-w-0 rounded-xl border border-white/15 bg-[#151515] px-3 py-2 text-sm" /></div>
+            <div className="category-list border border-gray-800/50 rounded-2xl overflow-hidden">
+                <div className="category-list-header grid grid-cols-12 bg-white/5 px-4 py-3 text-xs font-semibold text-white/80">
+                    <div className="col-span-5 min-w-0 break-words">
                         {t(
                             "expenseCategoriesPage.table.name"
                         )}
                     </div>
 
-                    <div className="col-span-5">
+                    <div className="col-span-5 min-w-0 break-words">
                         {t(
                             "expenseCategoriesPage.table.description"
                         )}
@@ -314,7 +320,7 @@ export default function ExpenseCategories() {
                     </div>
                 </div>
 
-                {rows.map(
+                {visibleRows.map(
                     (
                         row
                     ) => (
@@ -322,9 +328,9 @@ export default function ExpenseCategories() {
                             key={
                                 row._id
                             }
-                            className="grid grid-cols-12 px-3 py-3 border-t border-white/10 items-center"
+                            className="category-list-row grid grid-cols-12 gap-3 px-4 py-4 border-t border-white/10 items-center text-sm"
                         >
-                            <div className="col-span-5">
+                            <div className="col-span-5 min-w-0 break-words">
                                 {
                                     row.name
                                 }
@@ -376,7 +382,7 @@ export default function ExpenseCategories() {
                     )
                 )}
 
-                {!rows.length ? (
+                {!visibleRows.length ? (
                     <div className="px-3 py-4 text-white/60">
                         {t(
                             "expenseCategoriesPage.empty"
@@ -496,7 +502,7 @@ export default function ExpenseCategories() {
                                     </label>
 
                                     <input
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white"
+                                        className="w-full min-w-0 w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-3 text-white"
                                         value={
                                             editModal.name
                                         }
@@ -531,7 +537,7 @@ export default function ExpenseCategories() {
                                         rows={
                                             3
                                         }
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white resize-none"
+                                        className="w-full min-w-0 w-full bg-[#151515] border border-white/15 rounded-xl px-3 py-3 text-white resize-none"
                                         value={
                                             editModal.description
                                         }
@@ -573,7 +579,7 @@ export default function ExpenseCategories() {
                                             busy ||
                                             !editModal.name.trim()
                                         }
-                                        className="flex-1 px-4 py-2.5 rounded-lg bg-yellow-500 text-black font-semibold hover:bg-yellow-400 transition-all disabled:opacity-60"
+                                        className="flex-1 px-4 py-2.5 rounded-lg bg-sky-500 text-black font-semibold hover:bg-sky-400 transition-all disabled:opacity-60"
                                     >
                                         {busy
                                             ? t(

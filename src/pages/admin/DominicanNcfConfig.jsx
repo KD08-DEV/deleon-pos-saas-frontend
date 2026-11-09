@@ -178,10 +178,10 @@ function NcfTypeCard({
                         .isExpiringSoon
                         .days <=
                     30 && (
-                        <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                            <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-2 p-3 bg-sky-500/10 border border-sky-500/20 rounded-lg">
+                            <AlertCircle className="w-4 h-4 text-sky-400 flex-shrink-0 mt-0.5" />
 
-                            <p className="text-xs text-yellow-300">
+                            <p className="text-xs text-sky-300">
                                 Este rango
                                 expira en{" "}
                                 {
@@ -366,7 +366,7 @@ function NcfTypeCard({
                                                 info.percentage
                                             ) >
                                             50
-                                                ? "bg-yellow-500"
+                                                ? "bg-sky-500"
                                                 : "bg-green-500"
                                     }`}
                                     style={{
@@ -522,12 +522,12 @@ export default function DominicanNcfConfig({
                     />
                 </div>
             ) : (
-                <div className="mb-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                <div className="mb-6 rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
                     <div className="flex items-start gap-3">
-                        <Info className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <Info className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
 
                         <div>
-                            <h3 className="text-sm font-semibold text-yellow-200">
+                            <h3 className="text-sm font-semibold text-sky-200">
                                 NCF disponible
                                 en Plan
                                 Premium o Pro

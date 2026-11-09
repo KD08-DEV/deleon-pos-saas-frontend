@@ -42,7 +42,7 @@ import {
 
 const inputCls =
     "w-full p-3 border border-gray-800/50 rounded-xl bg-[#1a1a1a] text-white text-sm " +
-    "focus:outline-none focus:border-[#f6b100]/50 transition-colors disabled:opacity-60";
+    "focus:outline-none focus:border-[#38bdf8]/50 transition-colors disabled:opacity-60";
 
 
 function Switch({
@@ -65,7 +65,7 @@ function Switch({
                     ? "opacity-50 cursor-not-allowed"
                     : "cursor-pointer",
                 checked
-                    ? "bg-[#f6b100]"
+                    ? "bg-[#38bdf8]"
                     : "bg-gray-700",
             ].join(" ")}
             aria-pressed={checked}
@@ -1051,7 +1051,7 @@ export default function TaxIdentityConfig() {
         return (
             <div className="text-center py-8 text-gray-400">
 
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#f6b100] mx-auto" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#38bdf8] mx-auto" />
 
                 <p className="mt-2">
                     {t(
@@ -1092,7 +1092,7 @@ export default function TaxIdentityConfig() {
 
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
 
-                    <FileText className="w-6 h-6 text-[#f6b100]" />
+                    <FileText className="w-6 h-6 text-[#38bdf8]" />
 
                     {t(
                         "taxIdentityConfig.title"
@@ -1225,9 +1225,9 @@ export default function TaxIdentityConfig() {
 
                     <div className="flex items-start gap-3 mb-5 pb-4 border-b border-gray-800/50">
 
-                        <div className="p-2 rounded-lg bg-[#f6b100]/10 border border-[#f6b100]/20">
+                        <div className="p-2 rounded-lg bg-[#38bdf8]/10 border border-[#38bdf8]/20">
 
-                            <FileText className="w-5 h-5 text-[#f6b100]" />
+                            <FileText className="w-5 h-5 text-[#38bdf8]" />
 
                         </div>
 
@@ -1365,7 +1365,7 @@ export default function TaxIdentityConfig() {
                                                 useRegionalCountry
                                             }
 
-                                            className="text-[#f6b100] hover:text-[#ffd633] font-medium"
+                                            className="text-[#38bdf8] hover:text-[#7dd3fc] font-medium"
                                         >
 
                                             {t(
@@ -1695,7 +1695,7 @@ export default function TaxIdentityConfig() {
                                 10
                             }
 
-                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#f6b100]/30 bg-[#f6b100]/10 text-[#f6b100] text-sm font-semibold hover:bg-[#f6b100]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#38bdf8]/30 bg-[#38bdf8]/10 text-[#38bdf8] text-sm font-semibold hover:bg-[#38bdf8]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
 
                             <Plus className="w-4 h-4" />
@@ -2132,7 +2132,7 @@ export default function TaxIdentityConfig() {
                             saving
                         }
 
-                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#f6b100] text-black font-semibold hover:bg-[#ffd633] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40"
+                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#38bdf8] text-black font-semibold hover:bg-[#7dd3fc] transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-sky-500/20 hover:shadow-sky-500/40"
                     >
 
                         <Save className="w-4 h-4" />

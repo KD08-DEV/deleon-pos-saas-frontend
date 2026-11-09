@@ -22,7 +22,7 @@ const SuperAdminSidebar = () => {
     const linkBase =
         "flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors";
     const linkInactive = "text-gray-400 hover:text-white hover:bg-[#18181b]";
-    const linkActive = "bg-[#eab308]/10 text-[#eab308]";
+    const linkActive = "bg-[#08a2ea]/10 text-[#08a2ea]";
 
     return (
         <aside className="hidden md:flex flex-col w-64 bg-[#0b0b0b] border-r border-[#1f1f1f] py-6 px-3">

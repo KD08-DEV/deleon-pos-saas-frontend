@@ -29,8 +29,9 @@ export default function MoveTableAction({ table, tables, onDone, onBusyChange })
         } catch (err) { setError(tableOperationMessage(err)); }
         finally { lock.current = false; setBusy(false); onBusyChange?.(false); }
     };
-    return <div className="rounded-xl border border-white/10 p-3">
-        {!open ? <button type="button" className="w-full py-2 text-[#f6b100]" onClick={() => setOpen(true)}>Cambiar de mesa</button> : <>
+    return <>
+        <button type="button" aria-expanded={open} disabled={busy} className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-[#38bdf8]/60 text-[#38bdf8] bg-[#38bdf8]/5 hover:bg-[#38bdf8]/10 whitespace-nowrap shadow-sm disabled:opacity-50" onClick={() => setOpen(!open)}>Cambiar de mesa</button>
+        {open && <div className="order-last w-full rounded-xl border border-white/10 bg-[#1a1a1a] p-3">
             <label className="block text-sm text-white" htmlFor="move-target-table">Mesa de destino</label>
             <select id="move-target-table" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} className="mt-2 w-full rounded-lg bg-[#242424] p-3 text-white">
                 <option value="">Selecciona una mesa disponible</option>
@@ -40,10 +41,10 @@ export default function MoveTableAction({ table, tables, onDone, onBusyChange })
             {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
             <div className="mt-3 flex gap-2">
                 <button type="button" disabled={busy} onClick={() => setOpen(false)} className="flex-1 rounded-lg border border-white/20 p-2 text-white disabled:opacity-50">Cancelar</button>
-                <button type="button" disabled={busy || !target} aria-busy={busy} onClick={move} className="flex-1 rounded-lg bg-[#f6b100] p-2 font-semibold text-black disabled:opacity-50">{busy ? "Procesando..." : "Confirmar cambio"}</button>
+                <button type="button" disabled={busy || !target} aria-busy={busy} onClick={move} className="flex-1 rounded-lg bg-[#38bdf8] p-2 font-semibold text-black disabled:opacity-50">{busy ? "Procesando..." : "Confirmar cambio"}</button>
             </div>
-        </>}
-    </div>;
+        </div>}
+    </>;
 }
 
 const tableShape = PropTypes.shape({

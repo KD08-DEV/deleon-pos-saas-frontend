@@ -52,9 +52,9 @@ const getStatusConfig = (status) => {
     };
     return configs[status] || {
         icon: Clock,
-        bg: "from-yellow-500/20 to-amber-500/20",
-        text: "text-yellow-400",
-        border: "border-yellow-500/30",
+        bg: "from-sky-500/20 to-sky-500/20",
+        text: "text-sky-400",
+        border: "border-sky-500/30",
     };
 };
 
@@ -449,10 +449,10 @@ const getWaitTimeConfig = (
                 `${minutes} min`,
 
             badge:
-                "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+                "bg-sky-500/15 text-sky-300 border border-sky-500/30",
 
             cardBorder:
-                "border-amber-500/25",
+                "border-sky-500/25",
         };
     }
 
@@ -1500,7 +1500,7 @@ const OrderCard = ({
                         {/* AVATAR mejorado */}
                         <motion.div
                             whileHover={{ scale: 1.1, rotate: 5 }}
-                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
+                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-sky-500 text-black font-bold text-lg shadow-lg shrink-0"
                         >
                             {getAvatarInitial(
                                 getCustomerDisplayName(
@@ -1587,7 +1587,7 @@ const OrderCard = ({
                                     </span>
                                 ))}
                                 {(localOrder?.ncfNumber || localOrder?.fiscal?.requested) && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-medium">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-[10px] font-medium">
                                         <Receipt className="w-3 h-3" />
                                         {localOrder?.ncfNumber ? `NCF: ${localOrder.ncfNumber}` : "NCF solicitado"}
                                     </span>
@@ -1716,7 +1716,7 @@ const OrderCard = ({
                                         )}
 
                                         {itemSummary.note && (
-                                            <p className="mt-1 text-xs text-amber-300">
+                                            <p className="mt-1 text-xs text-sky-300">
                                                 {t(
                                                     "orderCard.note"
                                                 )}: {itemSummary.note}
@@ -1767,10 +1767,10 @@ const OrderCard = ({
 
                     {/* Nota de la orden */}
                     {String(localOrder?.orderNote || "").trim() && (
-                        <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/5 rounded-lg p-3 border border-amber-500/20">
+                        <div className="bg-gradient-to-r from-sky-500/10 to-sky-500/5 rounded-lg p-3 border border-sky-500/20">
                             <div className="flex items-center gap-2 mb-1">
-                                <MessageSquareText className="w-4 h-4 text-amber-300 shrink-0" />
-                                <span className="uppercase tracking-wide text-xs text-amber-300 font-semibold">
+                                <MessageSquareText className="w-4 h-4 text-sky-300 shrink-0" />
+                                <span className="uppercase tracking-wide text-xs text-sky-300 font-semibold">
                               <span>
                                     {t(
                                         "orderCard.note"
@@ -1790,7 +1790,7 @@ const OrderCard = ({
                         {waitTimeConfig && (
                             <>
                                 <span className="text-[#666]">•</span>
-                                <span className={waitTimeConfig.badge.replace("bg-emerald-500/15 ", "").replace("bg-amber-500/15 ", "").replace("bg-red-500/15 ", "").replace("border border-emerald-500/30", "").replace("border border-amber-500/30", "").replace("border border-red-500/30", "")}>
+                                <span className={waitTimeConfig.badge.replace("bg-emerald-500/15 ", "").replace("bg-sky-500/15 ", "").replace("bg-red-500/15 ", "").replace("border border-emerald-500/30", "").replace("border border-sky-500/30", "").replace("border border-red-500/30", "")}>
                                     {waitTimeConfig.label}
                                 </span>
                             </>
@@ -1880,7 +1880,7 @@ const OrderCard = ({
                                     <div className="flex items-center gap-3">
                                         <motion.div
                                             whileHover={{ scale: 1.1, rotate: 5 }}
-                                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 text-black font-bold text-lg shadow-lg shrink-0"
+                                            className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-sky-500 text-black font-bold text-lg shadow-lg shrink-0"
                                         >
                                             {getAvatarInitial(
                                                 getCustomerDisplayName(
@@ -2133,7 +2133,7 @@ const OrderCard = ({
                                                                 )}
 
                                                                 {itemSummary.note && (
-                                                                    <p className="mt-2 text-xs text-amber-300">
+                                                                    <p className="mt-2 text-xs text-sky-300">
                                                                         {t(
                                                                             "orderCard.note"
                                                                         )}: {itemSummary.note}
@@ -2182,7 +2182,7 @@ const OrderCard = ({
                                     {(localOrder?.ncfNumber || localOrder?.fiscal?.requested || localOrder?.bills?.split?.enabled) && (
                                         <div className="flex flex-wrap gap-2">
                                             {(localOrder?.ncfNumber || localOrder?.fiscal?.requested) && (
-                                                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-medium">
+                                                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-medium">
                                                     <Receipt className="w-3.5 h-3.5" />
                                                     {localOrder?.ncfNumber ? `NCF: ${localOrder.ncfNumber}` : "NCF solicitado"}
                                                 </span>
@@ -2268,7 +2268,7 @@ const OrderCard = ({
                                                     onClick={() => handleRecoverCancelled("En Progreso")}
                                                     whileHover={{ scale: 1.02 }}
                                                     whileTap={{ scale: 0.98 }}
-                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
+                                                    className="flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-sky-400 to-sky-500 text-black hover:shadow-lg hover:shadow-sky-500/30"
                                                 >
                                                     <ArrowRight className="w-4 h-4" />
                                                     <span>{t(
@@ -2331,8 +2331,8 @@ const OrderCard = ({
                                                     whileTap={currentStatus !== "Cancelado" ? { scale: 0.98 } : {}}
                                                     className={`flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 ${
                                                         currentStatus === "Cancelado"
-                                                            ? "bg-amber-900/40 text-amber-300 cursor-not-allowed opacity-50"
-                                                            : "bg-gradient-to-r from-yellow-400 to-amber-500 text-black hover:shadow-lg hover:shadow-yellow-500/30"
+                                                            ? "bg-sky-900/40 text-sky-300 cursor-not-allowed opacity-50"
+                                                            : "bg-gradient-to-r from-sky-400 to-sky-500 text-black hover:shadow-lg hover:shadow-sky-500/30"
                                                     }`}
                                                 >
                                                     <Receipt className="w-4 h-4" />
@@ -2363,7 +2363,7 @@ const OrderCard = ({
                                         {/* Corrección auditada de órdenes normales */}
                                         {canOpenCorrection && (
                                             <button type="button" onClick={openCorrection}
-                                                className="w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-200 hover:bg-amber-400/20">
+                                                className="w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-4 py-3 text-sm font-semibold text-sky-200 hover:bg-sky-400/20">
                                                 {t("orderCard.correction.action")}
                                             </button>
                                         )}
@@ -2591,7 +2591,7 @@ const OrderCard = ({
                                 onClick={saveFiscal}
                                 disabled={savingFiscal}
                                 className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-black ${
-                                    savingFiscal ? "bg-amber-900/40 text-amber-300 cursor-not-allowed" : "bg-amber-400 hover:bg-amber-300"
+                                    savingFiscal ? "bg-sky-900/40 text-sky-300 cursor-not-allowed" : "bg-sky-400 hover:bg-sky-300"
                                 }`}
                             >
                                 {savingFiscal ? "Guardando..." : "Guardar y generar"}

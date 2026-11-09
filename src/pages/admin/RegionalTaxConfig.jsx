@@ -1182,7 +1182,7 @@ export default function RegionalTaxConfig({
                                     addTax
                                 }
 
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#f6b100] text-black text-sm font-semibold hover:bg-[#ffd633]"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#38bdf8] text-black text-sm font-semibold hover:bg-[#7dd3fc]"
                             >
 
                                 <Plus className="w-4 h-4" />
@@ -1254,7 +1254,7 @@ export default function RegionalTaxConfig({
 
                                                             {isDefault && (
 
-                                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#f6b100]/10 text-[#f6b100] border border-[#f6b100]/30">
+                                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/30">
 
                                                                     {t(
                                                                         "regionalTaxConfig.taxes.status.default"
@@ -1294,7 +1294,7 @@ export default function RegionalTaxConfig({
                                                                     )
                                                                 }
 
-                                                                className="text-xs px-3 py-2 rounded-lg border border-gray-700 text-gray-300 hover:border-[#f6b100]/50 hover:text-[#f6b100]"
+                                                                className="text-xs px-3 py-2 rounded-lg border border-gray-700 text-gray-300 hover:border-[#38bdf8]/50 hover:text-[#38bdf8]"
                                                             >
 
                                                                 {t(

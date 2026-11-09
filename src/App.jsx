@@ -892,7 +892,7 @@ function Layout() {
                                     </div>
 
                                     <div className="text-sm text-white/60 mt-3">{t("cashGate.openingFloat")}</div>
-                                    <div className="text-lg font-semibold text-yellow-400">
+                                    <div className="text-lg font-semibold text-sky-400">
                                         {money(
                                             pendingCashSession
                                                 ?.openingFloatInitial ||
@@ -935,7 +935,7 @@ function Layout() {
                                                 }`
                                             );
                                         }}
-                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                        className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3"
                                     >
                                         {t("cashGate.goToClose")}
                                     </button>
@@ -975,7 +975,7 @@ function Layout() {
                                         type="button"
                                         onClick={handleOpenCash}
                                         disabled={cashGateLoading}
-                                        className="w-full rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3 disabled:opacity-60"
+                                        className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3 disabled:opacity-60"
                                     >
                                         {cashGateLoading ? t("cashGate.saving") : t("cashGate.saveOpening")}
                                     </button>
@@ -1012,7 +1012,7 @@ function Layout() {
                                             setShowCloseCashConfirm(false);
                                             setOpenModal(false);
                                         }}
-                                        className="flex-1 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-black font-semibold py-3"
+                                        className="flex-1 rounded-xl bg-sky-500 hover:bg-sky-400 text-black font-semibold py-3"
                                     >
                                         {t("cashGate.close")}
                                     </button>
