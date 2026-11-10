@@ -168,3 +168,6 @@ html[data-theme="light"] [class~="text-cyan-300"],
 html[data-theme="light"] [class~="text-cyan-400"] { color: #0e7490; }
 html[data-theme="light"] input::placeholder, html[data-theme="light"] textarea::placeholder { color: #64748b; opacity: 1; }
 }
+
+/* Credit confirmation keeps the brand accent readable in light mode. */
+html[data-theme="light"] .credit-payment-confirmation .text-sky-400 { color: #0284c7; }
