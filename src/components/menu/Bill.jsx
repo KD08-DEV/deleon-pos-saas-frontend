@@ -1,6 +1,7 @@
+import CreditPaymentConfirmation from "./CreditPaymentConfirmation";
 import useRncLookup from "../../hooks/useRncLookup";
 import OrderCorrectionEditor from "../orders/OrderCorrectionEditor";
-import { hasOrdinaryInvoice, invoiceHasChanges, invoicePreview } from "../../lib/ordinaryInvoice";
+import { hasOrdinaryInvoice, invoiceHasChanges, invoiceHasOnlyPaymentChange, invoicePreview } from "../../lib/ordinaryInvoice";
 import { refreshSalesViews } from "../../lib/refreshSalesViews";
 import { refreshTableViews } from "../../lib/tableOperations";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -298,6 +299,18 @@ const getTableIdFromAny = (value) => {
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     const [ordinaryCorrection, setOrdinaryCorrection] = useState(null);
+    const [creditConfirmation, setCreditConfirmation] = useState(null);
+    const creditConfirmationResolve = useRef(null);
+    const finishCreditConfirmation = accepted => {
+        const resolve = creditConfirmationResolve.current;
+        creditConfirmationResolve.current = null;
+        setCreditConfirmation(null);
+        resolve?.(accepted);
+    };
+    useEffect(() => () => {
+        creditConfirmationResolve.current?.(false);
+        creditConfirmationResolve.current = null;
+    }, []);
     const ordinaryInvoiceLock = useRef(false);
     const [ordinaryInvoiceBusy, setOrdinaryInvoiceBusy] = useState(false);
     const {
@@ -543,10 +556,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     // UI states
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     useEffect(() => {
-        if (!canUseCreditSales && paymentMethod === "Credito") {
+        if (creditAccess.isFetched && !hasOrdinaryInvoice(order) && !canUseCreditSales && paymentMethod === "Credito") {
             setPaymentMethod("Efectivo");
         }
-    }, [canUseCreditSales, paymentMethod]);
+    }, [creditAccess.isFetched, canUseCreditSales, paymentMethod, order]);
     const [cashReceived, setCashReceived] = useState("");
     useEffect(() => {
         if (isAppDelivery) return; // PedidoYa/UberEats se fuerzan
@@ -2604,14 +2617,49 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             const original = response?.data?.data;
             if (!original?._id) throw Error("No se encontró la factura original.");
             const draft = buildOrderPayload("invoice");
-            if (invoiceHasChanges(original, draft)) {
+            if (invoiceHasOnlyPaymentChange(original, draft)) {
+                const creditPaymentConfirmed = original.paymentMethod === "Credito";
+                const creditConversionConfirmed = draft.paymentMethod === "Credito";
+                if (creditConversionConfirmed || creditPaymentConfirmed) {
+                    const accepted = await new Promise(resolve => {
+                        creditConfirmationResolve.current = resolve;
+                        setCreditConfirmation({conversion:creditConversionConfirmed,method:draft.paymentMethod});
+                    });
+                    if (!accepted) return;
+                }
+                const updated = await api.patch(`/api/order/${encodeURIComponent(String(original._id))}/payment-method/correction`, {
+                    paymentMethod: draft.paymentMethod, expectedUpdatedAt: original.updatedAt,
+                    ...(creditPaymentConfirmed ? {creditPaymentConfirmed:true,registerId:draft.registerId} : {}),
+                    ...(creditConversionConfirmed ? {creditConversionConfirmed:true} : {}),
+                });
+                const saved = updated?.data?.data;
+                if (!saved?._id) throw Error("No se pudo confirmar el cambio de pago.");
+                setOrderInfo(invoicePreview(saved));
+                setShowInvoice(true);
+                await refreshSalesViews(queryClient);
+            } else if (invoiceHasChanges(original, draft)) {
                 setOrdinaryCorrection({order:original,initialValues:draft});
             } else {
                 setOrderInfo(invoicePreview(original));
                 setShowInvoice(true);
             }
         } catch (error) {
-            enqueueSnackbar(error?.response?.data?.message || "No se pudo recuperar la factura.", {variant:"error"});
+            const code = error?.response?.data?.code;
+            const messages = {
+                ORDER_CORRECTION_PERMISSION_DENIED: "No tienes permiso para cambiar el pago de una factura emitida.",
+                ORDER_CHANGED_RELOAD: "La orden cambió en otro dispositivo. Recarga antes de volver a facturar.",
+                CREDIT_SETTLEMENT_PERMISSION_DENIED: "No tienes acceso a Cuentas por cobrar para registrar este cobro.",
+                CREDIT_BALANCE_NOT_OPEN: "La cuenta ya está saldada o anulada. Recarga para consultar su estado.",
+                CREDIT_BALANCE_REQUIRES_REVIEW: "El saldo no coincide con la factura o sus abonos. Revisa la cuenta por cobrar.",
+                NO_OPEN_CASH_SESSION_FOR_REGISTER: "Abre la caja seleccionada antes de cobrar el saldo pendiente.",
+                CUSTOMER_REQUIRED_FOR_CREDIT_SALE: "Asigna y guarda un cliente en la orden antes de cambiarla a Crédito.",
+                CREDIT_ORIGINAL_CASH_REQUIRES_REVIEW: "La caja del cobro original está cerrada o no se pudo identificar. Este cambio requiere conciliación de caja.",
+                CREDIT_HISTORY_REQUIRES_REVIEW: "Esta orden ya tiene historial de crédito. Revisa sus abonos antes de volver a dejarla pendiente.",
+                CREDIT_REGISTER_REQUIRED: "Selecciona una caja específica para recibir el pago.",
+                ECF_DOCUMENT_EXISTS: "Esta orden tiene un e-CF. Utiliza el proceso de corrección fiscal.",
+                FISCAL_OR_CREDIT_ORDER_LOCKED: "Esta factura requiere el proceso fiscal o de cuentas por cobrar.",
+            };
+            enqueueSnackbar(messages[code] || error?.response?.data?.message || "No se pudo actualizar la factura. Recarga y vuelve a intentarlo.", {variant:"error"});
         } finally { ordinaryInvoiceLock.current = false; setOrdinaryInvoiceBusy(false); }
     };
 
@@ -3833,6 +3881,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 </div>, document.body
             )}
 
+            {creditConfirmation && <CreditPaymentConfirmation {...creditConfirmation}
+                onConfirm={() => finishCreditConfirmation(true)} onCancel={() => finishCreditConfirmation(false)} />}
             {ordinaryCorrection && <OrderCorrectionEditor
                 order={ordinaryCorrection.order} initialValues={ordinaryCorrection.initialValues}
                 onClose={() => setOrdinaryCorrection(null)}

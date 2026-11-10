@@ -1,5 +1,5 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const esbuild=require('../node_modules/esbuild'),puppeteer=require('../../pos-backend/node_modules/puppeteer');
+const esbuild=require('../node_modules/esbuild'),puppeteer=require('puppeteer');
 const root=path.resolve(__dirname,'..');
 (async()=>{
  const bundle=await esbuild.build({entryPoints:[path.join(__dirname,'block2-revision.fixture.jsx')],bundle:true,write:false,format:'iife',jsx:'automatic',define:{'import.meta.env':'{}'},plugins:[{name:'local',setup(b){
@@ -13,7 +13,38 @@ const root=path.resolve(__dirname,'..');
   const invoice=page=>page.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent==='bill.invoice');b.click();b.click();});
   for(const kind of ['', 'B01','B02'])await run('Reimpresión '+(kind||'consumidor final')+' sin PUT ni cobro',kind?'?ncf='+kind:'',async p=>{await invoice(p);await p.waitForSelector('#invoice-preview');const reqs=await p.evaluate(()=>window.requests);assert.equal(reqs.filter(r=>r.method==='put'||r.method==='patch').length,0);assert.equal(reqs.filter(r=>r.url.endsWith('507f1f77bcf86cd799439011')).length,1);});
   await run('Cambios en B02 abren corrección auditada con el carrito actual','?ncf=B02&changed=1',async p=>{await invoice(p);await p.waitForSelector('[role="dialog"][aria-label="Corregir orden completa"]');assert.equal(await p.$eval('[role="dialog"] input[type="number"]',e=>e.value),'2');assert.equal(await p.evaluate(()=>window.requests.filter(r=>r.method==='put').length),0);});
+  for(const kind of ['', 'B01','B02'])await run('Cambiar crédito cobra saldo sin editor completo '+kind,'?credit=1'+(kind?'&ncf='+kind:''),async p=>{
+
+   await p.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='bill.paymentMethods.card').click());
+   await invoice(p);await p.waitForSelector('[data-credit-confirm]');await p.click('[data-credit-confirm]');await p.waitForSelector('#invoice-preview');
+   const writes=await p.evaluate(()=>window.requests.filter(r=>r.method==='patch'));
+   assert.equal(writes.length,1);assert.equal(writes[0].body.paymentMethod,'Tarjeta');assert.equal(writes[0].body.creditPaymentConfirmed,true);
+   assert.equal(await p.$('[aria-label="Corregir orden completa"]'),null);
+  });
+  await run('Cancelar confirmación de crédito conserva la deuda','?credit=1',async p=>{await p.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='bill.paymentMethods.card').click());await invoice(p);await p.waitForSelector('[data-credit-confirm]');await p.keyboard.press('Escape');await p.waitForSelector('[data-credit-confirm]',{hidden:true});assert.equal(await p.evaluate(()=>window.requests.filter(r=>r.method==='patch').length),0);});
+  for(const kind of ['', 'B01','B02'])await run('Pasar a credito sin editor completo '+kind,'?toCredit=1'+(kind?'&ncf='+kind:''),async p=>{
+
+   await p.waitForFunction('[...document.querySelectorAll("button")].some(b=>b.textContent.trim()==="bill.paymentMethods.credit")');
+   await p.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='bill.paymentMethods.credit').click());
+   await invoice(p);await p.waitForSelector('[data-credit-confirm]');
+   if(process.env.CREDIT_VISUAL_QA==='1'&&!kind){
+    const css=fs.readdirSync(path.join(root,'dist/assets')).find(f=>f.endsWith('.css'));
+    await p.addStyleTag({content:fs.readFileSync(path.join(root,'dist/assets',css),'utf8').replace(/@import"[^"]*";/g,'')});
+    await p.setViewport({width:390,height:844});
+    for(const theme of ['dark','light']){
+     await p.evaluate(t=>{document.documentElement.dataset.theme=t;document.documentElement.classList.toggle('dark',t==='dark');},theme);
+     await new Promise(resolve=>setTimeout(resolve,400));
+     const size=await p.$eval('.credit-payment-confirmation',e=>({width:e.getBoundingClientRect().width,scroll:e.scrollWidth,client:e.clientWidth}));
+     await p.screenshot({path:path.join(root,'../tmp/credit-confirm-'+theme+'.png')});assert(size.width<=366);assert(size.scroll<=size.client);
+    }
+   }
+   await p.click('[data-credit-confirm]');await p.waitForSelector('#invoice-preview');
+   const writes=await p.evaluate(()=>window.requests.filter(r=>r.method==='patch'));
+   assert.equal(writes.length,1);assert.equal(writes[0].body.paymentMethod,'Credito');assert.equal(writes[0].body.creditConversionConfirmed,true);
+   assert.equal(await p.$('[aria-label="Corregir orden completa"]'),null);
+  });
+  await run('Credito sin cambios reimprime sin cobro ni correccion','?credit=1',async p=>{await invoice(p);await p.waitForSelector('#invoice-preview');assert.equal(await p.evaluate(()=>window.requests.filter(r=>r.method==='patch'||r.method==='put').length),0);});
   await run('Propina legal e ITBIS tienen controles independientes','',async p=>{await p.waitForFunction('window.requests.some(r=>r.url.includes("tax-preview"))');const controls=await p.evaluate(()=>[...document.querySelectorAll('button[role="switch"]')].length);assert.ok(controls>=2,'Expected two independent switches');await p.click('[aria-label="Propina legal"]');await p.waitForFunction('window.requests.some(r=>r.url.includes("tax-preview")&&r.body.legalTipEnabled===false&&r.body.taxEnabled===true)');await p.click('[aria-label="ITBIS"]');await p.waitForFunction('window.requests.some(r=>r.url.includes("tax-preview")&&r.body.legalTipEnabled===false&&r.body.taxEnabled===false)');});
  }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
- fs.writeFileSync(path.resolve(root,'../BLOQUE_2_2026-11-04/REVISION_USUARIO/frontend-invoice.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));if(results.some(r=>r.status==='FAIL'))process.exitCode=1;
+ console.log(JSON.stringify(results,null,2));if(results.some(r=>r.status==='FAIL'))process.exitCode=1;
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

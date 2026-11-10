@@ -26,6 +26,11 @@ export function invoiceFinancialView(order) {
 export function invoiceHasChanges(original, draft) {
     return JSON.stringify(invoiceFinancialView(original)) !== JSON.stringify(invoiceFinancialView(draft));
 }
+export function invoiceHasOnlyPaymentChange(original, draft) {
+    const methods = ["Efectivo", "Tarjeta", "Transferencia", "Otros", "Credito"];
+    if (!(methods.includes(original?.paymentMethod) || original?.paymentMethod === "Credito") || !methods.includes(draft?.paymentMethod) || original.paymentMethod === draft.paymentMethod) return false;
+    return !invoiceHasChanges(original, {...draft, paymentMethod: original.paymentMethod});
+}
 export function invoicePreview(order) {
     return {...order,subTotal:order.bills?.subtotal,taxAmount:order.bills?.tax,
         discountAmount:order.bills?.discount,tipAmount:order.bills?.tipAmount ?? order.bills?.tip,
