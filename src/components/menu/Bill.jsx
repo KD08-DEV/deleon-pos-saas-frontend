@@ -1,6 +1,6 @@
 import CreditPaymentConfirmation from "./CreditPaymentConfirmation";
 import useRncLookup from "../../hooks/useRncLookup";
-import { hasOrdinaryInvoice, invoiceHasChanges, invoiceHasOnlyPaymentChange, invoicePreview } from "../../lib/ordinaryInvoice";
+import { hasOrdinaryInvoice, invoiceHasChanges, invoiceHasOnlyPaymentChange, invoicePreview, isInvoicedCreditOrder } from "../../lib/ordinaryInvoice";
 import { refreshSalesViews } from "../../lib/refreshSalesViews";
 import { refreshTableViews } from "../../lib/tableOperations";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -1894,21 +1894,25 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     };
 
     const orderMutation = useMutation({
-        mutationFn: async (payload) => {
+        mutationFn: async (rawPayload) => {
             const registerId = getActiveRegisterId();
+            const {__targetOrderId, ...payload} = rawPayload || {};
+            const targetOrderId = __targetOrderId || orderId;
 
-            if (orderId) {
-                if (!isEcfMode) {
-                    const fresh = await api.get(`/api/order/${encodeURIComponent(String(orderId))}`);
+            if (targetOrderId) {
+                if (!hasExistingEcf && !__targetOrderId) {
+                    const fresh = await api.get(`/api/order/${encodeURIComponent(String(targetOrderId))}`);
                     const current = fresh?.data?.data;
                     if (current?._id && current.paymentStatus === "Pagado") {
                         return applyPaidOrderChangesSilently(current, payload);
                     }
                 }
-                return updateOrder(orderId, {
+                const res = await updateOrder(targetOrderId, {
                     ...payload,
                     registerId,
                 });
+                if (__targetOrderId && res) res.__targetOrderId = String(__targetOrderId);
+                return res;
             }
 
             return addOrder({
@@ -1938,7 +1942,7 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 res?.data ??
                 {};
 
-            const effectiveId = orderId || createdId;
+            const effectiveId = res?.__targetOrderId || orderId || createdId;
 
             try {
                 if (effectiveId) {
@@ -1965,6 +1969,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
             // Para factura final, no queremos que el POS se quede pegado a esa orden cerrada.
             if (!orderId && createdId && currentPrintTarget !== "invoice") {
                 navigate(`/menu?orderId=${createdId}`, { replace: true });
+            }
+            // Consumo nuevo tras e-CF: la pantalla queda en la cuenta nueva de la mesa.
+            if (res?.__targetOrderId && res.__targetOrderId !== String(orderId || "") && currentPrintTarget !== "invoice") {
+                navigate(`/menu?orderId=${res.__targetOrderId}`, { replace: true });
             }
 
             // Si es factura final, NO pegamos la pantalla a /menu?orderId=...
@@ -2621,17 +2629,35 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 INSUFFICIENT_STOCK: "No hay existencia suficiente para agregar ese plato.",
                 CUSTOMER_REQUIRED_FOR_CREDIT_SALE: "Asigna y guarda un cliente en la orden antes de cambiarla a Crédito.",
                 EXTRA_NOT_ALLOWED_FOR_DISH: "Uno de los extras ya no está activo para ese plato. Quítalo e inténtalo de nuevo.",
+                ORDER_TABLE_RELEASED: "Esta mesa ya fue desocupada. Abre la mesa de nuevo para crear una orden nueva.",
+                ORDER_NOT_FOUND: "La orden cambió en otro dispositivo. Recarga la mesa e inténtalo de nuevo.",
+                USE_AUDITED_ORDER_CORRECTION: "Esta orden ya está cobrada y no se pudo ajustar automáticamente. Recarga la mesa e inténtalo de nuevo.",
+                FISCAL_OR_CREDIT_ORDER_LOCKED: "Esta orden tiene un comprobante electrónico o historial de crédito; los cambios se hacen desde Órdenes.",
+                CREDIT_ORDER_USE_RECEIVABLE_FLOW: "Esta venta a crédito ya está facturada. Primero cobra el crédito (elige el método y presiona Facturar).",
             };
-            enqueueSnackbar(paidOrderMessages[detail.code] || detail.code || detail.message || error?.message || "No fue posible procesar la factura", {variant:"error"});
+            enqueueSnackbar(paidOrderMessages[detail.code] || paidOrderMessages[detail.message] || detail.code || detail.message || error?.message || "No fue posible procesar la factura", {variant:"error"});
         },
     });
     const paymentMethodMutation = useMutation({
         mutationFn: async (method) => {
+            // Crédito (entrar o salir) se guarda al presionar Actualizar/Facturar, no por esta ruta.
+            if (method === "Credito" || order?.paymentMethod === "Credito") return {skipped: true};
             // IMPORTANTE: usar api.patch para no pasar items, bills, etc.
             const res = await api.patch(`/api/order/${orderId}/payment-method`, { paymentMethod: method });
             return res.data;
         },
-        onSuccess: (_data, method) => {
+        onError: (error) => {
+            // El método elegido se guarda igual al presionar Actualizar o Facturar;
+            // estos rechazos solo indican que no se puede guardar por adelantado.
+            const code = error?.response?.data?.code || error?.response?.data?.message;
+            const expected = ["FISCAL_OR_CREDIT_ORDER_LOCKED", "ORDER_REQUIRES_ADMIN_CORRECTION",
+                "ECF_DOCUMENT_EXISTS", "CREDIT_PAYMENT_METHOD_MUST_USE_ORDER_FINALIZATION_FLOW"];
+            if (!expected.includes(code)) {
+                enqueueSnackbar("No se pudo guardar el método de pago ahora; se guardará al presionar Actualizar o Facturar.", {variant:"warning"});
+            }
+        },
+        onSuccess: (data, method) => {
+            if (data?.skipped) return;
             // actualiza el cache de la orden SIN refetch
             queryClient.setQueryData(["order", orderId], (prev) => {
                 if (!prev) return prev;
@@ -2718,6 +2744,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 setOrderInfo(invoicePreview(saved));
                 setShowInvoice(true);
                 await refreshSalesViews(queryClient);
+            } else if (invoiceHasChanges(original, draft) && isInvoicedCreditOrder(original)) {
+                // La cuenta por cobrar ya existe por el total facturado: cambiar platos aquí la descuadraría.
+                enqueueSnackbar("Esta venta a crédito ya está facturada. Para agregar o quitar platos, primero cobra el crédito (elige el método de pago y presiona Facturar).", {variant:"warning",autoHideDuration:10000});
             } else if (invoiceHasChanges(original, draft)) {
                 // Mesas/Menú: aplicar los cambios directamente (sin recuadro de corrección).
                 // orderMutation detecta que la orden ya está cobrada y usa la corrección auditada en segundo plano.
@@ -2746,13 +2775,62 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         } finally { ordinaryInvoiceLock.current = false; setOrdinaryInvoiceBusy(false); }
     };
 
+    // Mesa con e-CF ya emitido: el e-CF no se puede modificar.
+    // - Sin cambios: Facturar reimprime el mismo e-CF.
+    // - Platos nuevos: se abre automáticamente un "Nuevo consumo" en la mesa con solo esos platos.
+    // - Platos quitados o reducidos: requieren nota de crédito (proceso fiscal en Órdenes).
+    const issuedEcfLock = useRef(false);
+    const handleIssuedEcfOrder = async (target) => {
+        if (issuedEcfLock.current) return;
+        issuedEcfLock.current = true;
+        try {
+            const id = encodeURIComponent(String(effectiveOrderId));
+            const original = (await api.get(`/api/order/${id}`))?.data?.data;
+            if (!original?._id) throw Error("ORDER_NOT_FOUND");
+            const cartItems = buildOrderPayload(target).items || [];
+            const added = getOnlyNewItemsForPrint(original.items || [], cartItems);
+            const removed = getOnlyNewItemsForPrint(cartItems, original.items || []);
+            if (removed.length) {
+                enqueueSnackbar("Esta cuenta ya tiene un e-CF emitido. Para quitar o reducir platos se necesita una nota de crédito desde Órdenes.", {variant:"warning",autoHideDuration:10000});
+                return;
+            }
+            if (!added.length) {
+                if (target === "invoice") void openIssuedEcfForPrint();
+                else enqueueSnackbar("Esta cuenta ya tiene un e-CF emitido y no hay platos nuevos.", {variant:"info"});
+                return;
+            }
+            const tableId = String(original.table?._id || original.table || "");
+            if (!tableId) {
+                enqueueSnackbar("Esta orden ya tiene un e-CF emitido. Crea una orden nueva para los platos adicionales.", {variant:"warning",autoHideDuration:10000});
+                return;
+            }
+            const created = await api.post(`/api/table/${encodeURIComponent(tableId)}/new-consumption`, {});
+            const newOrderId = created?.data?.data?.orderId;
+            if (!newOrderId) throw Error("NEW_CONSUMPTION_NO_ORDER");
+            enqueueSnackbar("Los platos nuevos se registraron en una cuenta nueva de la mesa (la factura e-CF anterior no cambia).", {variant:"info"});
+            handlePlaceOrder(target, {ecfNewConsumption: {orderId: String(newOrderId), items: added}});
+        } catch (error) {
+            const code = error?.response?.data?.code || error?.response?.data?.message || error?.message;
+            const messages = {
+                ECF_NOT_ACCEPTED_NO_NEW_CONSUMPTION: "El e-CF de esta mesa todavía no está aceptado. Espera la aceptación antes de agregar platos.",
+                TABLE_WITHOUT_INVOICED_ORDER: "La mesa ya no tiene esta cuenta activa. Recarga la mesa.",
+                TABLE_CHANGED_TRY_AGAIN: "La mesa cambió en otro dispositivo. Inténtalo de nuevo.",
+            };
+            enqueueSnackbar(messages[code] || code || "No se pudo registrar el consumo nuevo.", {variant:"error"});
+        } finally {
+            issuedEcfLock.current = false;
+        }
+    };
+
     const handlePlaceOrder = (target = "invoice", options = {}) => {
-        if (!options.skipOrdinaryInvoice && target === "invoice" && !isEcfMode && !hasExistingEcf && effectiveOrderId && hasOrdinaryInvoice(order)) {
+        // Venta a crédito ya facturada: cualquier botón pasa por el flujo de crédito (nunca PUT normal).
+        if (!options.skipOrdinaryInvoice && (target === "invoice" || isInvoicedCreditOrder(order)) && !isEcfMode && !hasExistingEcf && effectiveOrderId && hasOrdinaryInvoice(order)) {
             void openOrdinaryInvoice();
             return;
         }
-        if (target === "invoice" && hasExistingEcf) {
-            void openIssuedEcfForPrint(); // mismo e-NCF + mismo QR, nunca emisión nueva
+        if (hasExistingEcf && !options.ecfNewConsumption) {
+            // Mismo e-NCF + mismo QR si no hay cambios; platos nuevos van a un consumo nuevo.
+            void handleIssuedEcfOrder(target);
             return;
         }
         // Every Invoice from an e-CF enabled branch MUST be electronic. Do not
@@ -2853,6 +2931,12 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         const payload = buildOrderPayload(target);
         payload.submitAction = target;
+        if (options.ecfNewConsumption) {
+            payload.items = options.ecfNewConsumption.items;
+            payload.__targetOrderId = options.ecfNewConsumption.orderId;
+            // El descuento y la propina manual ya quedaron en la factura e-CF anterior.
+            payload.bills = {...(payload.bills || {}), discount: 0, tip: 0, tipAmount: 0, tipEnabled: false};
+        }
 
         if (!payload.items?.length) {
             enqueueSnackbar(
@@ -2869,7 +2953,10 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
         const previousItems = committedItemsRef.current || [];
         const currentItems = payload.items || [];
-        const deltaItems = getOnlyNewItemsForPrint(previousItems, currentItems);
+        // Consumo nuevo tras e-CF: todos sus platos son nuevos para cocina.
+        const deltaItems = options.ecfNewConsumption
+            ? currentItems
+            : getOnlyNewItemsForPrint(previousItems, currentItems);
 
 
 
@@ -3481,18 +3568,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                             onClick={() => {
                                 setPaymentMethod("Efectivo");
 
-                                if (!orderId) {
-                                    enqueueSnackbar(
-                                        t(
-                                            "bill.messages.saveOrderFirst"
-                                        ),
-                                        {
-                                            variant:
-                                                "warning",
-                                        }
-                                    );
-                                    return;
-                                }
+                                // Orden nueva: el método va en el primer guardado (igual que Tarjeta/Transferencia).
+                                if (!orderId) return;
 
                                 if (!hasOrdinaryInvoice(order)) paymentMethodMutation.mutate("Efectivo");
                             }}

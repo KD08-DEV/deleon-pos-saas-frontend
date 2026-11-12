@@ -1,10 +1,15 @@
 const id = value => String(value?._id || value || "");
 const amount = value => Math.round((Number(value) || 0) * 100) / 100;
 const sorted = list => [...list].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+// Venta a crédito ya facturada: tiene cuenta por cobrar y su cobro va por el flujo de crédito.
+export function isInvoicedCreditOrder(order) {
+    return Boolean(order && (order.accountReceivableId ||
+        (order.paymentMethod === "Credito" && (order.invoicedAt || order.invoiceNumber || order.facturaNo))));
+}
 export function hasOrdinaryInvoice(order) {
-    // Solo una orden COBRADA requiere la correccion auditada (igual que guardPaidOrderFinancialChanges en el backend).
+    // Orden COBRADA o venta a crédito ya facturada: no se edita con el guardado normal.
     // Una mesa abierta con pre-factura (invoicedAt/invoiceNumber) pero pendiente de pago se edita normalmente.
-    return Boolean(order && order.paymentStatus === "Pagado");
+    return Boolean(order && (order.paymentStatus === "Pagado" || isInvoicedCreditOrder(order)));
 }
 export function invoiceFinancialView(order) {
     const bills = order.bills || {};
