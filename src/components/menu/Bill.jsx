@@ -1,6 +1,5 @@
 import CreditPaymentConfirmation from "./CreditPaymentConfirmation";
 import useRncLookup from "../../hooks/useRncLookup";
-import OrderCorrectionEditor from "../orders/OrderCorrectionEditor";
 import { hasOrdinaryInvoice, invoiceHasChanges, invoiceHasOnlyPaymentChange, invoicePreview } from "../../lib/ordinaryInvoice";
 import { refreshSalesViews } from "../../lib/refreshSalesViews";
 import { refreshTableViews } from "../../lib/tableOperations";
@@ -298,7 +297,6 @@ const getTableIdFromAny = (value) => {
 };
 
 const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
-    const [ordinaryCorrection, setOrdinaryCorrection] = useState(null);
     const [creditConfirmation, setCreditConfirmation] = useState(null);
     const creditConfirmationResolve = useRef(null);
     const finishCreditConfirmation = accepted => {
@@ -1827,11 +1825,86 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
     };
 
 
+    // Mesas/Menú: una orden YA COBRADA no se puede editar con PUT normal (el backend
+    // exige corrección auditada). Aquí se aplica esa misma corrección automáticamente,
+    // sin mostrar el recuadro "Corregir orden completa", que queda solo en Órdenes.
+    const applyPaidOrderChangesSilently = async (current, draft) => {
+        const extrasOf = (line) => (Array.isArray(line?.addons) ? line.addons : []).map((e) => {
+            const quantity = Number(e.quantity ?? e.extraQuantity ?? 1) || 1;
+            // El menú guarda el precio del extra como unitPrice/total; la corrección espera price.
+            const price = Number(e.price ?? e.unitPrice ?? (Number(e.total || 0) / quantity)) || 0;
+            return {...e, extraId: String(e.extraId || ""), extraDishId: String(e.extraDishId || ""), quantity, price};
+        });
+        const items = (draft.items || []).map((line) => {
+            const addons = extrasOf(line);
+            const extrasTotal = addons.reduce((s, a) => s + a.quantity * a.price, 0);
+            const base = Math.max(0, Number(line.unitPrice || 0) - extrasTotal);
+            return {...line, quantity: Number(line.quantity), baseUnitPrice: base, unitPrice: base + extrasTotal, addons};
+        });
+        const wantsCredit = draft.paymentMethod === "Credito" && current.paymentMethod !== "Credito";
+        const draftBills = draft.bills || {};
+        const tipAmount = Number(draftBills.tipAmount ?? draftBills.tip ?? 0) || 0;
+        const body = {
+            items,
+            bills: {
+                discount: Number(draftBills.discount || 0),
+                taxEnabled: draftBills.taxEnabled !== false,
+                legalTipEnabled: draftBills.legalTipEnabled !== false,
+                tipEnabled: draftBills.tipEnabled ?? tipAmount > 0,
+                tipAmount,
+                deliveryFee: Number(draftBills.deliveryFee || 0),
+            },
+            // La corrección de platos no acepta Crédito; el cambio a Crédito se hace después por su ruta propia.
+            paymentMethod: wantsCredit ? current.paymentMethod : (draft.paymentMethod || current.paymentMethod || "Efectivo"),
+            orderNote: String(draft.orderNote ?? current.orderNote ?? ""),
+            reason: "Cambio desde Mesas/Menú (platos o método de pago)",
+            expectedUpdatedAt: current.updatedAt,
+        };
+        const id = encodeURIComponent(String(current._id));
+        const previewRes = await api.post(`/api/order/${id}/correction/preview`, body);
+        const preview = previewRes?.data?.data || {};
+        if (preview.canApply === false) {
+            const err = new Error(preview.code || "CORRECTION_NOT_APPLICABLE");
+            err.response = {data: {code: preview.code || "CORRECTION_NOT_APPLICABLE"}};
+            throw err;
+        }
+        const delta = Number(preview.delta || 0);
+        const correction = {...body};
+        if (preview.requiresSettlement) {
+            correction.settlement = {
+                direction: delta > 0 ? "collected" : delta < 0 ? "refunded" : "reclassified",
+                amount: Math.abs(delta),
+                confirmed: true,
+            };
+        }
+        if (preview.requiresInventoryReturnApproval) correction.inventoryReturnConfirmed = true;
+        let saved = current;
+        if (Array.isArray(preview.changed) ? preview.changed.length > 0 : true) {
+            const res = await api.patch(`/api/order/${id}/correction`, correction);
+            saved = res?.data?.data || saved;
+        }
+        if (wantsCredit) {
+            const credit = await api.patch(`/api/order/${id}/payment-method/correction`, {
+                paymentMethod: "Credito", expectedUpdatedAt: saved.updatedAt, creditConversionConfirmed: true,
+            });
+            saved = credit?.data?.data || saved;
+        }
+        await refreshSalesViews(queryClient);
+        return {data: {success: true, data: saved}};
+    };
+
     const orderMutation = useMutation({
         mutationFn: async (payload) => {
             const registerId = getActiveRegisterId();
 
             if (orderId) {
+                if (!isEcfMode) {
+                    const fresh = await api.get(`/api/order/${encodeURIComponent(String(orderId))}`);
+                    const current = fresh?.data?.data;
+                    if (current?._id && current.paymentStatus === "Pagado") {
+                        return applyPaidOrderChangesSilently(current, payload);
+                    }
+                }
                 return updateOrder(orderId, {
                     ...payload,
                     registerId,
@@ -2541,7 +2614,15 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 enqueueSnackbar(`Orden ${detail.orderId || "pendiente"}: el e-CF requiere recuperación. Consulta su estado; NO vuelvas a cobrar ni facturar. ${detail.message || ""}`, {variant:"error",autoHideDuration:16000});
                 return;
             }
-            enqueueSnackbar(detail.code || detail.message || error?.message || "No fue posible procesar la factura", {variant:"error"});
+            const paidOrderMessages = {
+                ORDER_CORRECTION_PERMISSION_DENIED: "Este usuario no tiene permiso para modificar una orden ya cobrada. Actívalo en Empleados → Corregir órdenes.",
+                ORDER_CHANGED_RELOAD: "La orden cambió en otro dispositivo. Recarga la mesa e inténtalo de nuevo.",
+                INVENTORY_RETURN_ADMIN_REQUIRED: "Quitar platos ya preparados de una orden cobrada requiere un administrador.",
+                INSUFFICIENT_STOCK: "No hay existencia suficiente para agregar ese plato.",
+                CUSTOMER_REQUIRED_FOR_CREDIT_SALE: "Asigna y guarda un cliente en la orden antes de cambiarla a Crédito.",
+                EXTRA_NOT_ALLOWED_FOR_DISH: "Uno de los extras ya no está activo para ese plato. Quítalo e inténtalo de nuevo.",
+            };
+            enqueueSnackbar(paidOrderMessages[detail.code] || detail.code || detail.message || error?.message || "No fue posible procesar la factura", {variant:"error"});
         },
     });
     const paymentMethodMutation = useMutation({
@@ -2638,7 +2719,9 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 setShowInvoice(true);
                 await refreshSalesViews(queryClient);
             } else if (invoiceHasChanges(original, draft)) {
-                setOrdinaryCorrection({order:original,initialValues:draft});
+                // Mesas/Menú: aplicar los cambios directamente (sin recuadro de corrección).
+                // orderMutation detecta que la orden ya está cobrada y usa la corrección auditada en segundo plano.
+                handlePlaceOrder("invoice", { skipOrdinaryInvoice: true });
             } else {
                 setOrderInfo(invoicePreview(original));
                 setShowInvoice(true);
@@ -2663,8 +2746,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
         } finally { ordinaryInvoiceLock.current = false; setOrdinaryInvoiceBusy(false); }
     };
 
-    const handlePlaceOrder = (target = "invoice") => {
-        if (target === "invoice" && !isEcfMode && !hasExistingEcf && effectiveOrderId && hasOrdinaryInvoice(order)) {
+    const handlePlaceOrder = (target = "invoice", options = {}) => {
+        if (!options.skipOrdinaryInvoice && target === "invoice" && !isEcfMode && !hasExistingEcf && effectiveOrderId && hasOrdinaryInvoice(order)) {
             void openOrdinaryInvoice();
             return;
         }
@@ -3883,15 +3966,6 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
 
             {creditConfirmation && <CreditPaymentConfirmation {...creditConfirmation}
                 onConfirm={() => finishCreditConfirmation(true)} onCancel={() => finishCreditConfirmation(false)} />}
-            {ordinaryCorrection && <OrderCorrectionEditor
-                order={ordinaryCorrection.order} initialValues={ordinaryCorrection.initialValues}
-                onClose={() => setOrdinaryCorrection(null)}
-                onSaved={async corrected => {
-                    setOrdinaryCorrection(null);
-                    setOrderInfo(invoicePreview(corrected));
-                    setShowInvoice(true);
-                    await refreshSalesViews(queryClient);
-                }} />}
             {showInvoice && orderInfo && (
                 <Invoice
                     order={orderInfo}
