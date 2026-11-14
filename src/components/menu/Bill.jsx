@@ -2771,7 +2771,13 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ECF_DOCUMENT_EXISTS: "Esta orden tiene un e-CF. Utiliza el proceso de corrección fiscal.",
                 FISCAL_OR_CREDIT_ORDER_LOCKED: "Esta factura requiere el proceso fiscal o de cuentas por cobrar.",
             };
-            enqueueSnackbar(messages[code] || error?.response?.data?.message || "No se pudo actualizar la factura. Recarga y vuelve a intentarlo.", {variant:"error"});
+            const status = error?.response?.status;
+            const data = error?.response?.data;
+            // 404 sin JSON = el backend no tiene esta ruta (backend desactualizado), no un error del usuario.
+            const missingRoute = status === 404 && (typeof data !== "object" || !data);
+            enqueueSnackbar(messages[code] || (typeof data === "object" && data?.message) ||
+                (missingRoute ? "El servidor no reconoce el cambio de método de pago. Verifica que el backend esté actualizado." :
+                    `No se pudo actualizar la factura${status ? ` (error ${status})` : ""}. Recarga y vuelve a intentarlo.`), {variant:"error"});
         } finally { ordinaryInvoiceLock.current = false; setOrdinaryInvoiceBusy(false); }
     };
 
