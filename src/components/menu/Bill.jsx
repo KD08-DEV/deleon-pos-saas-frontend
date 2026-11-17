@@ -2627,6 +2627,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                 ORDER_CHANGED_RELOAD: "La orden cambió en otro dispositivo. Recarga la mesa e inténtalo de nuevo.",
                 INVENTORY_RETURN_ADMIN_REQUIRED: "Quitar platos ya preparados de una orden cobrada requiere un administrador.",
                 INSUFFICIENT_STOCK: "No hay existencia suficiente para agregar ese plato.",
+                INVENTORY_STATE_UNVERIFIED: "El inventario de esta orden cobrada no está registrado; no se puede ajustar automáticamente. Revisa la orden en Inventario/Órdenes.",
+                INVENTORY_ITEM_NOT_FOUND: "Un producto de esta orden ya no existe en el inventario de la sucursal.",
                 CUSTOMER_REQUIRED_FOR_CREDIT_SALE: "Asigna y guarda un cliente en la orden antes de cambiarla a Crédito.",
                 EXTRA_NOT_ALLOWED_FOR_DISH: "Uno de los extras ya no está activo para ese plato. Quítalo e inténtalo de nuevo.",
                 ORDER_TABLE_RELEASED: "Esta mesa ya fue desocupada. Abre la mesa de nuevo para crear una orden nueva.",
