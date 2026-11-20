@@ -7181,6 +7181,24 @@ const en = {
                 orderId:
                     "Order ID",
 
+                fiscalType:
+                    "Receipt type",
+
+                fiscalNumber:
+                    "Receipt No. (NCF / e-NCF)",
+
+                subtotal:
+                    "Subtotal",
+
+                discount:
+                    "Discount",
+
+                tax:
+                    "Tax",
+
+                tip:
+                    "Tip",
+
                 field:
                     "Field",
 
