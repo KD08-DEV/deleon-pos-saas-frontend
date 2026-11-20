@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import "./i18n/index.js";
 import { purgeLegacyApiCaches } from "./utils/purgeLegacyApiCaches.js";
+import { setupServiceWorkerAutoUpdate } from "./utils/swAutoUpdate.js";
 
 import LanguageSync
     from "./i18n/LanguageSync.jsx";
@@ -18,6 +19,8 @@ import LanguageSync
 purgeLegacyApiCaches().catch((error) =>
     console.warn("No se pudo limpiar la cache API antigua:", error)
 );
+// Aplica sola la versión nueva publicada (sin interrumpir una venta en curso).
+setupServiceWorkerAutoUpdate();
 const queryClient = new QueryClient({
     defaultOptions: {
         queries: {
