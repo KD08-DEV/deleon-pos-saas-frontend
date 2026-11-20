@@ -3349,10 +3349,39 @@ const CashRegister = () => {
                         "cashRegisterPage.excel.columns.status"
                     ),
 
-                orderId:
-                    t(
-                        "cashRegisterPage.excel.columns.orderId"
-                    ),
+                fiscalType:
+                    t("cashRegisterPage.excel.columns.fiscalType", "Tipo comprobante"),
+
+                fiscalNumber:
+                    t("cashRegisterPage.excel.columns.fiscalNumber", "No. comprobante (NCF / e-NCF)"),
+
+                subtotal:
+                    t("cashRegisterPage.excel.columns.subtotal", "Subtotal"),
+
+                discount:
+                    t("cashRegisterPage.excel.columns.discount", "Descuento"),
+
+                tax:
+                    t("cashRegisterPage.excel.columns.tax", "ITBIS"),
+
+                tip:
+                    t("cashRegisterPage.excel.columns.tip", "Propina"),
+            };
+
+            const money2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+            // Número del comprobante fiscal: e-NCF (E32…) o NCF tradicional (B01…/B02…).
+            const getFiscalNumber = (r) => {
+                const candidates = [
+                    r?.ecf?.eNCF, r?.ecf?.encf, r?.eNCF, r?.encf, r?.fiscal?.eNCF, r?.fiscal?.encf,
+                    r?.invoice?.ecf?.eNCF, r?.invoice?.fiscal?.eNCF,
+                    r?.fiscal?.ncfNumber, r?.fiscal?.ncf, r?.ncfNumber, r?.ncf,
+                    r?.bills?.ncfNumber, r?.invoice?.fiscal?.ncfNumber, r?.invoice?.ncfNumber,
+                ];
+                for (const candidate of candidates) {
+                    const value = String(candidate ?? "").trim().toUpperCase().replace(/[\s-]+/g, "");
+                    if (/^(B0[1-4]|B1[1-7]|E3[1-4]|E4[1-7])\d{8,10}$/.test(value)) return value;
+                }
+                return "";
             };
 
             const rows =
@@ -3390,6 +3419,28 @@ const CashRegister = () => {
                                 "Efectivo"
                             ),
 
+                        [columns.fiscalType]:
+                            (getFiscalType(r) || "").toUpperCase() ||
+                            t("cashRegisterPage.excel.noFiscal", "Sin comprobante"),
+
+                        [columns.fiscalNumber]:
+                            getFiscalNumber(r),
+
+                        [columns.subtotal]:
+                            money2(r?.bills?.subtotal ?? r?.bills?.total ?? r?.subtotal ?? 0),
+
+                        [columns.discount]:
+                            money2(r?.bills?.discount ?? r?.discount ?? 0),
+
+                        [columns.tax]:
+                            money2(r?.bills?.tax ?? r?.bills?.taxTotal ?? r?.tax ?? 0),
+
+                        [columns.tip]:
+                            money2(
+                                Number(r?.bills?.serviceChargeTotal ?? 0) +
+                                Number(r?.bills?.tipAmount ?? r?.bills?.tip ?? 0)
+                            ),
+
                         [columns.total]:
                             Number(
                                 r?.bills
@@ -3413,9 +3464,6 @@ const CashRegister = () => {
                                     "paid"
                                 ),
 
-                        [columns.orderId]:
-                            r?._id ||
-                            "",
                     })
                 );
 

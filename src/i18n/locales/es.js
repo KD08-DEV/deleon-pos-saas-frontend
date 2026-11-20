@@ -7221,6 +7221,24 @@ const es = {
                 orderId:
                     "ID de orden",
 
+                fiscalType:
+                    "Tipo comprobante",
+
+                fiscalNumber:
+                    "No. comprobante (NCF / e-NCF)",
+
+                subtotal:
+                    "Subtotal",
+
+                discount:
+                    "Descuento",
+
+                tax:
+                    "ITBIS",
+
+                tip:
+                    "Propina",
+
                 field:
                     "Campo",
 
