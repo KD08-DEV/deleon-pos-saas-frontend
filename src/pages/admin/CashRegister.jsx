@@ -476,8 +476,11 @@ const CashRegister = () => {
     const supportsCashDenominations =
         localization.currency === "DOP";
 
+    // Usa la localización normalizada (por defecto DO), igual que el resto de la app.
+    // Antes exigía localization.countryCode explícito y ocultaba el filtro de comprobantes
+    // (B01/B02/E31/E32...) en negocios sin ese campo guardado.
     const supportsDominicanFiscal =
-        String(tenantInfo?.localization?.countryCode || "").toUpperCase() === "DO";
+        localization.countryCode === "DO";
     const [adminCloseTargetSession, setAdminCloseTargetSession] = useState(null);
     const [hideAdminSelectedSession, setHideAdminSelectedSession] = useState(false);
     const closeFormRef = useRef(null);
