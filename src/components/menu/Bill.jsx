@@ -3700,55 +3700,45 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                         {(isEcfMode || wantsFiscal) && fiscalUiCapable && (
                             <>
                                 <div className="mt-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-[#ababab]">Tipo NCF</span>
+                                    {/* Selector y ayuda en columna: la ayuda nunca debe salirse del panel. */}
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <span className="shrink-0 text-xs text-[#ababab]">
+                                            {isEcfMode ? "Tipo e-CF" : "Tipo NCF"}
+                                        </span>
                                         {isEcfMode ? (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-[#ababab]">Tipo e-CF</span>
-                                                <select
-                                                    value={ecfDocType}
-                                                    onChange={(e) => setEcfDocType(e.target.value)}
-                                                    className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                                >
-                                                    {e32Enabled && (
-                                                        <option value="e32">e32 - Factura de consumo electrónica</option>
-                                                    )}
-                                                    {e31Enabled && (
-                                                        <option value="e31">e31 - Crédito fiscal electrónico</option>
-                                                    )}
-                                                </select>
-                                            </div>
+                                            <select
+                                                value={ecfDocType}
+                                                onChange={(e) => setEcfDocType(e.target.value)}
+                                                className="min-w-0 flex-1 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                            >
+                                                {e32Enabled && (
+                                                    <option value="e32">e32 - Factura de consumo electrónica</option>
+                                                )}
+                                                {e31Enabled && (
+                                                    <option value="e31">e31 - Crédito fiscal electrónico</option>
+                                                )}
+                                            </select>
                                         ) : (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-[#ababab]">Tipo NCF</span>
-                                                <select
-                                                    value={ncfType}
-                                                    onChange={(e) => setNcfType(e.target.value)}
-                                                    className="bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
-                                                >
-                                                    {allowedNcfTypes.map((t) => (
-                                                        <option key={t} value={t}>
-                                                            {t === "B01" ? "B01 - Crédito Fiscal" : "B02 - Consumidor Final"}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            <select
+                                                value={ncfType}
+                                                onChange={(e) => setNcfType(e.target.value)}
+                                                className="min-w-0 flex-1 bg-[#1f1f1f] rounded px-3 py-2 text-[#f5f5f5] outline-none"
+                                            >
+                                                {allowedNcfTypes.map((t) => (
+                                                    <option key={t} value={t}>
+                                                        {t === "B01" ? "B01 - Crédito Fiscal" : "B02 - Consumidor Final"}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         )}
-                                        <p className="text-xs text-[#ababab] mt-2">
-                                            {isEcfMode
-                                                ? ecfDocType === "e31"
-                                                    ? "Para e31 debes agregar el RNC y razón social del cliente."
-                                                    : "Para e32 los datos del cliente son opcionales, salvo casos especiales."
-                                                : "Recomendación: agrega RNC/Cédula para completar los datos."}
-                                            {dgiiLoading ? " Buscando en DGII..." : ""}
-                                            {!dgiiLoading && dgiiStatus === "FOUND" ? " Encontrado." : ""}
-                                            {!dgiiLoading && dgiiStatus === "NOT_FOUND" ? " No encontrado." : ""}
-                                            {!dgiiLoading && dgiiStatus === "ERROR" ? " Error consultando." : ""}
-                                        </p>
                                     </div>
 
-                                    <p className="text-xs text-[#ababab] mt-2">
-                                        Recomendación: agrega RNC/Cédula para completar los datos.
+                                    <p className="text-xs text-[#ababab] mt-2 break-words">
+                                        {isEcfMode
+                                            ? ecfDocType === "e31"
+                                                ? "Para e31 debes agregar el RNC y razón social del cliente."
+                                                : "Para e32 los datos del cliente son opcionales, salvo casos especiales."
+                                            : "Recomendación: agrega RNC/Cédula para completar los datos."}
                                         {dgiiLoading ? " Buscando en DGII..." : ""}
                                         {!dgiiLoading && dgiiStatus === "FOUND" ? " Encontrado." : ""}
                                         {!dgiiLoading && dgiiStatus === "NOT_FOUND" ? " No encontrado." : ""}
