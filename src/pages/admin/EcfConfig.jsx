@@ -19,6 +19,7 @@ import {
 } from "notistack";
 
 import api from "../../lib/api";
+import EcfXmlExportPanel from "../../components/ecf/EcfXmlExportPanel.jsx";
 
 
 export const ECF_DOCUMENT_TYPE_GROUPS = [
@@ -215,6 +216,23 @@ export function buildDefaultEcfDocumentTypes(
                         ? Number(
                             current
                                 .sandboxNextSequence
+                        )
+                        : 1,
+
+                preCertificationNextSequence:
+                    Number.isInteger(
+                        Number(
+                            current
+                                ?.preCertificationNextSequence
+                        )
+                    ) &&
+                    Number(
+                        current
+                            ?.preCertificationNextSequence
+                    ) > 0
+                        ? Number(
+                            current
+                                .preCertificationNextSequence
                         )
                         : 1,
 
@@ -530,6 +548,16 @@ function getEnvironmentSequence(
         );
     }
 
+    if (environment === "dgii_pre_certification") {
+        return (
+            toPositiveIntegerOrNull(
+                typeConfig
+                    .preCertificationNextSequence
+            ) ||
+            1
+        );
+    }
+
     if (
         environment ===
         "dgii_certification"
@@ -807,6 +835,12 @@ export default function EcfConfig({
                     return ecfOperationalReady
                         ? "Sandbox listo"
                         : "Sandbox requiere configuración";
+                }
+
+                if (currentEnvironment === "dgii_pre_certification") {
+                    return ecfOperationalReady
+                        ? "Práctica en TesteCF"
+                        : "Pre-certificación requiere configuración";
                 }
 
                 if (
@@ -1223,6 +1257,10 @@ export default function EcfConfig({
 
                                 <option value="internal_sandbox">
                                     Sandbox interno
+                                </option>
+
+                                <option value="dgii_pre_certification">
+                                    Pre-certificación DGII (TesteCF, práctica)
                                 </option>
 
                                 <option value="dgii_certification">
@@ -1902,7 +1940,9 @@ export default function EcfConfig({
                                 ?.environment ===
                             "dgii_certification"
                                 ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
-                                : "border-gray-700 bg-gray-800/60 text-gray-300",
+                                : form.ecf?.environment === "dgii_pre_certification"
+                                    ? "border-violet-500/30 bg-violet-500/10 text-violet-300"
+                                    : "border-gray-700 bg-gray-800/60 text-gray-300",
                     ].join(
                         " "
                     )}
@@ -1915,7 +1955,9 @@ export default function EcfConfig({
                             ?.environment ===
                         "dgii_certification"
                             ? "Certificación DGII"
-                            : "Sandbox interno"
+                            : form.ecf?.environment === "dgii_pre_certification"
+                                ? "Pre-certificación DGII (TesteCF)"
+                                : "Sandbox interno"
                     }
                 </div>
 
@@ -2013,6 +2055,10 @@ export default function EcfConfig({
                                             const isCertification =
                                                 environment ===
                                                 "dgii_certification";
+
+                                            const isPreCertification =
+                                                environment ===
+                                                "dgii_pre_certification";
 
                                             const activeSequence =
                                                 getEnvironmentSequence(
@@ -2505,7 +2551,9 @@ export default function EcfConfig({
                                                                                 ? t(
                                                                                     "ecfConfig.documentTypes.certification"
                                                                                 )
-                                                                                : "Sandbox"
+                                                                                : isPreCertification
+                                                                                    ? "TesteCF"
+                                                                                    : "Sandbox"
                                                                             }
 
                                                                         </p>
@@ -2573,6 +2621,9 @@ export default function EcfConfig({
                 </div>
 
             </div>
+
+            {/* Solo Owner/Admin llegan a esta pantalla; el backend lo vuelve a validar. */}
+            <EcfXmlExportPanel inputCls={inputCls} />
 
         </div>
     );

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Eye, FileText, Receipt, RefreshCw, X } from "lucide-react";
+import { Download, Eye, FileCode, FileText, Receipt, RefreshCw, X } from "lucide-react";
 import api from "../../lib/api";
 import { getClosingInvoicePdfUrl } from "../../lib/cashCloseInvoicePdf.mjs";
+import { downloadEcfXml, describeEcfXmlError } from "../../lib/ecfXmlDownload.js";
 import { useTranslation } from "react-i18next";
 
 const CLOSING_LABELS = {
@@ -17,6 +18,7 @@ const CLOSING_LABELS = {
         consumer: "Consumidor Final", order: "Orden", modified: "Modifica", noReason: "Sin motivo",
         view: "Ver / Imprimir", pending: "No imprimible como aceptado", documents: "documento(s)",
         prev: "Anterior", next: "Siguiente", unchanged: "Consulta sin alterar el cierre.",
+        xml: "XML", rfce: "RFCE", xmlWorking: "Descargando...", xmlTitle: "Descargar XML firmado", rfceTitle: "Descargar resumen de consumo (RFCE) firmado",
     },
     en: {
         title: "Invoices and fiscal notes", date: "Date", register: "Register", all: "All",
@@ -29,6 +31,7 @@ const CLOSING_LABELS = {
         consumer: "Final consumer", order: "Order", modified: "Modifies", noReason: "No reason",
         view: "View / Print", pending: "Cannot print as accepted", documents: "document(s)",
         prev: "Previous", next: "Next", unchanged: "Read-only view. Closing totals are unchanged.",
+        xml: "XML", rfce: "RFCE", xmlWorking: "Downloading...", xmlTitle: "Download signed XML", rfceTitle: "Download signed consumer summary (RFCE)",
     },
 };
 
@@ -46,7 +49,7 @@ const printableStatus = (status) => ["accepted", "accepted_with_observation"].in
 
 export default function CashCloseDocumentsModal({
     onClose, dateYMD, registerId, orders = [], money, onOpenOrder, onOpenFiscal,
-    supportsDominicanFiscal = false, tenantId = "", clientId = "default",
+    supportsDominicanFiscal = false, tenantId = "", clientId = "default", canDownloadXml = false,
 }) {
     const { i18n } = useTranslation();
     const L = CLOSING_LABELS[String(i18n.resolvedLanguage || i18n.language || "es").startsWith("en") ? "en" : "es"];
@@ -55,6 +58,19 @@ export default function CashCloseDocumentsModal({
     const [search, setSearch] = useState("");
     const [pdfBusy, setPdfBusy] = useState(null);
     const [pdfError, setPdfError] = useState("");
+    const [xmlBusy, setXmlBusy] = useState(null);
+    const saveXml = async (doc, kind) => {
+        if (xmlBusy) return;
+        setPdfError("");
+        setXmlBusy(`${doc.documentId}:${kind}`);
+        try {
+            await downloadEcfXml(api, doc.documentId, kind);
+        } catch (err) {
+            setPdfError(await describeEcfXmlError(err));
+        } finally {
+            setXmlBusy(null);
+        }
+    };
     const openPdf = async (orderId, download = false) => {
         if (pdfBusy) return;
         setPdfError("");
@@ -187,8 +203,20 @@ export default function CashCloseDocumentsModal({
                                         {(doc.documentType === "33" || doc.documentType === "34") && <div className="mt-1 text-xs text-gray-500">{L.modified}: {doc.reference?.modifiedENCF || "—"} · {doc.reference?.reason || L.noReason}</div>}
                                         <div className="mt-1 text-xs font-semibold text-sky-300">{money(Number(doc.totals?.total || 0))} · <span className="text-gray-300">{STATUS[doc.status] || doc.status}</span></div>
                                     </div>
+                                    <div className="flex flex-wrap items-center gap-2">
                                     {printableStatus(doc.status) ? <button type="button" onClick={() => onOpenFiscal(doc)} className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20"><FileText size={14} className="mr-1 inline"/> {L.view}</button>
                                         : <span className="text-xs text-gray-500">{L.pending}</span>}
+                                    {canDownloadXml && doc.hasSignedXml && <button type="button" onClick={() => saveXml(doc, "ecf")} disabled={!!xmlBusy}
+                                        title={L.xmlTitle} aria-label={`${L.xmlTitle}: ${doc.eNCF || doc.documentId}`}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-50">
+                                        <FileCode size={14}/> {xmlBusy === `${doc.documentId}:ecf` ? L.xmlWorking : L.xml}
+                                    </button>}
+                                    {canDownloadXml && doc.hasRfceXml && <button type="button" onClick={() => saveXml(doc, "rfce")} disabled={!!xmlBusy}
+                                        title={L.rfceTitle} aria-label={`${L.rfceTitle}: ${doc.eNCF || doc.documentId}`}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-50">
+                                        <FileCode size={14}/> {xmlBusy === `${doc.documentId}:rfce` ? L.xmlWorking : L.rfce}
+                                    </button>}
+                                    </div>
                                 </div>
                             ))}</div>}
                         </>

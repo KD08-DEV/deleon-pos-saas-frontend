@@ -219,6 +219,10 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
         ecf?.qr ||
         "";
     const ecfFechaHoraFirma = ecf?.fechaHoraFirma || "";
+    // Fechas tal como quedaron en el XML (dd-MM-AAAA). La DGII compara la
+    // representación impresa con el XML, por eso no se recalculan aquí.
+    const ecfFechaEmision = ecf?.fechaEmision || "";
+    const ecfFechaVencimiento = ecf?.fechaVencimientoSecuencia || "";
 
     const ecfDocumentType =
         String(ecf?.documentType || "").trim() ||
@@ -237,16 +241,18 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
     const isEcfAdjustment = ["33", "34"].includes(
         String(ecfDocumentType || "").trim()
     );
+    // La DGII pide el tipo de e-CF escrito en palabras.
     const ecfTypeLabel =
-        ecfDocumentType === "31"
-            ? "e31 - Crédito fiscal electrónico"
+        ecf?.documentTypeLabel ||
+        (ecfDocumentType === "31"
+            ? "Factura de Crédito Fiscal Electrónica"
             : ecfDocumentType === "32"
-                ? "e32 - Factura de consumo electrónica"
+                ? "Factura de Consumo Electrónica"
                 : ecfDocumentType === "33"
-                    ? "e33 - Nota de débito electrónica"
+                    ? "Nota de Débito Electrónica"
                     : ecfDocumentType === "34"
-                        ? "e34 - Nota de crédito electrónica"
-                        : "e-CF";
+                        ? "Nota de Crédito Electrónica"
+                        : "Comprobante Fiscal Electrónico");
 
 
     const resolvedNcfType =
@@ -783,6 +789,8 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
                 ecfSecurityCode,
                 ecfQrUrl,
                 ecfFechaHoraFirma,
+                ecfFechaEmision,
+                ecfFechaVencimiento,
                 ecfReference,
                 isEcfAdjustment,
                 ncfType: isEcf ? "" : ncfType,
@@ -987,8 +995,10 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
                     {/* Tipo documento fiscal */}
                     {isEcf ? (
                         <div className="text-xs text-center text-gray-700">
-                            <p>Tipo e-CF: {ecfTypeLabel}</p>
-                            {ecfENCF && <p className="font-semibold">eNCF: {ecfENCF}</p>}
+                            <p className="font-semibold">{ecfTypeLabel}</p>
+                            {ecfENCF && <p className="font-semibold">e-NCF: {ecfENCF}</p>}
+                            {ecfFechaEmision && <p>Fecha de emisión: {ecfFechaEmision}</p>}
+                            {ecfFechaVencimiento && <p>Fecha de vencimiento: {ecfFechaVencimiento}</p>}
                             {ecfIsInternalSandbox && (
                                 <p className="font-bold text-red-700">DOCUMENTO DE PRUEBA — SANDBOX INTERNO, SIN VALIDEZ FISCAL</p>
                             )}
@@ -1050,9 +1060,10 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
 
                         <p>
                             <span className="font-semibold">{t("invoice.dateTime")}:</span>{" "}
-                            {order?.createdAt
+                            {/* En e-CF la fecha debe coincidir con la emisión del XML (facturación), no con la creación de la orden. */}
+                            {(isEcf ? (order?.invoicedAt || order?.paidAt || order?.createdAt) : order?.createdAt)
                                 ? formatDateTime(
-                                    order.createdAt,
+                                    isEcf ? (order?.invoicedAt || order?.paidAt || order?.createdAt) : order.createdAt,
                                     localization
                                 )
                                 : "N/A"}
@@ -1455,7 +1466,7 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
 
                             {ecfFechaHoraFirma && (
                                 <p className="text-xs leading-tight text-gray-800 text-center mt-1">
-                                    <span className="font-semibold">Fecha firma:</span>{" "}
+                                    <span className="font-semibold">Fecha de firma digital:</span>{" "}
                                     {ecfFechaHoraFirma}
                                 </p>
                             )}

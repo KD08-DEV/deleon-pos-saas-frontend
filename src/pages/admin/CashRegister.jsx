@@ -4128,6 +4128,8 @@ const CashRegister = () => {
                 securityCode: doc.securityCode,
                 qrUrl: doc.qrUrl,
                 fechaHoraFirma: doc.fechaHoraFirma,
+                fechaEmision: doc.fechaEmision || "",
+                fechaVencimientoSecuencia: doc.fechaVencimientoSecuencia || "",
                 reference,
             },
         };
@@ -7271,6 +7273,7 @@ const CashRegister = () => {
                     orders={dayVisibleReports}
                     money={currency}
                     supportsDominicanFiscal={supportsDominicanFiscal && Boolean(planFeatures.fiscal)}
+                    canDownloadXml={canManageFiscalIncidents}
                     onOpenOrder={(orderId) => { setShowClosingDocuments(false); verFactura(orderId); }}
                     onOpenFiscal={(doc) => {
                         setShowClosingDocuments(false);

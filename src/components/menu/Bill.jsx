@@ -2561,6 +2561,8 @@ const Bill = ({ orderId, order, setIsOrderModalOpen }) => {
                     securityCode: ecfFromBackend.securityCode || null,
                     qrUrl: ecfFromBackend.qrUrl || null,
                     fechaHoraFirma: ecfFromBackend.fechaHoraFirma || null,
+                    fechaEmision: ecfFromBackend.fechaEmision || null,
+                    fechaVencimientoSecuencia: ecfFromBackend.fechaVencimientoSecuencia || null,
                 };
 
                 enqueueSnackbar("e-CF emitido correctamente.", { variant: "success" });
