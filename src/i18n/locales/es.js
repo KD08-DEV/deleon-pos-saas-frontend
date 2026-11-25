@@ -5357,7 +5357,7 @@ const es = {
                     "Impuestos Totales",
 
                 totalTips:
-                    "Propinas Totales",
+                    "Propina adicional",
 
                 totalCommissions:
                     "Comisiones Totales",
