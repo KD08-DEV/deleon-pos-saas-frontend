@@ -1156,6 +1156,35 @@ const FinancialAnalysis = () => {
                     const serviceCharge =
                         toNumber(order?.bills?.serviceChargeTotal) * ratio;
 
+                    // Cada impuesto y cargo por su nombre configurado (ITBIS, IVA, Propina legal…).
+                    // Si una orden antigua no trae desglose, el resto queda con un nombre genérico.
+                    const namedLines = (breakdown, total, fallbackName) => {
+                        const lines = {};
+                        let covered = 0;
+                        for (const entry of Array.isArray(breakdown) ? breakdown : []) {
+                            const amount = toNumber(entry?.amount);
+                            if (!amount) continue;
+                            const name = String(entry?.name || entry?.code || fallbackName).trim() || fallbackName;
+                            lines[name] = (lines[name] || 0) + amount * ratio;
+                            covered += amount * ratio;
+                        }
+                        const rest = total - covered;
+                        if (rest > 0.009) lines[fallbackName] = (lines[fallbackName] || 0) + rest;
+                        return lines;
+                    };
+
+                    const taxLines = namedLines(
+                        order?.bills?.taxBreakdown,
+                        tax,
+                        t("financialAnalysisPage.breakdown.otherTaxes", "Impuestos")
+                    );
+
+                    const chargeLines = namedLines(
+                        order?.bills?.serviceChargeBreakdown,
+                        serviceCharge,
+                        t("financialAnalysisPage.breakdown.otherCharges", "Cargos")
+                    );
+
                     const discount =
                         toNumber(order?.bills?.discount) * ratio;
 
@@ -1205,6 +1234,8 @@ const FinancialAnalysis = () => {
                         tax,
                         tip,
                         serviceCharge,
+                        taxLines,
+                        chargeLines,
                         discount,
                         deliveryFee,
                         commission,
@@ -1236,6 +1267,14 @@ const FinancialAnalysis = () => {
                         acc.totalServiceCharge +=
                             m.serviceCharge;
 
+                        for (const [name, amount] of Object.entries(m.taxLines)) {
+                            acc.taxLines[name] = (acc.taxLines[name] || 0) + amount;
+                        }
+
+                        for (const [name, amount] of Object.entries(m.chargeLines)) {
+                            acc.chargeLines[name] = (acc.chargeLines[name] || 0) + amount;
+                        }
+
                         acc.totalDiscount +=
                             m.discount;
 
@@ -1265,6 +1304,12 @@ const FinancialAnalysis = () => {
 
                         totalServiceCharge:
                             0,
+
+                        taxLines:
+                            {},
+
+                        chargeLines:
+                            {},
 
                         totalDiscount:
                             0,
@@ -1372,6 +1417,12 @@ const FinancialAnalysis = () => {
                             serviceCharge:
                                 0,
 
+                            taxLines:
+                                {},
+
+                            chargeLines:
+                                {},
+
                             net:
                                 0,
 
@@ -1400,6 +1451,14 @@ const FinancialAnalysis = () => {
 
                     byDate[date].serviceCharge +=
                         m.serviceCharge;
+
+                    for (const [name, amount] of Object.entries(m.taxLines)) {
+                        byDate[date].taxLines[name] = (byDate[date].taxLines[name] || 0) + amount;
+                    }
+
+                    for (const [name, amount] of Object.entries(m.chargeLines)) {
+                        byDate[date].chargeLines[name] = (byDate[date].chargeLines[name] || 0) + amount;
+                    }
 
                     byDate[
                         date
@@ -1534,8 +1593,16 @@ const FinancialAnalysis = () => {
                 }
             );
 
+            const toSortedLines = (lines) => Object.entries(lines || {})
+                .filter(([, amount]) => Math.abs(amount) > 0.004)
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, amount]) => ({ name, amount }));
+
             return {
                 ...totals,
+                taxLineList: toSortedLines(totals.taxLines),
+                chargeLineList: toSortedLines(totals.chargeLines),
+                toSortedLines,
                 totalOrders,
                 avgTicket,
                 avgNet,
@@ -1824,26 +1891,10 @@ const FinancialAnalysis = () => {
                         )
                     ),
 
-                    makeRow(
-                        t(
-                            "financialAnalysisPage.excel.metrics.totalTaxes"
-                        ),
-                        financialAnalysis.totalTax,
-                        currency(
-                            financialAnalysis.totalTax
-                        )
-                    ),
-
-                    makeRow(
-                        t(
-                            "financialAnalysisPage.excel.metrics.totalServiceCharges",
-                            "Propina legal y cargos por servicio"
-                        ),
-                        financialAnalysis.totalServiceCharge,
-                        currency(
-                            financialAnalysis.totalServiceCharge
-                        )
-                    ),
+                    ...[
+                        ...(financialAnalysis.taxLineList || []),
+                        ...(financialAnalysis.chargeLineList || []),
+                    ].map((line) => makeRow(line.name, line.amount, currency(line.amount))),
 
                     makeRow(
                         t(
@@ -2466,53 +2517,46 @@ const FinancialAnalysis = () => {
                             </span>
                         </div>
 
-                        <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
-                            <span className="text-sm text-gray-400">
-                                {t(
-                                    "financialAnalysisPage.breakdown.taxesWithRate",
-                                    {
-                                        rate:
-                                        financialAnalysis.taxRate,
-                                    }
-                                )}
-                            </span>
+                        {(financialAnalysis.taxLineList || []).map((line) => (
+                            <div key={`tax-${line.name}`} className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                                <span className="text-sm text-gray-400">
+                                    {line.name}
+                                </span>
 
-                            <span className="text-sm font-bold text-sky-400">
-                                {currency(
-                                    financialAnalysis.totalTax
-                                )}
-                            </span>
-                        </div>
+                                <span className="text-sm font-bold text-sky-400">
+                                    {currency(line.amount)}
+                                </span>
+                            </div>
+                        ))}
 
-                        <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
-                            <span className="text-sm text-gray-400">
-                                {t(
-                                    "financialAnalysisPage.breakdown.serviceCharges",
-                                    "Propina legal y cargos por servicio"
-                                )}
-                            </span>
+                        {(financialAnalysis.chargeLineList || []).map((line) => (
+                            <div key={`charge-${line.name}`} className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                                <span className="text-sm text-gray-400">
+                                    {line.name}
+                                </span>
 
-                            <span className="text-sm font-bold text-green-400">
-                                {currency(
-                                    financialAnalysis.totalServiceCharge
-                                )}
-                            </span>
-                        </div>
+                                <span className="text-sm font-bold text-green-400">
+                                    {currency(line.amount)}
+                                </span>
+                            </div>
+                        ))}
 
-                        <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
-                            <span className="text-sm text-gray-400">
-                                {t(
-                                    "financialAnalysisPage.breakdown.extraTips",
-                                    "Propina adicional"
-                                )}
-                            </span>
+                        {financialAnalysis.totalTip > 0.004 && (
+                            <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                                <span className="text-sm text-gray-400">
+                                    {t(
+                                        "financialAnalysisPage.breakdown.extraTips",
+                                        "Propina adicional"
+                                    )}
+                                </span>
 
-                            <span className="text-sm font-bold text-green-400">
-                                {currency(
-                                    financialAnalysis.totalTip
-                                )}
-                            </span>
-                        </div>
+                                <span className="text-sm font-bold text-green-400">
+                                    {currency(
+                                        financialAnalysis.totalTip
+                                    )}
+                                </span>
+                            </div>
+                        )}
 
                         {financialAnalysis.totalDiscount > 0.004 && (
                             <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
@@ -2714,19 +2758,11 @@ const FinancialAnalysis = () => {
 
                                         <div className="flex justify-between mt-2 text-xs text-gray-500">
                                             <span>
-                                                {t(
-                                                    "financialAnalysisPage.daily.taxes"
-                                                )}
-                                                :{" "}
-                                                {currency(
-                                                    dayData.tax
-                                                )}
-                                            </span>
-
-                                            <span>
-                                                {t("financialAnalysisPage.daily.serviceCharges", "Propina legal")}
-                                                :{" "}
-                                                {currency(dayData.serviceCharge || 0)}
+                                                {[
+                                                    ...financialAnalysis.toSortedLines(dayData.taxLines),
+                                                    ...financialAnalysis.toSortedLines(dayData.chargeLines),
+                                                ].map((line) => `${line.name}: ${currency(line.amount)}`).join(" · ") ||
+                                                    `${t("financialAnalysisPage.daily.taxes")}: ${currency(dayData.tax)}`}
                                             </span>
 
                                             <span>
