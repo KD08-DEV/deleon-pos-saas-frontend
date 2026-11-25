@@ -1144,13 +1144,23 @@ const FinancialAnalysis = () => {
                         ) *
                         ratio;
 
+                    // Propina adicional (manual). En órdenes nuevas tip y tipAmount son el mismo valor.
                     const tip =
                         toNumber(
-                            order
-                                ?.bills
-                                ?.tip
+                            order?.bills?.tipAmount ??
+                            order?.bills?.tip
                         ) *
                         ratio;
+
+                    // Propina legal 10% y demás cargos por servicio (antes no se contaban).
+                    const serviceCharge =
+                        toNumber(order?.bills?.serviceChargeTotal) * ratio;
+
+                    const discount =
+                        toNumber(order?.bills?.discount) * ratio;
+
+                    const deliveryFee =
+                        toNumber(order?.bills?.deliveryFee) * ratio;
 
                     const commission =
                         toNumber(
@@ -1161,9 +1171,12 @@ const FinancialAnalysis = () => {
 
                     const revenue =
                         selectedCategory
-                            ? subtotal +
+                            ? subtotal -
+                            discount +
                             tax +
-                            tip
+                            serviceCharge +
+                            tip +
+                            deliveryFee
                             : toNumber(
                                 order
                                     ?.bills
@@ -1191,6 +1204,9 @@ const FinancialAnalysis = () => {
                         subtotal,
                         tax,
                         tip,
+                        serviceCharge,
+                        discount,
+                        deliveryFee,
                         commission,
                         revenue,
                         net,
@@ -1217,6 +1233,15 @@ const FinancialAnalysis = () => {
                         acc.totalTip +=
                             m.tip;
 
+                        acc.totalServiceCharge +=
+                            m.serviceCharge;
+
+                        acc.totalDiscount +=
+                            m.discount;
+
+                        acc.totalDelivery +=
+                            m.deliveryFee;
+
                         acc.totalSubtotal +=
                             m.subtotal;
 
@@ -1236,6 +1261,15 @@ const FinancialAnalysis = () => {
                             0,
 
                         totalTip:
+                            0,
+
+                        totalServiceCharge:
+                            0,
+
+                        totalDiscount:
+                            0,
+
+                        totalDelivery:
                             0,
 
                         totalSubtotal:
@@ -1335,6 +1369,9 @@ const FinancialAnalysis = () => {
                             tip:
                                 0,
 
+                            serviceCharge:
+                                0,
+
                             net:
                                 0,
 
@@ -1360,6 +1397,9 @@ const FinancialAnalysis = () => {
                         date
                         ].tip +=
                         m.tip;
+
+                    byDate[date].serviceCharge +=
+                        m.serviceCharge;
 
                     byDate[
                         date
@@ -1796,12 +1836,29 @@ const FinancialAnalysis = () => {
 
                     makeRow(
                         t(
+                            "financialAnalysisPage.excel.metrics.totalServiceCharges",
+                            "Propina legal y cargos por servicio"
+                        ),
+                        financialAnalysis.totalServiceCharge,
+                        currency(
+                            financialAnalysis.totalServiceCharge
+                        )
+                    ),
+
+                    makeRow(
+                        t(
                             "financialAnalysisPage.excel.metrics.totalTips"
                         ),
                         financialAnalysis.totalTip,
                         currency(
                             financialAnalysis.totalTip
                         )
+                    ),
+
+                    makeRow(
+                        t("financialAnalysisPage.excel.metrics.totalDiscounts", "Descuentos"),
+                        financialAnalysis.totalDiscount,
+                        currency(financialAnalysis.totalDiscount)
                     ),
 
                     makeRow(
@@ -2430,7 +2487,23 @@ const FinancialAnalysis = () => {
                         <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
                             <span className="text-sm text-gray-400">
                                 {t(
-                                    "financialAnalysisPage.breakdown.tips"
+                                    "financialAnalysisPage.breakdown.serviceCharges",
+                                    "Propina legal y cargos por servicio"
+                                )}
+                            </span>
+
+                            <span className="text-sm font-bold text-green-400">
+                                {currency(
+                                    financialAnalysis.totalServiceCharge
+                                )}
+                            </span>
+                        </div>
+
+                        <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                            <span className="text-sm text-gray-400">
+                                {t(
+                                    "financialAnalysisPage.breakdown.extraTips",
+                                    "Propina adicional"
                                 )}
                             </span>
 
@@ -2440,6 +2513,30 @@ const FinancialAnalysis = () => {
                                 )}
                             </span>
                         </div>
+
+                        {financialAnalysis.totalDiscount > 0.004 && (
+                            <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                                <span className="text-sm text-gray-400">
+                                    {t("financialAnalysisPage.breakdown.discounts", "Descuentos")}
+                                </span>
+
+                                <span className="text-sm font-bold text-red-400">
+                                    -{currency(financialAnalysis.totalDiscount)}
+                                </span>
+                            </div>
+                        )}
+
+                        {financialAnalysis.totalDelivery > 0.004 && (
+                            <div className="flex justify-between items-center py-2 border-b border-gray-800/30">
+                                <span className="text-sm text-gray-400">
+                                    {t("financialAnalysisPage.breakdown.delivery", "Cargos de entrega")}
+                                </span>
+
+                                <span className="text-sm font-bold text-white">
+                                    {currency(financialAnalysis.totalDelivery)}
+                                </span>
+                            </div>
+                        )}
 
                         <div className="flex justify-between items-center py-2 pt-3 border-t border-gray-800/50">
                             <span className="text-base font-semibold text-white">
@@ -2624,6 +2721,12 @@ const FinancialAnalysis = () => {
                                                 {currency(
                                                     dayData.tax
                                                 )}
+                                            </span>
+
+                                            <span>
+                                                {t("financialAnalysisPage.daily.serviceCharges", "Propina legal")}
+                                                :{" "}
+                                                {currency(dayData.serviceCharge || 0)}
                                             </span>
 
                                             <span>
