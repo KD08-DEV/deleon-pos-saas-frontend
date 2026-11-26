@@ -1367,7 +1367,8 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
                             tax > 0 && (
                                 <p>
             <span className="font-semibold">
-                t("invoice.tax"):
+                {/* En e-CF (República Dominicana) el impuesto es el ITBIS. */}
+                {isEcf ? "ITBIS" : t("invoice.tax")}:
             </span>{" "}
 
                                     {money(tax)}

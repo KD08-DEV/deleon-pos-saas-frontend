@@ -4057,6 +4057,14 @@ const CashRegister = () => {
         const tax = Number(doc?.totals?.tax || 0);
         const discount = Number(doc?.totals?.discount || 0);
         const total = Number(doc?.totals?.total || 0);
+        // Propina legal de la nota. Documentos antiguos no la guardaban: se deduce
+        // de la diferencia con el total para que la impresión cuadre.
+        const storedTip = Number(doc?.totals?.tip || 0);
+        const derivedTip = Math.round((total - (subtotal - discount) - tax) * 100) / 100;
+        const legalTip = storedTip > 0 ? storedTip : (derivedTip > 0.009 ? derivedTip : 0);
+        const legalTipRate = Number(doc?.totals?.tipRate) > 0
+            ? Number(doc.totals.tipRate)
+            : (subtotal - discount > 0 ? Math.round((legalTip / (subtotal - discount)) * 100) : 10);
 
         const reference = doc.reference || {};
         const originalEcf = ecfAdjustmentModal?.originalEcf || {};
@@ -4113,6 +4121,10 @@ const CashRegister = () => {
                 tipEnabled: false,
                 tip: 0,
                 tipAmount: 0,
+                serviceChargeTotal: legalTip,
+                serviceChargeBreakdown: legalTip > 0
+                    ? [{ code: "LEGAL_TIP", name: "Propina legal", ratePercent: legalTipRate, amount: legalTip }]
+                    : [],
                 deliveryFee: 0,
                 totalWithTax: total,
             },
