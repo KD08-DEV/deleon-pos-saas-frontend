@@ -14,6 +14,12 @@ const NOT_RECEIVED_REASONS = {
     4: "RNC comprador no corresponde",
 };
 const COMMERCIAL_LABELS = { pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado" };
+const ISSUER_DELIVERY_LABELS = {
+    pending: "enviando…",
+    delivered: "entregada",
+    not_electronic: "no es receptor electrónico",
+    failed: "no se pudo entregar",
+};
 const ERROR_MESSAGES = {
     ISSUER_RNC_REQUIRED: "Primero registra el RNC del emisor en esta configuración.",
     REJECTION_REASON_REQUIRED: "Escribe el motivo del rechazo.",
@@ -231,6 +237,9 @@ export default function EcfReceptorPanel() {
                                                     <p className="text-gray-300">
                                                         Comercial: {COMMERCIAL_LABELS[commercial]}
                                                         {doc.commercial?.reason ? ` · ${doc.commercial.reason}` : ""}
+                                                        {ISSUER_DELIVERY_LABELS[doc.commercial?.issuerDelivery?.status] && (
+                                                            <span className="text-gray-400"> · Emisor: {ISSUER_DELIVERY_LABELS[doc.commercial.issuerDelivery.status]}</span>
+                                                        )}
                                                         {doc.commercial?.dgii?.ok === false && (
                                                             <span className="text-rose-300"> · DGII: {(doc.commercial.dgii.mensajes || []).join(" ") || "rechazado"}</span>
                                                         )}

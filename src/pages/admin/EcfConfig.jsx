@@ -21,6 +21,7 @@ import {
 import api from "../../lib/api";
 import EcfXmlExportPanel from "../../components/ecf/EcfXmlExportPanel.jsx";
 import EcfReceptorPanel from "../../components/ecf/EcfReceptorPanel.jsx";
+import EcfOperationsPanel from "../../components/ecf/EcfOperationsPanel.jsx";
 
 
 export const ECF_DOCUMENT_TYPE_GROUPS = [
@@ -2628,6 +2629,9 @@ export default function EcfConfig({
 
             {/* Servicios para recibir e-CF y aprobaciones comerciales (DGII y proveedores). */}
             <EcfReceptorPanel />
+
+            {/* Seguimiento automático DGII y anulación de secuencias (ANECF). */}
+            <EcfOperationsPanel />
 
         </div>
     );
