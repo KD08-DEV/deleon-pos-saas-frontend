@@ -7,6 +7,7 @@ import useTenant from "../../hooks/useTenant.js";
 import { printWithTenantConfig } from "../../lib/tenantPrint";
 import usePrinterOptions from "../../hooks/usePrinterOptions";
 import { QRCodeSVG } from "qrcode.react";
+
     import Ticket from "../ticket/Ticket.jsx";
 
     import {
@@ -23,6 +24,19 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
     import {
         useTranslation,
     } from "react-i18next";
+
+// Estado del e-CF en palabras para el cliente.
+const ECF_STATUS_LABELS = {
+    draft: "Borrador",
+    xml_generated: "Generado",
+    signed: "Firmado",
+    submitted: "Enviado a la DGII",
+    track_received: "En proceso DGII",
+    accepted: "Aceptado",
+    accepted_with_observation: "Aceptado condicional",
+    rejected: "Rechazado",
+    cancelled: "Anulado",
+};
 
     const safeNum = (value) => {
         if (
@@ -1084,7 +1098,7 @@ const pad = (v, len = 8) => String(v ?? "").padStart(len, "0");
 
                                 <p>
                                     <span className="font-semibold">Estado e-CF:</span>{" "}
-                                    {ecfStatus || "Pendiente"}
+                                    {ECF_STATUS_LABELS[ecfStatus] || ecfStatus || "Pendiente"}
                                 </p>
 
                                 <p>
