@@ -60,3 +60,9 @@ export async function downloadEcfXmlZip(api, { from, to, environment = "", docum
     });
     saveBlob(response.data, fileNameFrom(response.headers, `e-CF_${from}_${to}.zip`));
 }
+
+// Descarga genérica de un archivo del backend (nombre tomado de Content-Disposition).
+export async function downloadFromApi(api, url, params = {}, fallbackName = "archivo.xml") {
+    const response = await api.get(url, { params, responseType: "blob" });
+    saveBlob(response.data, fileNameFrom(response.headers, fallbackName));
+}

@@ -7286,6 +7286,22 @@ const CashRegister = () => {
                     money={currency}
                     supportsDominicanFiscal={supportsDominicanFiscal && Boolean(planFeatures.fiscal)}
                     canDownloadXml={canManageFiscalIncidents}
+                    canIssueCreditNote={e34Enabled}
+                    canIssueDebitNote={e33Enabled}
+                    onAdjust={async (doc, documentType) => {
+                        // Carga la orden original y abre el mismo flujo de notas que usa administración.
+                        // El backend vuelve a validar el permiso de quien emite.
+                        try {
+                            const res = await api.get(`/api/order/${doc.orderId}`);
+                            const fresh = res?.data?.data?.order ?? res?.data?.order ?? res?.data?.data ?? res?.data;
+                            if (!fresh?._id) throw new Error("ORDER_NOT_FOUND");
+                            setShowClosingDocuments(false);
+                            await openEcfAdjustmentModal(fresh, documentType);
+                        } catch (error) {
+                            console.error("[closingDocuments] nota e-CF:", error);
+                            showToast(t("cashRegisterPage.ecf.orderUnavailable"));
+                        }
+                    }}
                     onOpenOrder={(orderId) => { setShowClosingDocuments(false); verFactura(orderId); }}
                     onOpenFiscal={(doc) => {
                         setShowClosingDocuments(false);

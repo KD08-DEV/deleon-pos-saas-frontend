@@ -18,6 +18,7 @@ const CLOSING_LABELS = {
         consumer: "Consumidor Final", order: "Orden", modified: "Modifica", noReason: "Sin motivo",
         view: "Ver / Imprimir", pending: "No imprimible como aceptado", documents: "documento(s)",
         prev: "Anterior", next: "Siguiente", unchanged: "Consulta sin alterar el cierre.",
+        creditNote: "Nota de crédito (E34)", debitNote: "Nota de débito (E33)",
         xml: "XML", rfce: "RFCE", xmlWorking: "Descargando...", xmlTitle: "Descargar XML firmado", rfceTitle: "Descargar resumen de consumo (RFCE) firmado",
     },
     en: {
@@ -31,6 +32,7 @@ const CLOSING_LABELS = {
         consumer: "Final consumer", order: "Order", modified: "Modifies", noReason: "No reason",
         view: "View / Print", pending: "Cannot print as accepted", documents: "document(s)",
         prev: "Previous", next: "Next", unchanged: "Read-only view. Closing totals are unchanged.",
+        creditNote: "Credit note (E34)", debitNote: "Debit note (E33)",
         xml: "XML", rfce: "RFCE", xmlWorking: "Downloading...", xmlTitle: "Download signed XML", rfceTitle: "Download signed consumer summary (RFCE)",
     },
 };
@@ -50,6 +52,8 @@ const printableStatus = (status) => ["accepted", "accepted_with_observation"].in
 export default function CashCloseDocumentsModal({
     onClose, dateYMD, registerId, orders = [], money, onOpenOrder, onOpenFiscal,
     supportsDominicanFiscal = false, tenantId = "", clientId = "default", canDownloadXml = false,
+    // Notas E33/E34: el permiso viene del backend (dueño, administrador o cajera con permiso).
+    canIssueCreditNote = false, canIssueDebitNote = false, onAdjust = null,
 }) {
     const { i18n } = useTranslation();
     const L = CLOSING_LABELS[String(i18n.resolvedLanguage || i18n.language || "es").startsWith("en") ? "en" : "es"];
@@ -206,6 +210,16 @@ export default function CashCloseDocumentsModal({
                                     <div className="flex flex-wrap items-center gap-2">
                                     {printableStatus(doc.status) ? <button type="button" onClick={() => onOpenFiscal(doc)} className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/20"><FileText size={14} className="mr-1 inline"/> {L.view}</button>
                                         : <span className="text-xs text-gray-500">{L.pending}</span>}
+                                    {onAdjust && ["31", "32"].includes(String(doc.documentType)) && printableStatus(doc.status) && canIssueCreditNote &&
+                                        <button type="button" onClick={() => onAdjust(doc, "34")}
+                                            className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/20">
+                                            {L.creditNote}
+                                        </button>}
+                                    {onAdjust && ["31", "32"].includes(String(doc.documentType)) && printableStatus(doc.status) && canIssueDebitNote &&
+                                        <button type="button" onClick={() => onAdjust(doc, "33")}
+                                            className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/20">
+                                            {L.debitNote}
+                                        </button>}
                                     {canDownloadXml && doc.hasSignedXml && <button type="button" onClick={() => saveXml(doc, "ecf")} disabled={!!xmlBusy}
                                         title={L.xmlTitle} aria-label={`${L.xmlTitle}: ${doc.eNCF || doc.documentId}`}
                                         className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/20 disabled:opacity-50">
