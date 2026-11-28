@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
+import FiscalArchivePanel from "@/components/superAdmin/FiscalArchivePanel.jsx";
 
 const SuperAdminTenants = () => {
     const [tenants, setTenants] = useState([]);
@@ -9,6 +10,7 @@ const SuperAdminTenants = () => {
     const [deleteConfirmText, setDeleteConfirmText] = useState("");
     const [backupConfirmed, setBackupConfirmed] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [archiveRefresh, setArchiveRefresh] = useState(0);
 
 
     const showToast = (message, type = "error") => {
@@ -101,6 +103,7 @@ const SuperAdminTenants = () => {
             });
             const remaining = res.data?.data?.storage?.errors || [];
             setDeletePreview(null);
+            setArchiveRefresh((n) => n + 1);
             await fetchTenants();
             showToast(remaining.length ? "MongoDB eliminado; quedan archivos externos pendientes de revisar." : "Tenant eliminado permanentemente.", remaining.length ? "error" : "success");
         } catch (e) { showToast(e.response?.data?.code || e.response?.data?.message || "Deletion failed"); }
@@ -238,11 +241,22 @@ const SuperAdminTenants = () => {
 
                 </tbody>
             </table>
+            <FiscalArchivePanel refreshKey={archiveRefresh} onError={(m) => showToast(m)} />
             {deletePreview && <div className="fixed inset-0 z-[100000] bg-black/85 flex items-center justify-center p-4">
                 <div role="dialog" aria-modal="true" aria-label="Eliminar tenant" className="bg-[#181818] text-white border border-red-700 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-auto space-y-3">
                     <h2 className="text-xl font-bold text-red-300">Eliminar empresa y todos sus datos</h2>
                     <p><strong>{deletePreview.tenant.name}</strong> ({deletePreview.tenant.tenantId})</p>
                     <p className="text-sm text-red-200">Irreversible: usuarios, platos, facturas, cajas, inventarios, ventas y demás registros de esta empresa. No afecta otros tenants.</p>
+                    {deletePreview.retainedTotal > 0 && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                            <p className="font-semibold">Se conservarán {deletePreview.retainedTotal} comprobante(s) electrónico(s) por {deletePreview.retentionYears || 10} años.</p>
+                            <p className="text-xs text-amber-200/80">
+                                e-CF emitidos: {deletePreview.retained?.electronicTaxDocuments || 0} · recibidos: {deletePreview.retained?.receivedEcf || 0} ·
+                                {" "}anulaciones: {deletePreview.retained?.annulments || 0} · aprobaciones recibidas: {deletePreview.retained?.commercialApprovals || 0}.
+                                {" "}La ley exige guardarlos; quedarán en «Archivo fiscal» (abajo) para descargarlos. El certificado digital sí se borra.
+                            </p>
+                        </div>
+                    )}
                     <p className="text-sm">MongoDB: <strong>{deletePreview.totalDocuments}</strong> documentos detectados.</p>
                     {Object.entries(deletePreview.counts || {}).filter(([, n]) => n > 0).map(([collection, n]) => <div key={collection} className="flex justify-between text-xs text-gray-400"><span>{collection}</span><span>{n}</span></div>)}
                     {deletePreview.unknownCollections?.length > 0 && <p className="text-red-400">Bloqueado: hay colecciones de esta empresa pendientes de auditar.</p>}
