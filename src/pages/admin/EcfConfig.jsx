@@ -23,6 +23,7 @@ import EcfXmlExportPanel from "../../components/ecf/EcfXmlExportPanel.jsx";
 import EcfReceptorPanel from "../../components/ecf/EcfReceptorPanel.jsx";
 import EcfOperationsPanel from "../../components/ecf/EcfOperationsPanel.jsx";
 import EcfCertificationGuide from "../../components/ecf/EcfCertificationGuide.jsx";
+import EcfConnectivityPanel from "../../components/ecf/EcfConnectivityPanel.jsx";
 
 // Para qué se usó el certificado la última vez (elemento raíz del XML firmado).
 const CERT_USE_LABELS = {
@@ -2669,6 +2670,9 @@ export default function EcfConfig({
 
             {/* Servicios para recibir e-CF y aprobaciones comerciales (DGII y proveedores). */}
             <EcfReceptorPanel />
+
+            {/* Pruebas de firma y de comunicación con otros receptores (sin DGII). */}
+            <EcfConnectivityPanel />
 
             {/* Seguimiento automático DGII y anulación de secuencias (ANECF). */}
             <EcfOperationsPanel />
