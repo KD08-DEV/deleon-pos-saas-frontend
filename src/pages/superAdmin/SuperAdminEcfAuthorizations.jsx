@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, FileCheck2, FileUp, ShieldAlert, ShieldCheck, RefreshCw, Search, ExternalLink } from "lucide-react";
 import api from "../../lib/api";
+import CertificationProgressPanel from "../../components/superAdmin/CertificationProgressPanel.jsx";
 
 // Evitar que max= use el día UTC, que puede diferir del día del restaurante.
 const todayInDR = () => {
@@ -145,6 +146,7 @@ export default function SuperAdminEcfAuthorizations() {
       </div>
       <button type="button" onClick={() => { void refresh(); if (selected) void loadDetail(selected); }} className={`${btn} flex gap-2 bg-neutral-800 hover:bg-neutral-700`}><RefreshCw size={16}/> Actualizar</button>
     </div>
+    <CertificationProgressPanel />
     <div className="grid grid-cols-3 gap-3">{["pending", "verified", "revoked"].map(s =>
       <div key={s} className="rounded-xl border border-neutral-700 bg-[#161616] p-4"><p className="text-xs text-gray-400">{labels[s]}</p><p className="text-2xl font-bold mt-1">{count[s] || 0}</p></div>)}</div>
     {error && <div role="alert" className="rounded-lg border border-red-700 bg-red-950/30 p-3 text-sm text-red-200 flex items-center gap-2"><AlertTriangle size={18}/>{error}</div>}

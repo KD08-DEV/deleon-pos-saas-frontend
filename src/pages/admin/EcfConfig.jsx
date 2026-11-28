@@ -22,6 +22,14 @@ import api from "../../lib/api";
 import EcfXmlExportPanel from "../../components/ecf/EcfXmlExportPanel.jsx";
 import EcfReceptorPanel from "../../components/ecf/EcfReceptorPanel.jsx";
 import EcfOperationsPanel from "../../components/ecf/EcfOperationsPanel.jsx";
+import EcfCertificationGuide from "../../components/ecf/EcfCertificationGuide.jsx";
+
+// Para qué se usó el certificado la última vez (elemento raíz del XML firmado).
+const CERT_USE_LABELS = {
+    ECF: "firma de e-CF", RFCE: "resumen de consumo (RFCE)", ACECF: "aprobación comercial",
+    ARECF: "acuse de recibo", ANECF: "anulación de secuencias", SemillaModel: "autenticación con la DGII",
+};
+const CERT_ACTION_LABELS = { UPLOADED: "Subido", REPLACED: "Reemplazado" };
 
 
 export const ECF_DOCUMENT_TYPE_GROUPS = [
@@ -1106,6 +1114,9 @@ export default function EcfConfig({
                         ],
                     });
 
+                // La guía de certificación depende del certificado.
+                qc.invalidateQueries({ queryKey: ["ecf-certification-guide"] });
+
                 enqueueSnackbar(
                     t(
                         "ecfConfig.certificate.messages.uploadSuccess"
@@ -1205,6 +1216,7 @@ export default function EcfConfig({
                             <p className="mt-1">Identificación Fiscal tiene {ecfProfile.configuredBusinessRnc}, pero el perfil e-CF conserva {ecfProfile?.issuer?.rnc}. Por seguridad no se modifica automáticamente un emisor ya configurado. Verifica el RNC y el certificado digital antes de sincronizar los datos de la empresa.</p>
                         </div>
                     )}
+                    <EcfCertificationGuide />
                     <ToggleRow
                         label="Activar e-CF"
                         desc="Muestra el botón de Emitir e-CF y habilita documentos electrónicos."
@@ -1840,6 +1852,34 @@ export default function EcfConfig({
 
                                     </p>
 
+                                )}
+
+                                <p>
+                                    Último uso:{" "}
+                                    <span className="text-white">
+                                        {ecfProfile?.certificate?.lastUsedAt
+                                            ? `${new Date(ecfProfile.certificate.lastUsedAt).toLocaleString("es-DO")} · ${CERT_USE_LABELS[ecfProfile.certificate.lastUsedFor] || ecfProfile.certificate.lastUsedFor || "firma"}`
+                                            : "Todavía no se ha usado"}
+                                    </span>
+                                    {Number(ecfProfile?.certificate?.useCount) > 0 && (
+                                        <span className="text-gray-400"> · {ecfProfile.certificate.useCount} firma(s)</span>
+                                    )}
+                                </p>
+
+                                {Array.isArray(ecfProfile?.certificateHistory) && ecfProfile.certificateHistory.length > 0 && (
+                                    <div className="pt-1">
+                                        <p className="text-gray-400">Historial del certificado:</p>
+                                        <ul className="mt-1 space-y-0.5">
+                                            {ecfProfile.certificateHistory.slice(-5).reverse().map((h, i) => (
+                                                <li key={`${h.at}-${i}`} className="text-gray-400">
+                                                    {new Date(h.at).toLocaleString("es-DO")} · {CERT_ACTION_LABELS[h.action] || h.action}
+                                                    {h.actorName ? ` por ${h.actorName}` : ""}
+                                                    {h.validTo ? ` · vence ${new Date(h.validTo).toLocaleDateString("es-DO")}` : ""}
+                                                    {h.previousUseCount !== null && h.previousUseCount !== undefined ? ` · el anterior firmó ${h.previousUseCount} vez/veces` : ""}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
                                 )}
 
                             </div>
