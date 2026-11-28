@@ -2527,7 +2527,7 @@ const en = {
 
         calculationBase: {
             net:
-                "Subtotal after discount",
+                "Subtotal before tax, after discount",
 
             afterTax:
                 "After taxes",

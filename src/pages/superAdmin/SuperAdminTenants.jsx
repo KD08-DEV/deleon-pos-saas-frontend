@@ -116,7 +116,8 @@ const SuperAdminTenants = () => {
         <div className="p-6">
             <h1 className="text-3xl font-bold mb-4">Tenants</h1>
 
-            <table className="w-full bg-gray-900 rounded-xl overflow-hidden table-fixed">
+            <div className="overflow-x-auto rounded-xl">
+            <table className="w-full min-w-[1100px] bg-gray-900 rounded-xl overflow-hidden table-fixed">
                 <thead className="bg-gray-800 text-left">
                 <tr className="text-sm text-gray-200">
                     <th className="p-3 w-[180px]">Company</th>
@@ -125,7 +126,7 @@ const SuperAdminTenants = () => {
                     <th className="p-3 w-[160px]">Country / Language</th>
                     <th className="p-3 w-[120px]">Status</th>
                     <th className="p-3 w-[260px]">Features</th>
-                    <th className="p-3 w-[220px]">Actions</th>
+                    <th className="p-3 w-[300px]">Actions</th>
                 </tr>
                 </thead>
 
@@ -203,7 +204,7 @@ const SuperAdminTenants = () => {
 
                         {/* ACTIONS */}
                         <td className="p-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 {t.status === "active" ? (
                                     <button
                                         onClick={() => toggleStatus(t.tenantId, "suspended")}
@@ -241,6 +242,7 @@ const SuperAdminTenants = () => {
 
                 </tbody>
             </table>
+            </div>
             <FiscalArchivePanel refreshKey={archiveRefresh} onError={(m) => showToast(m)} />
             {deletePreview && <div className="fixed inset-0 z-[100000] bg-black/85 flex items-center justify-center p-4">
                 <div role="dialog" aria-modal="true" aria-label="Eliminar tenant" className="bg-[#181818] text-white border border-red-700 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-auto space-y-3">

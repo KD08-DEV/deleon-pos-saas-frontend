@@ -2570,7 +2570,7 @@ const es = {
 
         calculationBase: {
             net:
-                "Subtotal después de descuento",
+                "Subtotal sin ITBIS, después de descuento",
 
             afterTax:
                 "Después de impuestos",
